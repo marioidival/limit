@@ -1,6 +1,8 @@
-[package]
-name = "limit"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
+[workspace]
+members = [
+    "limit-llm",
+    "limit-agent",
+    "limit-cli",
+    "limit-tui",
+]
+resolver = "2"
