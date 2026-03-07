@@ -411,3 +411,67 @@ pub struct AgentState {
 2. Add state versioning for migration
 3. Implement state compression for large histories
 4. Add state export/import functionality
+
+## Task 14: limit-cli REPL interface with rustyline
+
+### Implementation Notes:
+- Added rustyline = "14.0" and crossterm = "0.27" to limit-cli/Cargo.toml
+- Created limit-cli/src/repl.rs with Repl struct and event loop
+- Implemented basic REPL loop: read → process → render
+- Commands: /help, /clear, /exit, plus echo for all other input
+
+### rustyline Editor Type:
+- rustyline 14.0 requires 2 generic arguments: Editor<H: Helper, I: History>
+- Use `Editor<(), DefaultHistory>` for basic functionality without helper
+- Need to import `rustyline::history::DefaultHistory`
+
+### Error handling:
+- Added `#[from] rustyline::error::ReadlineError` to CliError
+- Added `#[from] std::io::Error` to CliError for clear_screen()
+- Both errors are automatically converted with From<> trait
+
+### REPL Implementation:
+- `new()`: Initialize Editor with DefaultHistory
+- `run()`: Main event loop with "limit> " prompt
+- `process_line()`: Command parsing and routing
+- `clear_screen()`: ANSI escape codes for screen clearing
+- `show_help()`: Display available commands
+- History support: `reader.add_history_entry()` for non-command input
+
+### Screen clearing:
+- ANSI escape codes: `\x1B[2J\x1B[1;1H`
+- \x1B[2J clears screen
+- \x1B[1;1H moves cursor to top-left
+- Must flush stdout to ensure escape codes are processed
+
+### Ctrl+C handling:
+- rustyline handles Ctrl+C gracefully by default
+- Returns empty input on Ctrl+C (interrupt)
+- REPL continues running, no crash
+
+### Testing results:
+- REPL starts successfully: `cargo run --package limit-cli`
+- /help displays command list
+- /clear clears screen (verified with ANSI escape codes in output)
+- /exit exits cleanly
+- Echo functionality works for regular input
+- History is added for non-command input
+
+### Files modified:
+- limit-cli/Cargo.toml: Added rustyline, crossterm
+- limit-cli/src/error.rs: Added ReadlineError and std::io::Error From<> implementations
+- limit-cli/src/repl.rs: Created (63 lines)
+- limit-cli/src/main.rs: Wired up REPL (replaced Hello message)
+
+### Success factors:
+- Keep REPL simple: no auto-completion, no vim/emacs keybindings
+- Use rustyline for history and readline features
+- Handle errors properly with From<> traits
+- Ctrl+C doesn't crash the REPL
+- Screen clearing uses ANSI escape codes (portable across terminals)
+
+### Code quality:
+- cargo build --package limit-cli succeeds
+- Single warning: ConfigError variant never constructed (expected, reserved for future)
+- Clean separation: Repl struct, main entry point
+- No agent integration (separate task as required)

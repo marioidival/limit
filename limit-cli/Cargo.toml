@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 thiserror = "1.0"
 limit-agent = { path = "../limit-agent" }
+rustyline = "14.0"
+crossterm = "0.27"
