@@ -23,7 +23,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
-use std::{io, time::{Duration, Instant}};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -199,7 +202,6 @@ fn render_ui(f: &mut Frame, state: &DemoState) {
     for _ in 0..((state.spinner_frame + 5) % 10) {
         spinner2.tick();
     }
-
 
     // Instructions
     let instructions = Paragraph::new(Line::from(vec![

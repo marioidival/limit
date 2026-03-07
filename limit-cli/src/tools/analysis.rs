@@ -168,9 +168,7 @@ impl Tool for AstGrepTool {
         }
 
         // Check if ast-grep CLI is available
-        let check_result = Command::new("ast-grep")
-            .arg("--version")
-            .output();
+        let check_result = Command::new("ast-grep").arg("--version").output();
 
         match check_result {
             Ok(output) if output.status.success() => {}
@@ -255,9 +253,7 @@ impl LspTool {
     }
 
     fn check_lsp_server_available(server_name: &str) -> Result<(), AgentError> {
-        let result = Command::new(server_name)
-            .arg("--version")
-            .output();
+        let result = Command::new(server_name).arg("--version").output();
 
         match result {
             Ok(output) if output.status.success() => Ok(()),
@@ -304,7 +300,10 @@ impl Tool for LspTool {
             .map_err(|e| AgentError::ToolError(format!("Invalid file_path argument: {}", e)))?;
 
         if !Path::new(&file_path).exists() {
-            return Err(AgentError::ToolError(format!("File not found: {}", file_path)));
+            return Err(AgentError::ToolError(format!(
+                "File not found: {}",
+                file_path
+            )));
         }
 
         let position: Position = serde_json::from_value(args["position"].clone())
@@ -319,24 +318,20 @@ impl Tool for LspTool {
         // For typescript: use tsserver
         // For python: use pylsp
         match command.as_str() {
-            "goto_definition" => {
-                Ok(serde_json::json!({
-                    "command": command,
-                    "file_path": file_path,
-                    "position": position,
-                    "result": "LSP goto_definition requires full LSP client implementation",
-                    "note": "This is a placeholder. Implement full LSP client for production use."
-                }))
-            }
-            "find_references" => {
-                Ok(serde_json::json!({
-                    "command": command,
-                    "file_path": file_path,
-                    "position": position,
-                    "result": "LSP find_references requires full LSP client implementation",
-                    "note": "This is a placeholder. Implement full LSP client for production use."
-                }))
-            }
+            "goto_definition" => Ok(serde_json::json!({
+                "command": command,
+                "file_path": file_path,
+                "position": position,
+                "result": "LSP goto_definition requires full LSP client implementation",
+                "note": "This is a placeholder. Implement full LSP client for production use."
+            })),
+            "find_references" => Ok(serde_json::json!({
+                "command": command,
+                "file_path": file_path,
+                "position": position,
+                "result": "LSP find_references requires full LSP client implementation",
+                "note": "This is a placeholder. Implement full LSP client for production use."
+            })),
             _ => unreachable!(),
         }
     }
@@ -431,7 +426,10 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported language"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported language"));
     }
 
     #[tokio::test]
@@ -557,7 +555,10 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported LSP command"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported LSP command"));
     }
 
     #[tokio::test]
@@ -589,7 +590,10 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported file extension"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported file extension"));
     }
 
     #[tokio::test]
@@ -619,7 +623,8 @@ mod tests {
             Err(e) => {
                 let error_msg = e.to_string();
                 assert!(
-                    error_msg.contains("not found in PATH") || error_msg.contains("failed to execute"),
+                    error_msg.contains("not found in PATH")
+                        || error_msg.contains("failed to execute"),
                     "Unexpected error: {}",
                     error_msg
                 );

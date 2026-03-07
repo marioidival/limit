@@ -6,9 +6,7 @@ use std::process::Command;
 
 /// Check if git is available in PATH
 fn check_git_available() -> Result<(), AgentError> {
-    let result = Command::new("git")
-        .arg("--version")
-        .output();
+    let result = Command::new("git").arg("--version").output();
 
     match result {
         Ok(output) if output.status.success() => Ok(()),
@@ -136,10 +134,7 @@ impl Tool for GitLogTool {
         check_git_available()?;
 
         // Get number of commits from args, default to 10
-        let count = args
-            .get("count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(10);
+        let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(10);
 
         let output = Command::new("git")
             .args(["log", &format!("-{}", count), "--oneline"])
@@ -148,10 +143,7 @@ impl Tool for GitLogTool {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AgentError::ToolError(format!(
-                "git log failed: {}",
-                stderr
-            )));
+            return Err(AgentError::ToolError(format!("git log failed: {}", stderr)));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -208,10 +200,7 @@ impl Tool for GitAddTool {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AgentError::ToolError(format!(
-                "git add failed: {}",
-                stderr
-            )));
+            return Err(AgentError::ToolError(format!("git add failed: {}", stderr)));
         }
 
         Ok(serde_json::json!({
@@ -306,10 +295,7 @@ impl Tool for GitPushTool {
             .and_then(|v| v.as_str())
             .unwrap_or("origin");
 
-        let branch = args
-            .get("branch")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let branch = args.get("branch").and_then(|v| v.as_str()).unwrap_or("");
 
         let output = if branch.is_empty() {
             Command::new("git")
@@ -371,10 +357,7 @@ impl Tool for GitPullTool {
             .and_then(|v| v.as_str())
             .unwrap_or("origin");
 
-        let branch = args
-            .get("branch")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let branch = args.get("branch").and_then(|v| v.as_str()).unwrap_or("");
 
         let output = if branch.is_empty() {
             Command::new("git")

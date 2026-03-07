@@ -9,4 +9,4 @@ pub use agent_bridge::{AgentBridge, AgentEvent};
 pub use error::CliError;
 pub use render::MarkdownRenderer;
 pub use session::SessionManager;
-pub use tui_bridge::{TuiBridge, TuiApp, TuiState};
+pub use tui_bridge::{TuiApp, TuiBridge, TuiState};

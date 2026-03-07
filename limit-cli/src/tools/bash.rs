@@ -19,26 +19,28 @@ impl BashTool {
     /// Check if a command is dangerous and should be blocked
     fn is_dangerous_command(command: &str) -> bool {
         let lower_cmd = command.to_lowercase();
-        
+
         // Block specific dangerous patterns
         let dangerous_patterns = [
-            "rm -rf /",           // Remove root directory
-            "rm -rf /*",          // Remove all files
-            ":(){ :|:& };:",      // Fork bomb
-            "dd if=/dev/zero",    // Disk wipe
-            "mkfs.",              // Format filesystem
-            "mv / /dev/null",     // Move root to null
-            "chmod -R 777 /",     // Recursive chmod on root
-            "chown -R",           // Recursive chown on root
-            "killall -9",         // Kill all processes (with no filter)
-            "kill -9 -1",         // Kill all processes
-            "shred",              // Secure delete
-            "> /dev/sda",         // Direct write to disk
-            "wget http://",       // Random downloads
-            "curl http://",       // Random downloads
+            "rm -rf /",        // Remove root directory
+            "rm -rf /*",       // Remove all files
+            ":(){ :|:& };:",   // Fork bomb
+            "dd if=/dev/zero", // Disk wipe
+            "mkfs.",           // Format filesystem
+            "mv / /dev/null",  // Move root to null
+            "chmod -R 777 /",  // Recursive chmod on root
+            "chown -R",        // Recursive chown on root
+            "killall -9",      // Kill all processes (with no filter)
+            "kill -9 -1",      // Kill all processes
+            "shred",           // Secure delete
+            "> /dev/sda",      // Direct write to disk
+            "wget http://",    // Random downloads
+            "curl http://",    // Random downloads
         ];
 
-        dangerous_patterns.iter().any(|pattern| lower_cmd.contains(pattern))
+        dangerous_patterns
+            .iter()
+            .any(|pattern| lower_cmd.contains(pattern))
     }
 }
 
@@ -70,10 +72,7 @@ impl Tool for BashTool {
         }
 
         // Get working directory from current directory or args
-        let workdir = args
-            .get("workdir")
-            .and_then(|v| v.as_str())
-            .unwrap_or(".");
+        let workdir = args.get("workdir").and_then(|v| v.as_str()).unwrap_or(".");
 
         // Validate working directory exists
         if !Path::new(workdir).exists() {
@@ -147,7 +146,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await.unwrap();
-        
+
         assert_eq!(result["stdout"], "hello world\n");
         assert_eq!(result["exit_code"], 0);
         assert!(result["stderr"].as_str().unwrap().is_empty());
@@ -161,7 +160,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await.unwrap();
-        
+
         assert_eq!(result["stderr"], "error\n");
         assert_eq!(result["exit_code"], 1);
     }
@@ -172,7 +171,7 @@ mod tests {
         let args = serde_json::json!({});
 
         let result = tool.execute(args).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Missing 'command'"));
@@ -186,7 +185,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Dangerous command blocked"));
@@ -200,7 +199,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Dangerous command blocked"));
@@ -215,7 +214,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("timed out"));
@@ -230,7 +229,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await;
-        
+
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Working directory does not exist"));
@@ -244,7 +243,7 @@ mod tests {
         });
 
         let result = tool.execute(args).await.unwrap();
-        
+
         // Just check we got some output
         assert!(!result["stdout"].as_str().unwrap().is_empty());
         assert_eq!(result["exit_code"], 0);

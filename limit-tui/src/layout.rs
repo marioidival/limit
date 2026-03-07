@@ -200,7 +200,8 @@ impl FlexboxLayout {
             Self::distribute_main_axis(available_space, style, child_count, main_axis_size);
 
         // Calculate cross axis positions
-        let cross_positions = Self::distribute_cross_axis(cross_axis_size, &style.align_items, child_count);
+        let cross_positions =
+            Self::distribute_cross_axis(cross_axis_size, &style.align_items, child_count);
 
         // Build final rects
         let mut results = Vec::with_capacity(child_count);
@@ -731,6 +732,5 @@ mod tests {
         // First child should exist and have valid position
         assert!(!results.is_empty());
         assert!(results[0].width > 0);
-}
-
+    }
 }

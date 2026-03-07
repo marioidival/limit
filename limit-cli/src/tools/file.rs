@@ -40,7 +40,10 @@ impl Tool for FileReadTool {
 
         // Check if it's a file
         if !path_obj.is_file() {
-            return Err(AgentError::ToolError(format!("Path is not a file: {}", path)));
+            return Err(AgentError::ToolError(format!(
+                "Path is not a file: {}",
+                path
+            )));
         }
 
         // Check file size
@@ -106,8 +109,9 @@ impl Tool for FileWriteTool {
         // Create parent directories if they don't exist
         if let Some(parent) = path_obj.parent() {
             if !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| AgentError::IoError(format!("Failed to create directories: {}", e)))?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    AgentError::IoError(format!("Failed to create directories: {}", e))
+                })?;
             }
         }
 
@@ -232,7 +236,10 @@ mod tests {
         let result = tool.execute(args).await.unwrap();
         assert!(result["content"].is_string());
         assert!(result["size"].is_u64());
-        assert!(result["content"].as_str().unwrap().contains("Hello, World!"));
+        assert!(result["content"]
+            .as_str()
+            .unwrap()
+            .contains("Hello, World!"));
     }
 
     #[tokio::test]
@@ -341,7 +348,10 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("old_text not found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("old_text not found"));
     }
 
     #[tokio::test]

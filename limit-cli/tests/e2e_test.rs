@@ -174,7 +174,9 @@ fn test_e2e_session_save_and_load() {
     assert!(!session_id.is_empty(), "Session ID should not be empty");
 
     // List sessions
-    let sessions = session_manager.list_sessions().expect("Failed to list sessions");
+    let sessions = session_manager
+        .list_sessions()
+        .expect("Failed to list sessions");
     assert!(!sessions.is_empty(), "Should have at least one session");
 
     // Verify the created session is in the list
@@ -280,11 +282,7 @@ fn test_e2e_all_tools_registered() {
     let tool_names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
 
     for expected in &expected_tools {
-        assert!(
-            tool_names.contains(expected),
-            "Missing tool: {}",
-            expected
-        );
+        assert!(tool_names.contains(expected), "Missing tool: {}", expected);
     }
 
     println!(

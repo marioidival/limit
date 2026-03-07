@@ -153,25 +153,25 @@ impl ChatView {
         if width == 0 {
             return 0;
         }
-        
+
         let mut lines = 0;
         let mut current_line_len = 0;
-        
+
         for line in text.lines() {
             if line.is_empty() {
                 lines += 1;
                 current_line_len = 0;
                 continue;
             }
-            
+
             // Split line into words and calculate wrapped lines
             let words: Vec<&str> = line.split_whitespace().collect();
             let mut word_index = 0;
-            
+
             while word_index < words.len() {
                 let word = words[word_index];
                 let word_len = word.len();
-                
+
                 if current_line_len == 0 {
                     // First word on line
                     if word_len > width {
@@ -205,18 +205,18 @@ impl ChatView {
                         word_len
                     };
                 }
-                
+
                 word_index += 1;
             }
-            
+
             // Account for the line itself if we added any content
             if current_line_len > 0 || words.is_empty() {
                 lines += 1;
             }
-            
+
             current_line_len = 0;
         }
-        
+
         lines.max(1)
     }
 
@@ -246,7 +246,8 @@ impl ChatView {
 
         // Clamp scroll offset to ensure we don't scroll past content
         let scroll_offset = if total_height > viewport_height {
-            self.scroll_offset.min(total_height.saturating_sub(viewport_height))
+            self.scroll_offset
+                .min(total_height.saturating_sub(viewport_height))
         } else {
             0
         };

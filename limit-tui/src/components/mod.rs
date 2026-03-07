@@ -8,6 +8,6 @@ pub mod progress;
 pub mod prompt;
 
 pub use chat::{ChatView, Message, Role};
-pub use diff::{DiffLine, DiffType, DiffView, parse_diff};
+pub use diff::{parse_diff, DiffLine, DiffType, DiffView};
 pub use progress::{ProgressBar, Spinner};
 pub use prompt::{InputPrompt, InputResult, SelectPrompt, SelectResult};

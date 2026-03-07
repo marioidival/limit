@@ -1,7 +1,7 @@
 mod agent_bridge;
 mod error;
-mod repl;
 mod render;
+mod repl;
 mod session;
 mod tools;
 mod tui_bridge;

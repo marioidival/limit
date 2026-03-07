@@ -184,7 +184,7 @@ mod tests {
         // We test the structure but skip the actual terminal creation if not available
         let backend = RatatuiBackend::new();
         match backend {
-            Ok(_) => {}, // Terminal created successfully
+            Ok(_) => {} // Terminal created successfully
             Err(_) => {
                 // Expected in headless environments - skip test silently
             }

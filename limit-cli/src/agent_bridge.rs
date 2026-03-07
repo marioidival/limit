@@ -1,8 +1,8 @@
 use crate::error::CliError;
 use crate::tools::{
-    AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool,
-    GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool,
-    GitStatusTool, GrepTool, LspTool,
+    AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool, GitCloneTool,
+    GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool, GrepTool,
+    LspTool,
 };
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
@@ -17,8 +17,14 @@ use tokio::sync::mpsc;
 #[allow(dead_code)]
 pub enum AgentEvent {
     Thinking,
-    ToolStart { name: String, args: serde_json::Value },
-    ToolComplete { name: String, result: String },
+    ToolStart {
+        name: String,
+        args: serde_json::Value,
+    },
+    ToolComplete {
+        name: String,
+        result: String,
+    },
     ContentChunk(String),
     Done,
     Error(String),
@@ -62,10 +68,21 @@ impl AgentBridge {
 
         // Generate tool definitions before giving ownership to executor
         let tool_names = vec![
-            "file_read", "file_write", "file_edit",
+            "file_read",
+            "file_write",
+            "file_edit",
             "bash",
-            "git_status", "git_diff", "git_log", "git_add", "git_commit", "git_push", "git_pull", "git_clone",
-            "grep", "ast_grep", "lsp",
+            "git_status",
+            "git_diff",
+            "git_log",
+            "git_add",
+            "git_commit",
+            "git_push",
+            "git_pull",
+            "git_clone",
+            "grep",
+            "ast_grep",
+            "lsp",
         ];
 
         Ok(Self {
@@ -85,27 +102,57 @@ impl AgentBridge {
     /// Register all CLI tools into the tool registry
     fn register_tools(registry: &mut ToolRegistry) {
         // File tools
-        registry.register(FileReadTool::new()).expect("Failed to register file_read");
-        registry.register(FileWriteTool::new()).expect("Failed to register file_write");
-        registry.register(FileEditTool::new()).expect("Failed to register file_edit");
+        registry
+            .register(FileReadTool::new())
+            .expect("Failed to register file_read");
+        registry
+            .register(FileWriteTool::new())
+            .expect("Failed to register file_write");
+        registry
+            .register(FileEditTool::new())
+            .expect("Failed to register file_edit");
 
         // Bash tool
-        registry.register(BashTool::new()).expect("Failed to register bash");
+        registry
+            .register(BashTool::new())
+            .expect("Failed to register bash");
 
         // Git tools
-        registry.register(GitStatusTool::new()).expect("Failed to register git_status");
-        registry.register(GitDiffTool::new()).expect("Failed to register git_diff");
-        registry.register(GitLogTool::new()).expect("Failed to register git_log");
-        registry.register(GitAddTool::new()).expect("Failed to register git_add");
-        registry.register(GitCommitTool::new()).expect("Failed to register git_commit");
-        registry.register(GitPushTool::new()).expect("Failed to register git_push");
-        registry.register(GitPullTool::new()).expect("Failed to register git_pull");
-        registry.register(GitCloneTool::new()).expect("Failed to register git_clone");
+        registry
+            .register(GitStatusTool::new())
+            .expect("Failed to register git_status");
+        registry
+            .register(GitDiffTool::new())
+            .expect("Failed to register git_diff");
+        registry
+            .register(GitLogTool::new())
+            .expect("Failed to register git_log");
+        registry
+            .register(GitAddTool::new())
+            .expect("Failed to register git_add");
+        registry
+            .register(GitCommitTool::new())
+            .expect("Failed to register git_commit");
+        registry
+            .register(GitPushTool::new())
+            .expect("Failed to register git_push");
+        registry
+            .register(GitPullTool::new())
+            .expect("Failed to register git_pull");
+        registry
+            .register(GitCloneTool::new())
+            .expect("Failed to register git_clone");
 
         // Analysis tools
-        registry.register(GrepTool::new()).expect("Failed to register grep");
-        registry.register(AstGrepTool::new()).expect("Failed to register ast_grep");
-        registry.register(LspTool::new()).expect("Failed to register lsp");
+        registry
+            .register(GrepTool::new())
+            .expect("Failed to register grep");
+        registry
+            .register(AstGrepTool::new())
+            .expect("Failed to register ast_grep");
+        registry
+            .register(LspTool::new())
+            .expect("Failed to register lsp");
     }
 
     /// Process a user message through the LLM and execute any tool calls
@@ -153,8 +200,10 @@ impl AgentBridge {
             tool_calls.clear();
             let mut current_content = String::new();
             // Track tool calls: (id) -> (name, args)
-            let mut accumulated_calls: std::collections::HashMap<String, (String, serde_json::Value)> =
-                std::collections::HashMap::new();
+            let mut accumulated_calls: std::collections::HashMap<
+                String,
+                (String, serde_json::Value),
+            > = std::collections::HashMap::new();
 
             // Process stream chunks
             while let Some(chunk_result) = stream.next().await {
@@ -163,7 +212,11 @@ impl AgentBridge {
                         current_content.push_str(&text);
                         self.send_event(AgentEvent::ContentChunk(text));
                     }
-                    Ok(ResponseChunk::ToolCallDelta { id, name, arguments }) => {
+                    Ok(ResponseChunk::ToolCallDelta {
+                        id,
+                        name,
+                        arguments,
+                    }) => {
                         // Store/merge tool call arguments
                         accumulated_calls.insert(id.clone(), (name.clone(), arguments.clone()));
                     }
@@ -216,11 +269,7 @@ impl AgentBridge {
             // Convert LLM tool calls to executor tool calls
             let executor_calls: Vec<ToolCall> = tool_calls
                 .iter()
-                .map(|tc| ToolCall::new(
-                    &tc.id,
-                    &tc.function.name,
-                    tc.function.arguments.clone(),
-                ))
+                .map(|tc| ToolCall::new(&tc.id, &tc.function.name, tc.function.arguments.clone()))
                 .collect();
 
             // Execute tools
@@ -499,7 +548,8 @@ impl AgentBridge {
                 }),
             ),
             "lsp" => (
-                "Perform Language Server Protocol operations (goto_definition, find_references)".to_string(),
+                "Perform Language Server Protocol operations (goto_definition, find_references)"
+                    .to_string(),
                 json!({
                     "type": "object",
                     "properties": {
@@ -619,9 +669,15 @@ mod tests {
         assert!(file_read.function.description.contains("Read"));
 
         // Check bash tool definition
-        let bash = definitions.iter().find(|d| d.function.name == "bash").unwrap();
+        let bash = definitions
+            .iter()
+            .find(|d| d.function.name == "bash")
+            .unwrap();
         assert_eq!(bash.function.name, "bash");
-        assert!(bash.function.parameters["required"].as_array().unwrap().contains(&"command".into()));
+        assert!(bash.function.parameters["required"]
+            .as_array()
+            .unwrap()
+            .contains(&"command".into()));
     }
 
     #[test]
@@ -629,7 +685,10 @@ mod tests {
         let (desc, params) = AgentBridge::get_tool_schema("file_read");
         assert!(desc.contains("Read"));
         assert_eq!(params["properties"]["path"]["type"], "string");
-        assert!(params["required"].as_array().unwrap().contains(&"path".into()));
+        assert!(params["required"]
+            .as_array()
+            .unwrap()
+            .contains(&"path".into()));
 
         let (desc, params) = AgentBridge::get_tool_schema("bash");
         assert!(desc.contains("bash"));

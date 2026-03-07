@@ -45,10 +45,15 @@ impl Repl {
             let (tx, rx) = mpsc::unbounded_channel();
             let mut bridge = AgentBridge::new(config)?;
             bridge.set_event_tx(tx);
-            println!("Agent initialized with {} tools", bridge.get_tool_definitions().len());
+            println!(
+                "Agent initialized with {} tools",
+                bridge.get_tool_definitions().len()
+            );
             (Some(bridge), Some(rx))
         } else {
-            println!("No API key found. Agent features disabled. Set api_key in ~/.limit/config.toml");
+            println!(
+                "No API key found. Agent features disabled. Set api_key in ~/.limit/config.toml"
+            );
             (None, None)
         };
 
@@ -132,7 +137,9 @@ impl Repl {
 
             let result = rt.block_on(async {
                 let _messages_clone = self.messages.clone();
-                bridge.process_message(line, &mut self.messages.clone()).await
+                bridge
+                    .process_message(line, &mut self.messages.clone())
+                    .await
             });
 
             // Process events from the agent
