@@ -34,6 +34,7 @@ pub struct FunctionCall {
 pub struct Tool {
     #[serde(rename = "type")]
     pub tool_type: String,
+    #[serde(flatten)]
     pub function: ToolFunction,
 }
 

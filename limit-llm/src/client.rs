@@ -169,12 +169,32 @@ fn build_request_body(
 
     Ok(request)
 }
+/// Parse potentially incomplete JSON during streaming.
+/// Returns empty object if parsing fails.
+fn parse_partial_json(json: &str) -> serde_json::Value {
+    if json.trim().is_empty() {
+        return serde_json::json!({});
+    }
+
+    // Try standard parsing first
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+        return value;
+    }
+
+    // If parsing fails, return empty object
+    // (In future, could use partial-json crate for better handling)
+    serde_json::json!({})
+}
+
 
 fn parse_sse_stream(
     byte_stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Send + Unpin + 'static,
 ) -> Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + 'static>> {
     Box::pin(stream! {
         let mut buffer = String::new();
+        let mut tool_calls_by_id: std::collections::HashMap<u64, (String, String)> = std::collections::HashMap::new();
+
+        let mut tool_partial_json: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
 
         let mut lines = byte_stream
             .map(|chunk| chunk.map_err(|e| LlmError::NetworkError(e.to_string())));
@@ -189,6 +209,7 @@ fn parse_sse_stream(
             };
 
             let text = String::from_utf8_lossy(&chunk);
+
             buffer.push_str(&text);
 
             while let Some(event) = parse_sse_line(&mut buffer) {
@@ -203,27 +224,56 @@ fn parse_sse_stream(
                     match chunk_type {
                         "content_block_delta" => {
                             if let Some(delta) = parsed.get("delta") {
+                                // Handle text deltas
                                 if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
                                     yield Ok(ResponseChunk::ContentDelta(text.to_string()));
                                 }
-                                if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
-                                    if let Ok(value) = serde_json::from_str::<Value>(partial_json) {
-                                        yield Ok(ResponseChunk::ContentDelta(value.to_string()));
+                                
+                                // Handle tool argument deltas (input_json_delta)
+                                let delta_type = delta.get("type").and_then(|v| v.as_str());
+                                if delta_type == Some("input_json_delta") {
+                                    if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
+                                        // Get tool call index
+                                        if let Some(index) = parsed.get("index").and_then(|v| v.as_u64()) {
+                                            // Accumulate partial JSON
+                                            tool_partial_json.entry(index)
+                                                .or_insert_with(String::new)
+                                                .push_str(partial_json);
+                                            
+                                            // Look up tool call metadata and parse accumulated JSON
+                                            if let Some((id, name)) = tool_calls_by_id.get(&index) {
+                                                let accumulated = tool_partial_json.get(&index).unwrap();
+                                                let args = parse_partial_json(accumulated);
+                                                
+                                                yield Ok(ResponseChunk::ToolCallDelta {
+                                                    id: id.clone(),
+                                                    name: name.clone(),
+                                                    arguments: args,
+                                                });
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                         "content_block_start" => {
                             if let Some(content_block) = parsed.get("content_block") {
-                                if let Some(tool_use) = content_block.get("tool_use") {
-                                    let id = tool_use.get("id")
+                                let block_type = content_block.get("type").and_then(|v| v.as_str());
+                                if block_type == Some("tool_use") {
+                                    let id = content_block.get("id")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
-                                    let name = tool_use.get("name")
+                                    let name = content_block.get("name")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("")
                                         .to_string();
+
+                                    // Track tool call by index
+                                    if let Some(index) = parsed.get("index").and_then(|v| v.as_u64()) {
+                                        tool_calls_by_id.insert(index, (id.clone(), name.clone()));
+                                    }
+
                                     yield Ok(ResponseChunk::ToolCallDelta {
                                         id,
                                         name,
@@ -258,22 +308,29 @@ fn parse_sse_stream(
 }
 
 fn parse_sse_line(buffer: &mut String) -> Option<SseEvent> {
-    let newline_pos = buffer.find('\n')?;
-    let line = buffer[..newline_pos].trim().to_string();
-    *buffer = buffer[newline_pos + 1..].to_string();
+    loop {
+        let newline_pos = buffer.find('\n')?;
+        let line = buffer[..newline_pos].trim().to_string();
+        *buffer = buffer[newline_pos + 1..].to_string();
 
-    if line.is_empty() || line.starts_with(':') {
-        return None;
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with(':') {
+            continue;
+        }
+
+        // Skip event: lines (we only care about data)
+        if line.starts_with("event:") {
+            continue;
+        }
+
+        // Parse data: lines
+        if let Some(data_pos) = line.find("data: ") {
+            let data = line[data_pos + 6..].trim();
+            return Some(SseEvent {
+                data: data.to_string(),
+            });
+        }
     }
-
-    if let Some(data_pos) = line.find("data: ") {
-        let data = line[data_pos + 6..].trim();
-        return Some(SseEvent {
-            data: data.to_string(),
-        });
-    }
-
-    None
 }
 
 #[cfg(test)]
@@ -495,7 +552,7 @@ mod tests {
         let mut buffer = String::from("\n\ndata: test");
         let event = parse_sse_line(&mut buffer);
         assert!(event.is_none());
-        assert_eq!(buffer, "\ndata: test");
+        assert_eq!(buffer, "data: test");
     }
 
     #[test]
@@ -503,5 +560,13 @@ mod tests {
         let mut buffer = String::from(": comment\n\ndata: test");
         let event = parse_sse_line(&mut buffer);
         assert!(event.is_none());
+    }
+
+    #[test]
+    fn test_parse_sse_line_zai_format() {
+        let mut buffer = String::from("event: content_block_start\ndata: {\"type\":\"test\"}\n\n");
+        let event = parse_sse_line(&mut buffer);
+        assert!(event.is_some());
+        assert_eq!(event.unwrap().data, "{\"type\":\"test\"}");
     }
 }

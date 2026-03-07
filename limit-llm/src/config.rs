@@ -131,7 +131,10 @@ base_url = "https://custom.api/endpoint"
         assert_eq!(config.model, "claude-3-5-sonnet-20241022");
         assert_eq!(config.max_tokens, 8192);
         assert_eq!(config.timeout, 120);
-        assert_eq!(config.base_url, Some("https://custom.api/endpoint".to_string()));
+        assert_eq!(
+            config.base_url,
+            Some("https://custom.api/endpoint".to_string())
+        );
     }
 
     #[test]
