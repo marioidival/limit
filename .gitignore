@@ -2,3 +2,6 @@ target/
 .limit/
 *.db
 *.bin
+
+# Temporary study folder
+tmp-study/
