@@ -475,3 +475,66 @@ pub struct AgentState {
 - Single warning: ConfigError variant never constructed (expected, reserved for future)
 - Clean separation: Repl struct, main entry point
 - No agent integration (separate task as required)
+
+# Task 15: File Tools Implementation
+
+## What was implemented
+
+Successfully implemented three file tools for limit-cli:
+
+### FileReadTool
+- Reads file content with 50MB size limit
+- Detects binary files using null byte check
+- Handles file not found and permission errors
+- Returns content and file size
+
+### FileWriteTool
+- Writes content to specified path
+- Automatically creates parent directories if needed
+- Handles IO errors appropriately
+
+### FileEditTool
+- Performs simple diff-based editing (find and replace)
+- Checks file size and binary content before editing
+- Validates old_text exists before replacement
+- Returns number of replacements made
+
+## Implementation details
+
+- Added `similar = "2.4"` to Cargo.toml for future diff detection
+- All tools implement `limit_agent::Tool` trait with async execute
+- Comprehensive unit tests for all three tools (11 tests total)
+- Error handling covers: file not found, permission denied, too large, binary file
+
+## Key patterns
+
+```rust
+pub struct FileReadTool;
+
+#[async_trait]
+impl Tool for FileReadTool {
+    fn name(&self) -> &str {
+        "file_read"
+    }
+    
+    async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+        // Implementation
+    }
+}
+```
+
+## Testing
+
+All tests pass:
+- test_file_read_tool_name
+- test_file_read_tool_execute
+- test_file_read_tool_file_not_found
+- test_file_read_tool_invalid_path
+- test_file_read_tool_binary_detection
+- test_file_write_tool_name
+- test_file_write_tool_execute
+- test_file_write_tool_create_dirs
+- test_file_edit_tool_name
+- test_file_edit_tool_execute
+- test_file_edit_tool_old_text_not_found
+
