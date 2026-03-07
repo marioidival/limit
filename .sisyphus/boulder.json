@@ -1,11 +1,9 @@
 {
-  "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/limit-code-agent.md",
-  "started_at": "2026-03-06T23:30:30.801Z",
+  "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/multi-provider-support.md",
+  "started_at": "2026-03-07T13:42:21.090Z",
   "session_ids": [
-    "ses_33aa77acdffeuYvRIkJ1F8FSOp",
-    "ses_33a12f6efffevCZlxGAlVuXpga",
-    "ses_339e423f3ffe0A5h03nqyVvtLc"
+    "ses_337771999ffeWp6B62kYXo4WA3"
   ],
-  "plan_name": "limit-code-agent",
+  "plan_name": "multi-provider-support",
   "agent": "atlas"
 }
