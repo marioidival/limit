@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use uuid::Uuid;
+use tracing::instrument;
 
 const CURRENT_VERSION: u32 = 1;
 
@@ -150,6 +151,7 @@ impl SessionManager {
         Ok(session_id)
     }
 
+    #[instrument(skip(self, messages))]
     pub fn save_session(&self, session_id: &str, messages: &[Message]) -> Result<(), CliError> {
         let file_path = self.sessions_dir.join(format!("{}.bin", session_id));
 
@@ -182,6 +184,7 @@ impl SessionManager {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     pub fn load_session(&self, session_id: &str) -> Result<Vec<Message>, CliError> {
         let file_path = self.sessions_dir.join(format!("{}.bin", session_id));
 

@@ -1,5 +1,7 @@
 // Ratatui backend for rendering VDOM to terminal
 
+use tracing::debug;
+
 use crate::vdom::VNode;
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyEvent},
@@ -24,6 +26,7 @@ pub struct RatatuiBackend {
 impl RatatuiBackend {
     /// Create a new Ratatui backend with raw mode enabled (no alternate screen)
     pub fn new() -> io::Result<Self> {
+        debug!("TUI backend initialized");
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         // Note: We do NOT use EnterAlternateScreen as per requirements
@@ -58,11 +61,13 @@ impl RatatuiBackend {
 
 impl Drop for RatatuiBackend {
     fn drop(&mut self) {
+        debug!("TUI cleanup");
         // Cleanup: disable raw mode
         let _ = disable_raw_mode();
     }
 }
 
+/// Render VNode to Ratatui buffer
 /// Render VNode to Ratatui buffer
 pub fn render_vdom_to_ratatui(vnode: &VNode, area: Rect, buf: &mut ratatui::buffer::Buffer) {
     match vnode {

@@ -3,6 +3,7 @@ use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions}
 use bollard::Docker;
 use futures::StreamExt;
 use tokio::time::{timeout, Duration};
+use tracing::instrument;
 pub struct DockerSandbox {
     docker: Docker,
 }
@@ -33,6 +34,7 @@ impl DockerSandbox {
     }
 
     /// Create a container with specified image
+    #[instrument(skip(self, image))]
     pub async fn create_container(&self, image: &str) -> Result<String, AgentError> {
         // Default to limit-rust-sandbox:latest if not specified
         let image_name = if image.is_empty() {
@@ -76,6 +78,7 @@ impl DockerSandbox {
     }
 
     /// Execute a command in the container
+    #[instrument(skip(self, container, cmd))]
     pub async fn execute_in_container(
         &self,
         container: &str,
@@ -130,6 +133,7 @@ impl DockerSandbox {
     }
 
     /// Start a container
+    #[instrument(skip(self, container))]
     pub async fn start_container(&self, container: &str) -> Result<(), AgentError> {
         self.docker
             .start_container::<String>(container, None)

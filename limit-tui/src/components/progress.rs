@@ -3,6 +3,8 @@
 // This module provides ProgressBar and Spinner components for displaying
 // progress and loading states in terminal UI applications.
 
+use tracing::debug;
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -48,6 +50,7 @@ impl ProgressBar {
     /// let bar = ProgressBar::new("Downloading");
     /// ```
     pub fn new(label: &str) -> Self {
+        debug!(component = %"ProgressBar", "Component created");
         Self {
             value: 0.0,
             label: label.to_string(),
@@ -55,6 +58,7 @@ impl ProgressBar {
         }
     }
 
+    /// Set the progress value
     /// Set the progress value
     ///
     /// The value should be between 0.0 (0%) and 1.0 (100%).
@@ -174,6 +178,7 @@ impl Spinner {
     /// let spinner = Spinner::new("Loading...");
     /// ```
     pub fn new(label: &str) -> Self {
+        debug!(component = %"Spinner", "Component created");
         Self {
             current_frame: 0,
             frames: SPINNER_FRAMES.iter().map(|s| s.to_string()).collect(),
@@ -181,6 +186,7 @@ impl Spinner {
         }
     }
 
+    /// Create a new spinner with custom frames
     /// Create a new spinner with custom frames
     ///
     /// # Arguments

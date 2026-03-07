@@ -1,5 +1,7 @@
 // Interactive prompt components for terminal UI
 
+use tracing::debug;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     buffer::Buffer,
@@ -8,7 +10,6 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Paragraph, Widget},
 };
-
 /// Result from InputPrompt interaction
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputResult {
@@ -43,6 +44,7 @@ pub struct InputPrompt {
 impl InputPrompt {
     /// Create a new input prompt with placeholder text
     pub fn new(placeholder: &str) -> Self {
+        debug!(component = %"InputPrompt", "Component created");
         Self {
             text: String::new(),
             cursor_pos: 0,
@@ -51,6 +53,7 @@ impl InputPrompt {
         }
     }
 
+    /// Handle keyboard input
     /// Handle keyboard input
     pub fn handle_key(&mut self, key: KeyEvent) -> InputResult {
         match key.code {
@@ -245,6 +248,7 @@ pub struct SelectPrompt {
 impl SelectPrompt {
     /// Create a new select prompt with title and options
     pub fn new(title: &str, options: Vec<String>) -> Self {
+        debug!(component = %"SelectPrompt", "Component created");
         Self {
             options,
             selected: 0,
@@ -252,6 +256,7 @@ impl SelectPrompt {
         }
     }
 
+    /// Handle keyboard input
     /// Handle keyboard input
     pub fn handle_key(&mut self, key: KeyEvent) -> SelectResult {
         match key.code {

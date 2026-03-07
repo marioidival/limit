@@ -1,5 +1,7 @@
 // Diff View component for displaying unified diffs
 
+use tracing::debug;
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -7,7 +9,6 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
-
 /// Type of diff line
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffType {
@@ -70,6 +71,7 @@ pub struct DiffView {
 impl DiffView {
     /// Create a new empty diff view
     pub fn new() -> Self {
+        debug!(component = %"DiffView", "Component created");
         Self {
             lines: Vec::new(),
             scroll_offset: 0,
@@ -78,12 +80,14 @@ impl DiffView {
 
     /// Create a new diff view from a unified diff string
     pub fn from_diff(diff_text: &str) -> Self {
+        debug!(component = %"DiffView", "Component created");
         Self {
             lines: parse_diff(diff_text),
             scroll_offset: 0,
         }
     }
 
+    /// Set the diff content
     /// Set the diff content
     pub fn set_diff(&mut self, diff_text: &str) {
         self.lines = parse_diff(diff_text);

@@ -18,6 +18,7 @@ async-trait = "0.1"
 bytes = "1.0"
 rusqlite = "0.31"
 tiktoken-rs = "0.5"
+tracing = "0.1"
 [dev-dependencies]
 tempfile = "3.8"
 mockito = "1.2"

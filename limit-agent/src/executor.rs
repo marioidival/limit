@@ -3,6 +3,7 @@ use crate::registry::ToolRegistry;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::instrument;
 
 /// Represents a single tool call
 #[derive(Debug, Clone)]
@@ -59,6 +60,7 @@ impl ToolExecutor {
     }
 
     /// Execute multiple tool calls with conditional parallel/sequential logic
+    #[instrument(skip(self, calls))]
     pub async fn execute_tools(&self, calls: Vec<ToolCall>) -> Vec<ToolResult> {
         if calls.is_empty() {
             return Vec::new();
@@ -102,6 +104,7 @@ impl ToolExecutor {
     }
 
     /// Execute independent tool calls in parallel with concurrency limit
+    #[instrument(skip(self, calls))]
     async fn execute_parallel(&self, calls: Vec<ToolCall>) -> Vec<ToolResult> {
         if calls.is_empty() {
             return Vec::new();
@@ -134,6 +137,7 @@ impl ToolExecutor {
     }
 
     /// Execute dependent tool calls sequentially
+    #[instrument(skip(self, calls))]
     async fn execute_sequential(&self, calls: Vec<ToolCall>) -> Vec<ToolResult> {
         let mut results = Vec::new();
 

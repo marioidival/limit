@@ -11,6 +11,7 @@ use limit_llm::client::{AnthropicClient, ResponseChunk};
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use serde_json::json;
 use tokio::sync::mpsc;
+use tracing::instrument;
 
 /// Event types for streaming from agent to REPL
 #[derive(Debug, Clone)]
@@ -168,6 +169,8 @@ impl AgentBridge {
     /// * `messages` - The conversation history (will be updated in place)
     ///
     /// # Returns
+    /// The final response from the LLM or an error
+    #[instrument(skip(self, messages))]
     /// The final response from the LLM or an error
     pub async fn process_message(
         &mut self,

@@ -6,6 +6,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::pin::Pin;
 use std::time::Duration;
+use tracing::{debug, error, info, instrument, warn};
 
 pub struct AnthropicClient {
     api_key: String,
@@ -66,6 +67,7 @@ impl AnthropicClient {
         }
     }
 
+    #[instrument(skip(self, messages, tools))]
     pub async fn send(
         &self,
         messages: Vec<Message>,
@@ -80,9 +82,12 @@ impl AnthropicClient {
         let client_clone = self.client.clone();
 
         Box::pin(stream! {
+            info!("API request: model={}, max_tokens={}", self.model, self.max_tokens);
+
             let request_body = match build_request_body(&messages_cloned, &tools_cloned, &model, max_tokens) {
                 Ok(body) => body,
                 Err(e) => {
+                    error!("API error: {}", e);
                     yield Err(e);
                     return;
                 }
@@ -100,9 +105,11 @@ impl AnthropicClient {
                     }
                     Err(e) => {
                         if attempt == 2 {
+                            error!("API error: {}", e);
                             yield Err(e);
                             return;
                         }
+                        warn!("API retry: attempt={}, delay_ms={}", attempt, delay.as_millis());
                         tokio::time::sleep(delay).await;
                     }
                 }
@@ -111,6 +118,7 @@ impl AnthropicClient {
     }
 }
 
+#[instrument(skip_all)]
 async fn do_request(
     client: &Client,
     api_key: &str,
@@ -129,6 +137,8 @@ async fn do_request(
         .map_err(|e| LlmError::NetworkError(e.to_string()))?;
 
     let status = response.status();
+    debug!("API response received: status={}", status.as_u16());
+
     if status.is_client_error() || status.is_server_error() {
         let error_text = response
             .text()
@@ -136,8 +146,10 @@ async fn do_request(
             .unwrap_or_else(|_| "Unknown error".to_string());
 
         if status.as_u16() == 429 {
+            error!("API error: Rate limited");
             return Err(LlmError::ApiError(format!("Rate limited: {}", error_text)));
         }
+        error!("API error: HTTP {}: {}", status, error_text);
         return Err(LlmError::ApiError(format!(
             "HTTP {}: {}",
             status, error_text

@@ -1,5 +1,7 @@
 // Chat view component for displaying conversation messages
 
+use tracing::debug;
+
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -8,7 +10,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-
 /// Role of a message sender
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -102,12 +103,14 @@ impl Default for ChatView {
 impl ChatView {
     /// Create a new empty chat view
     pub fn new() -> Self {
+        debug!(component = %"ChatView", "Component created");
         Self {
             messages: Vec::new(),
             scroll_offset: 0,
         }
     }
 
+    /// Add a message to the chat
     /// Add a message to the chat
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);

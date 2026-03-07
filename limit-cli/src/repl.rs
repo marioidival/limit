@@ -6,6 +6,7 @@ use rustyline::history::DefaultHistory;
 use rustyline::Editor;
 use std::io::Write;
 use tokio::sync::mpsc;
+use tracing::instrument;
 
 pub struct Repl {
     reader: Editor<(), DefaultHistory>,
@@ -67,6 +68,7 @@ impl Repl {
         })
     }
 
+    #[instrument(skip(self))]
     pub fn run(&mut self) -> Result<(), CliError> {
         println!("limit-cli - Interactive REPL");
         println!("Current session: {}", self.session_id);
@@ -79,6 +81,7 @@ impl Repl {
         }
     }
 
+    #[instrument(skip(self, line))]
     fn process_line(&mut self, line: String) -> Result<(), CliError> {
         let trimmed = line.trim();
 
@@ -95,6 +98,7 @@ impl Repl {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn handle_command(&mut self, cmd: &str) -> Result<(), CliError> {
         match cmd {
             "exit" => {

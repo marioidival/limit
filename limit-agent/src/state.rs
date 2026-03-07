@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use tracing::instrument;
 
 const STATE_DIR: &str = ".limit";
 const STATE_FILE: &str = "agent-state.bin";
@@ -64,6 +65,7 @@ impl AgentState {
         PathBuf::from(STATE_DIR).join(STATE_FILE)
     }
 
+    #[instrument(skip(self))]
     pub fn save_state(&self) -> Result<(), AgentError> {
         let path = Self::state_path();
 
@@ -78,6 +80,7 @@ impl AgentState {
         Ok(())
     }
 
+    #[instrument]
     pub fn load_state() -> Result<Self, AgentError> {
         let path = Self::state_path();
 
@@ -92,6 +95,7 @@ impl AgentState {
         Ok(_state)
     }
 
+    #[instrument(skip(self))]
     pub fn increment_iteration(&mut self) -> Result<(), AgentError> {
         self.iteration += 1;
 
@@ -102,6 +106,7 @@ impl AgentState {
         Ok(())
     }
 
+    #[instrument(skip(self, args))]
     pub fn check_loop_detection(
         &mut self,
         tool_name: &str,
