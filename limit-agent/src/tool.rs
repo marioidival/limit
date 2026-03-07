@@ -60,7 +60,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_echo_tool_default() {
-        let tool = EchoTool::default();
+        let tool = EchoTool;
         let input = serde_json::json!("test");
 
         let result = tool.execute(input.clone()).await.unwrap();

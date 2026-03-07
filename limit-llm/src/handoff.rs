@@ -204,7 +204,7 @@ mod tests {
             },
         ];
         let compacted = handoff.compact_messages(&messages, 500);
-        assert!(compacted.len() >= 1);
+        assert!(!compacted.is_empty());
         if compacted.len() > 1 {
             assert!(matches!(compacted[0].role, Role::System));
         }
@@ -316,7 +316,7 @@ mod tests {
         let tolerance = (expected as f64 * 0.10) as i32;
 
         assert!(
-            (counted as i32 - expected).abs() <= tolerance as i32,
+            (counted as i32 - expected).abs() <= tolerance,
             "Token count {} not within {}% of expected {}",
             counted,
             10,

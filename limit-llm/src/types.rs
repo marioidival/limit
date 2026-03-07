@@ -90,7 +90,7 @@ mod tests {
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: Message = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.tool_calls.is_some(), true);
+        assert!(deserialized.tool_calls.is_some());
     }
 
     #[test]

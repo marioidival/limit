@@ -14,18 +14,15 @@ use tokio::sync::mpsc;
 
 /// TUI state for displaying agent events
 #[derive(Debug, Clone, PartialEq)]
+#[derive(Default)]
 pub enum TuiState {
+    #[default]
     Idle,
     Thinking,
     ToolExecuting { name: String, progress: f32 },
     Error(String),
 }
 
-impl Default for TuiState {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 /// Bridge connecting limit-cli REPL to limit-tui components
 ///
@@ -113,7 +110,7 @@ impl TuiBridge {
                     let chat_msg = Message::system(format!("Tool: {} ({})", name, args));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
-                AgentEvent::ToolComplete { name, result } => {
+                AgentEvent::ToolComplete { name: _, result } => {
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Update progress bar to complete
                     self.progress_bar.lock().unwrap().set_value(1.0);
@@ -177,7 +174,7 @@ impl TuiApp {
     pub fn new(tui_bridge: TuiBridge) -> Result<Self, CliError> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal = Terminal::new(backend)
-            .map_err(|e| CliError::IoError(io::Error::new(io::ErrorKind::Other, e)))?;
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         Ok(Self {
             tui_bridge,
@@ -189,12 +186,12 @@ impl TuiApp {
     /// Run the TUI event loop
     pub fn run(&mut self) -> Result<(), CliError> {
         crossterm::terminal::enable_raw_mode()
-            .map_err(|e| CliError::IoError(io::Error::new(io::ErrorKind::Other, e)))?;
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         let result = self.run_inner();
 
         crossterm::terminal::disable_raw_mode()
-            .map_err(|e| CliError::IoError(io::Error::new(io::ErrorKind::Other, e)))?;
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         result
     }
@@ -218,7 +215,7 @@ impl TuiApp {
 
                 self.terminal
                     .draw(|f| Self::draw_ui(f, &chat_view, &progress_bar, &spinner, state))
-                    .map_err(|e| CliError::IoError(io::Error::new(io::ErrorKind::Other, e)))?;
+                    .map_err(|e| CliError::IoError(io::Error::other(e)))?;
             }
 
             // Check for user input (simplified - in a real implementation, we'd use crossterm events)

@@ -1,14 +1,14 @@
 // Diff View Demo
 
 use crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyCode, KeyEvent},
+    event::{self, DisableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use limit_tui::components::DiffView;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout},
     prelude::Widget,
     widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
@@ -60,16 +60,14 @@ fn main() -> io::Result<()> {
     let mut diff_view = DiffView::from_diff(diff_text);
 
     // Help text
-    let help_text = vec![
-        "Diff View Demo - Keyboard Controls:",
+    let help_text = ["Diff View Demo - Keyboard Controls:",
         "↑/k - Scroll Up",
         "↓/j - Scroll Down",
         "Page Up - Previous Page",
         "Page Down - Next Page",
         "Home - Go to Top",
         "End - Go to Bottom",
-        "q/ESC - Quit",
-    ];
+        "q/ESC - Quit"];
 
     // Event loop
     loop {

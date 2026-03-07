@@ -170,7 +170,7 @@ impl FlexboxLayout {
 
     /// Layout children based on flex properties
     fn layout_children(
-        base_sizes: &[Rect],
+        _base_sizes: &[Rect],
         constraints: Rect,
         style: &FlexStyle,
         child_count: usize,
@@ -196,7 +196,7 @@ impl FlexboxLayout {
         let available_space = main_axis_size.saturating_sub(total_gap);
 
         // Distribute main axis space
-        let mut main_positions =
+        let main_positions =
             Self::distribute_main_axis(available_space, style, child_count, main_axis_size);
 
         // Calculate cross axis positions
@@ -728,7 +728,9 @@ mod tests {
 
         assert_eq!(results.len(), 3);
 
-        // First child should have offset > 0
-        assert!(results[0].x >= 0);
-    }
+        // First child should exist and have valid position
+        assert!(!results.is_empty());
+        assert!(results[0].width > 0);
+}
+
 }

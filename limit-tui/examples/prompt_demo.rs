@@ -18,7 +18,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Wrap},
     Terminal,
 };
-use std::io::{self, Stdout};
+use std::io::{self};
 
 /// Demo state
 struct DemoState {

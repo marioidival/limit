@@ -135,7 +135,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_bash_tool_default() {
-        let tool = BashTool::default();
+        let tool = BashTool;
         assert_eq!(tool.name(), "bash");
     }
 

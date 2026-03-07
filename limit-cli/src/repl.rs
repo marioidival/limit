@@ -128,7 +128,7 @@ impl Repl {
         // If agent_bridge is available, use it to process the message
         if let Some(ref mut bridge) = self.agent_bridge {
             let rt = tokio::runtime::Runtime::new()
-                .map_err(|e| CliError::IoError(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+                .map_err(|e| CliError::IoError(std::io::Error::other(e)))?;
 
             let result = rt.block_on(async {
                 let _messages_clone = self.messages.clone();

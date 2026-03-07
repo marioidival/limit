@@ -17,10 +17,10 @@ use crossterm::{
 use limit_tui::components::{ProgressBar, Spinner};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::{io, time::{Duration, Instant}};

@@ -355,7 +355,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_grep_tool_default() {
-        let tool = GrepTool::default();
+        let tool = GrepTool;
         assert_eq!(tool.name(), "grep");
     }
 
@@ -404,7 +404,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ast_grep_tool_default() {
-        let tool = AstGrepTool::default();
+        let tool = AstGrepTool;
         assert_eq!(tool.name(), "ast_grep");
     }
 
@@ -544,7 +544,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lsp_tool_default() {
-        let tool = LspTool::default();
+        let tool = LspTool;
         assert_eq!(tool.name(), "lsp");
     }
 
@@ -629,9 +629,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_all_tools_implement_default() {
-        let _grep = GrepTool::default();
-        let _ast_grep = AstGrepTool::default();
-        let _lsp = LspTool::default();
+        let _grep = GrepTool;
+        let _ast_grep = AstGrepTool;
+        let _lsp = LspTool;
     }
 
     #[tokio::test]

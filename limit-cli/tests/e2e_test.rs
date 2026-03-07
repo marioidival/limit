@@ -10,7 +10,6 @@
 
 use limit_cli::{AgentBridge, SessionManager, TuiBridge, TuiState};
 use limit_llm::Config as LlmConfig;
-use std::io::Write;
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;

@@ -6,6 +6,12 @@ pub struct MarkdownRenderer {
     width: usize,
 }
 
+impl Default for MarkdownRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MarkdownRenderer {
     pub fn new() -> Self {
         let width = crossterm::terminal::size()

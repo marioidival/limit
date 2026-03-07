@@ -321,7 +321,7 @@ mod tests {
         // Verify that something was rendered by checking the buffer
         let _cell = buffer.cell((0, 0));
         // The buffer should have been modified
-        let cell = buffer.get(0, 0);
+        let _cell = buffer.get(0, 0);
         // The buffer should have been modified
         assert!(!buffer.content.is_empty());
     }

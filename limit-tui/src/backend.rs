@@ -187,7 +187,6 @@ mod tests {
             Ok(_) => {}, // Terminal created successfully
             Err(_) => {
                 // Expected in headless environments - skip test silently
-                return;
             }
         }
     }

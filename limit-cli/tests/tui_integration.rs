@@ -206,7 +206,7 @@ fn test_tui_bridge_content_streaming() {
     let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
 
     // Send multiple content chunks
-    let chunks = vec!["Hello", " ", "World", "!"];
+    let chunks = ["Hello", " ", "World", "!"];
     for chunk in chunks.iter() {
         tx.send(limit_cli::AgentEvent::ContentChunk(chunk.to_string()))
             .unwrap();
@@ -228,7 +228,7 @@ fn test_tui_bridge_is_ready() {
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (_tx, rx) = mpsc::unbounded_channel();
 
     let tui_bridge = TuiBridge::new(agent_bridge, rx);
 
@@ -246,7 +246,7 @@ fn test_tui_bridge_get_tool_definitions() {
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (_tx, rx) = mpsc::unbounded_channel();
 
     let tui_bridge = TuiBridge::new(agent_bridge, rx);
 
@@ -265,7 +265,7 @@ fn test_tui_bridge_tool_schema() {
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (_tx, rx) = mpsc::unbounded_channel();
 
     let tui_bridge = TuiBridge::new(agent_bridge, rx);
 
@@ -291,7 +291,7 @@ fn test_tui_bridge_with_good_config() {
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (_tx, rx) = mpsc::unbounded_channel();
 
     let tui_bridge = TuiBridge::new(agent_bridge, rx);
 
@@ -318,7 +318,7 @@ fn test_tui_bridge_from_string_config() {
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (_tx, rx) = mpsc::unbounded_channel();
 
     let tui_bridge = TuiBridge::new(agent_bridge, rx);
 

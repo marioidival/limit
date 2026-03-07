@@ -120,7 +120,7 @@ pub fn diff(old: &VNode, new: &VNode) -> Vec<Patch> {
 
             // Children diff
             let old_len = old_children.len();
-            let new_len = new_children.len();
+            let _new_len = new_children.len();
 
             // Find common prefix
             let common_prefix_len = old_children
@@ -130,8 +130,8 @@ pub fn diff(old: &VNode, new: &VNode) -> Vec<Patch> {
                 .count();
 
             // Process additions
-            for i in common_prefix_len..new_len {
-                patches.push(Patch::InsertChild(i, new_children[i].clone()));
+            for (i, child) in new_children.iter().enumerate().skip(common_prefix_len) {
+                patches.push(Patch::InsertChild(i, child.clone()));
             }
 
             // Process removals
@@ -176,6 +176,23 @@ pub fn apply(node: &mut VNode, patches: Vec<Patch>) {
                     }
                 }
             }
+        }
+    }
+}
+
+// Helper methods for VNode
+impl VNode {
+    pub fn children(&self) -> Option<&Vec<VNode>> {
+        match self {
+            VNode::Element { children, .. } => Some(children),
+            _ => None,
+        }
+    }
+
+    pub fn attrs(&self) -> Option<&HashMap<String, String>> {
+        match self {
+            VNode::Element { attrs, .. } => Some(attrs),
+            _ => None,
         }
     }
 }
@@ -344,22 +361,5 @@ mod tests {
         let attrs = node.attrs().unwrap();
         assert!(!attrs.contains_key("id"));
         assert_eq!(attrs.get("class"), Some(&"test".to_string()));
-    }
-}
-
-// Helper methods for VNode
-impl VNode {
-    pub fn children(&self) -> Option<&Vec<VNode>> {
-        match self {
-            VNode::Element { children, .. } => Some(children),
-            _ => None,
-        }
-    }
-
-    pub fn attrs(&self) -> Option<&HashMap<String, String>> {
-        match self {
-            VNode::Element { attrs, .. } => Some(attrs),
-            _ => None,
-        }
     }
 }

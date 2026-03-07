@@ -2,7 +2,9 @@
   "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/limit-code-agent.md",
   "started_at": "2026-03-06T23:30:30.801Z",
   "session_ids": [
-    "ses_33aa77acdffeuYvRIkJ1F8FSOp"
+    "ses_33aa77acdffeuYvRIkJ1F8FSOp",
+    "ses_33a12f6efffevCZlxGAlVuXpga",
+    "ses_339e423f3ffe0A5h03nqyVvtLc"
   ],
   "plan_name": "limit-code-agent",
   "agent": "atlas"

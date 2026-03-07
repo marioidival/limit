@@ -485,7 +485,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_git_status_tool_default() {
-        let tool = GitStatusTool::default();
+        let tool = GitStatusTool;
         assert_eq!(tool.name(), "git_status");
     }
 
@@ -684,13 +684,13 @@ mod tests {
     #[tokio::test]
     async fn test_all_tools_implement_default() {
         // Verify all tools implement Default trait
-        let _status = GitStatusTool::default();
-        let _diff = GitDiffTool::default();
-        let _log = GitLogTool::default();
-        let _add = GitAddTool::default();
-        let _commit = GitCommitTool::default();
-        let _push = GitPushTool::default();
-        let _pull = GitPullTool::default();
-        let _clone = GitCloneTool::default();
+        let _status = GitStatusTool;
+        let _diff = GitDiffTool;
+        let _log = GitLogTool;
+        let _add = GitAddTool;
+        let _commit = GitCommitTool;
+        let _push = GitPushTool;
+        let _pull = GitPullTool;
+        let _clone = GitCloneTool;
     }
 }
