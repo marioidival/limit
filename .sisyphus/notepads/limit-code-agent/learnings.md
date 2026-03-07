@@ -124,3 +124,58 @@
 - limit-llm/Cargo.toml: Added reqwest, tokio, async-stream, futures, async-trait, bytes, mockito
 - limit-llm/src/client.rs: Created (453 lines)
 - limit-llm/src/lib.rs: Added pub mod client, pub use client::{AnthropicClient, ResponseChunk}
+
+## Task 7: SQLite Tracking Implementation
+
+### Implementation Notes
+- Added rusqlite = "0.31" to limit-llm/Cargo.toml
+- Created limit-llm/src/tracking.rs with TrackingDb and UsageStats
+- Database location: ~/.limit/tracking.db (created automatically)
+- UsageStats struct: total_requests, total_tokens, total_cost, avg_duration_ms
+- TrackingDb struct wraps Arc<Mutex<Connection>> for thread-safe concurrent access
+- track_request() method: logs model, input_tokens, output_tokens, cost, duration_ms
+- get_usage_stats(days: u32) method: retrieves stats for last N days
+- Auto-creates tables on first run with CREATE TABLE IF NOT EXISTS
+- Index on timestamp for efficient time-range queries
+- PRAGMA busy_timeout set to 5 seconds for concurrent access handling
+
+### Database Schema
+```sql
+CREATE TABLE IF NOT EXISTS requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost REAL NOT NULL,
+    duration_ms INTEGER NOT NULL
+)
+```
+
+### Tests
+- test_create_tables: Verifies table initialization
+- test_track_request: Inserts 2 requests, validates count
+- test_get_usage_stats: 3 requests, validates aggregation (675 tokens, 0.008 cost)
+- test_empty_usage_stats: Validates default values (all zeros)
+- test_concurrent_access: 2 threads inserting 10 requests each (20 total)
+- All 22 tests pass (18 existing + 4 new tracking tests)
+
+### Success Factors
+- Arc<Mutex<Connection>> for thread-safe concurrent access (Connection is not Send/Sync)
+- rusqlite::params! macro for mixed-type parameter binding (strings + numbers)
+- Proper error handling with lock acquisition failures
+- Test database uses tempfile for isolation
+- No caching, request queuing, or compaction logic (as required)
+- Timestamp calculations use SystemTime::now() - days * 86400 seconds
+
+### Code Quality
+- cargo test --package limit-llm: 22 tests passed, 0 failed
+- cargo clippy --package limit-llm: No warnings
+- Clean separation: TrackingDb (public API), tests (private helpers)
+- SQLite busy_timeout prevents lock contention in concurrent access
+- Mutex ensures data consistency during concurrent inserts/queries
+
+### Files Modified
+- limit-llm/Cargo.toml: Added rusqlite = "0.31"
+- limit-llm/src/tracking.rs: Created (299 lines)
+- limit-llm/src/lib.rs: Added pub mod tracking

@@ -3,6 +3,7 @@
 pub mod config;
 pub mod client;
 pub mod error;
+pub mod tracking;
 pub mod types;
 
 
