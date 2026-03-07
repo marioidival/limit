@@ -177,10 +177,18 @@ impl AgentBridge {
         user_input: &str,
         messages: &mut Vec<Message>,
     ) -> Result<String, CliError> {
+        // System instructions prepended to first user message (z.ai doesn't support system role)
+        let system_instructions = "[Instructions: Limit tool calls to 3-4 iterations. After gathering sufficient information, provide a clear response. Do not explore indefinitely.]\n\n";
+
         // Add user message to history
+        let content = if messages.is_empty() {
+            format!("{}{}", system_instructions, user_input)
+        } else {
+            user_input.to_string()
+        };
         let user_message = Message {
             role: Role::User,
-            content: user_input.to_string(),
+            content,
             tool_calls: None,
         };
         messages.push(user_message.clone());

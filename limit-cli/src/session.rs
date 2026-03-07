@@ -209,7 +209,13 @@ impl SessionManager {
         )
         .map_err(|e| CliError::ConfigError(format!("Failed to update last_accessed: {}", e)))?;
 
-        let messages: Vec<Message> = state.messages.into_iter().map(|m| m.into()).collect();
+        // Filter out system messages - z.ai API doesn't support system role
+        let messages: Vec<Message> = state
+            .messages
+            .into_iter()
+            .map(Message::from)
+            .filter(|m| m.role != limit_llm::Role::System)
+            .collect();
 
         Ok(messages)
     }

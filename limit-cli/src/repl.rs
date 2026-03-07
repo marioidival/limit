@@ -140,9 +140,8 @@ impl Repl {
                 .map_err(|e| CliError::IoError(std::io::Error::other(e)))?;
 
             let result = rt.block_on(async {
-                let _messages_clone = self.messages.clone();
                 bridge
-                    .process_message(line, &mut self.messages.clone())
+                    .process_message(line, &mut self.messages)
                     .await
             });
 
