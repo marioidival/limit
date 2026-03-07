@@ -101,7 +101,8 @@ async fn do_request(
     api_key: &str,
     base_url: &str,
     request_body: &Value,
-) -> Result<Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + 'static>>, LlmError> {
+) -> Result<Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + 'static>>, LlmError>
+{
     let response = client
         .post(base_url)
         .header("x-api-key", api_key)
@@ -118,11 +119,14 @@ async fn do_request(
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
-        
+
         if status.as_u16() == 429 {
             return Err(LlmError::ApiError(format!("Rate limited: {}", error_text)));
         }
-        return Err(LlmError::ApiError(format!("HTTP {}: {}", status, error_text)));
+        return Err(LlmError::ApiError(format!(
+            "HTTP {}: {}",
+            status, error_text
+        )));
     }
 
     let byte_stream = response.bytes_stream();
@@ -163,7 +167,7 @@ fn parse_sse_stream(
                     continue;
                 }
             };
-            
+
             let text = String::from_utf8_lossy(&chunk);
             buffer.push_str(&text);
 
@@ -351,7 +355,9 @@ mod tests {
             .with_chunked_body(|w| {
                 // Sleep to simulate slow response
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                w.write_all(b"data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"Hello\"}}\n\n")?;
+                w.write_all(
+                    b"data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"Hello\"}}\n\n",
+                )?;
                 Ok::<(), std::io::Error>(())
             })
             .create_async()

@@ -1,0 +1,199 @@
+use crate::error::LlmError;
+use crate::types::Message;
+use bincode::{deserialize, serialize};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
+
+const CURRENT_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedState {
+    version: u32,
+    messages: Vec<PersistedMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedMessage {
+    role: PersistedRole,
+    content: String,
+    tool_calls: Option<Vec<crate::types::ToolCall>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+enum PersistedRole {
+    User,
+    Assistant,
+    System,
+}
+
+impl From<PersistedRole> for crate::types::Role {
+    fn from(role: PersistedRole) -> Self {
+        match role {
+            PersistedRole::User => crate::types::Role::User,
+            PersistedRole::Assistant => crate::types::Role::Assistant,
+            PersistedRole::System => crate::types::Role::System,
+        }
+    }
+}
+
+impl From<crate::types::Role> for PersistedRole {
+    fn from(role: crate::types::Role) -> Self {
+        match role {
+            crate::types::Role::User => PersistedRole::User,
+            crate::types::Role::Assistant => PersistedRole::Assistant,
+            crate::types::Role::System => PersistedRole::System,
+        }
+    }
+}
+
+impl From<PersistedMessage> for Message {
+    fn from(msg: PersistedMessage) -> Self {
+        Message {
+            role: msg.role.into(),
+            content: msg.content,
+            tool_calls: msg.tool_calls,
+        }
+    }
+}
+
+impl From<Message> for PersistedMessage {
+    fn from(msg: Message) -> Self {
+        PersistedMessage {
+            role: msg.role.into(),
+            content: msg.content,
+            tool_calls: msg.tool_calls,
+        }
+    }
+}
+
+pub struct StatePersistence {
+    file_path: std::path::PathBuf,
+}
+
+impl StatePersistence {
+    pub fn new<P: AsRef<Path>>(file_path: P) -> Self {
+        Self {
+            file_path: file_path.as_ref().to_path_buf(),
+        }
+    }
+
+    pub fn save(&self, messages: &[Message]) -> Result<(), LlmError> {
+        let persisted_messages: Vec<PersistedMessage> =
+            messages.iter().cloned().map(|m| m.into()).collect();
+
+        let state = PersistedState {
+            version: CURRENT_VERSION,
+            messages: persisted_messages,
+        };
+
+        let serialized = serialize(&state)
+            .map_err(|e| LlmError::PersistenceError(format!("Failed to serialize state: {}", e)))?;
+
+        fs::write(&self.file_path, serialized)
+            .map_err(|e| LlmError::PersistenceError(format!("Failed to write file: {}", e)))?;
+
+        Ok(())
+    }
+
+    pub fn load(&self) -> Result<Vec<Message>, LlmError> {
+        let data = match fs::read(&self.file_path) {
+            Ok(data) => data,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(e) => {
+                return Err(LlmError::PersistenceError(format!(
+                    "Failed to read file: {}",
+                    e
+                )))
+            }
+        };
+
+        let state: PersistedState = deserialize(&data).map_err(|e| {
+            LlmError::PersistenceError(format!("Failed to deserialize state: {}", e))
+        })?;
+
+        if state.version != CURRENT_VERSION {
+            return Err(LlmError::PersistenceError(format!(
+                "Version mismatch: expected {}, found {}",
+                CURRENT_VERSION, state.version
+            )));
+        }
+
+        let messages: Vec<Message> = state.messages.into_iter().map(|m| m.into()).collect();
+
+        Ok(messages)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Role;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_save_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_state.bin");
+
+        let persistence = StatePersistence::new(&file_path);
+
+        let messages = vec![
+            Message {
+                role: Role::User,
+                content: "Hello".to_string(),
+                tool_calls: None,
+            },
+            Message {
+                role: Role::Assistant,
+                content: "Hi there!".to_string(),
+                tool_calls: None,
+            },
+        ];
+
+        persistence.save(&messages).unwrap();
+
+        let loaded = persistence.load().unwrap();
+
+        assert_eq!(loaded.len(), messages.len());
+        assert_eq!(loaded[0].content, messages[0].content);
+        assert_eq!(loaded[1].content, messages[1].content);
+    }
+
+    #[test]
+    fn test_load_empty_file_returns_empty() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("nonexistent.bin");
+
+        let persistence = StatePersistence::new(&file_path);
+
+        let loaded = persistence.load().unwrap();
+
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn test_load_corrupted_file_returns_error() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("corrupted.bin");
+
+        std::fs::write(&file_path, b"invalid binary data").unwrap();
+
+        let persistence = StatePersistence::new(&file_path);
+
+        let result = persistence.load();
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_role_conversion() {
+        assert_eq!(PersistedRole::User, Role::User.into());
+        assert_eq!(PersistedRole::Assistant, Role::Assistant.into());
+        assert_eq!(PersistedRole::System, Role::System.into());
+
+        assert_eq!(Role::User, PersistedRole::User.into());
+        assert_eq!(Role::Assistant, PersistedRole::Assistant.into());
+        assert_eq!(Role::System, PersistedRole::System.into());
+    }
+}
