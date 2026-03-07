@@ -1,0 +1,4 @@
+QA Task 9: Dev mode shows debug logs - RUST_LOG=debug cargo run --package limit-cli 2>&1 | head -20
+Expected: Debug logs present
+
+zsh:1: command not found: timeout
