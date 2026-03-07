@@ -71,9 +71,8 @@ impl AgentState {
             fs::create_dir_all(parent)?;
         }
 
-        let encoded = serialize(self).map_err(|e| {
-            AgentError::BincodeError(format!("Serialization failed: {:?}", e))
-        })?;
+        let encoded = serialize(self)
+            .map_err(|e| AgentError::BincodeError(format!("Serialization failed: {:?}", e)))?;
         fs::write(&path, encoded)?;
 
         Ok(())
@@ -87,9 +86,8 @@ impl AgentState {
         }
 
         let encoded = fs::read(&path)?;
-        let _state: AgentState = deserialize(&encoded).map_err(|e| {
-            AgentError::BincodeError(format!("Deserialization failed: {:?}", e))
-        })?;
+        let _state: AgentState = deserialize(&encoded)
+            .map_err(|e| AgentError::BincodeError(format!("Deserialization failed: {:?}", e)))?;
 
         Ok(_state)
     }
@@ -143,6 +141,7 @@ impl AgentState {
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     fn create_test_message() -> Message {
         Message {
             role: limit_llm::types::Role::User,
@@ -244,6 +243,8 @@ mod tests {
 
         state.check_loop_detection("test_tool", &args2).unwrap();
     }
+
+    #[test]
     fn test_save_and_load_state() -> Result<(), AgentError> {
         let path = AgentState::state_path();
         let _ = fs::remove_file(&path);

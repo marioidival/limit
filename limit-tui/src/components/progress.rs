@@ -10,7 +10,6 @@ use ratatui::{
     widgets::{Gauge, Paragraph, Widget},
 };
 
-
 /// Default spinner animation frames
 const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -320,8 +319,6 @@ mod tests {
 
         // Verify that something was rendered by checking the buffer
         let _cell = buffer.cell((0, 0));
-        // The buffer should have been modified
-        let _cell = buffer.get(0, 0);
         // The buffer should have been modified
         assert!(!buffer.content.is_empty());
     }

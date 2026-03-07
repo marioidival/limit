@@ -185,8 +185,6 @@ impl Widget for DiffView {
                 format!("{:>line_num_width$} ", "")
             } else if old_line_str.is_empty() {
                 format!("{:>line_num_width$} ", new_line_str)
-            } else if new_line_str.is_empty() {
-                format!("{:>line_num_width$} ", old_line_str)
             } else {
                 format!("{:>line_num_width$} ", old_line_str)
             };
@@ -218,12 +216,11 @@ impl Widget for DiffView {
                 content_start_x,
                 y,
                 &text_line,
-                (area.width - line_num_width as u16).max(0),
+                area.width - line_num_width as u16,
             );
         }
     }
 }
-
 
 impl Widget for &DiffView {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -257,7 +254,7 @@ pub fn parse_diff(diff_text: &str) -> Vec<DiffLine> {
             // Parse hunk header to get starting line numbers
             // Format: @@ -old_start,old_count +new_start,new_count @@
             if let Some(hunk_part) = line.split("@@").nth(1) {
-                let parts: Vec<&str> = hunk_part.trim().split_whitespace().collect();
+                let parts: Vec<&str> = hunk_part.split_whitespace().collect();
                 for part in parts {
                     if part.starts_with('-') {
                         // Old file start line
@@ -274,9 +271,9 @@ pub fn parse_diff(diff_text: &str) -> Vec<DiffLine> {
             }
         } else if in_hunk {
             // Hunk content
-            if line.starts_with('+') {
+            if let Some(stripped) = line.strip_prefix('+') {
                 // Added line
-                let content = line[1..].to_string();
+                let content = stripped.to_string();
                 let _line_num = new_line.map(|n| {
                     n + lines
                         .iter()
@@ -287,16 +284,16 @@ pub fn parse_diff(diff_text: &str) -> Vec<DiffLine> {
                     DiffLine::new(DiffType::Addition, content).with_new_line(new_line.unwrap_or(0)),
                 );
                 new_line = new_line.map(|n| n + 1);
-            } else if line.starts_with('-') {
+            } else if let Some(stripped) = line.strip_prefix('-') {
                 // Removed line
-                let content = line[1..].to_string();
+                let content = stripped.to_string();
                 lines.push(
                     DiffLine::new(DiffType::Deletion, content).with_old_line(old_line.unwrap_or(0)),
                 );
                 old_line = old_line.map(|n| n + 1);
-            } else if line.starts_with(' ') {
+            } else if let Some(stripped) = line.strip_prefix(' ') {
                 // Context line
-                let content = line[1..].to_string();
+                let content = stripped.to_string();
                 lines.push(
                     DiffLine::new(DiffType::Context, content)
                         .with_old_line(old_line.unwrap_or(0))

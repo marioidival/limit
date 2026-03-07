@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Main loop
     loop {
         terminal.draw(|f| {
-            let size = f.size();
+            let size = f.area();
 
             // Create layout
             let chunks = Layout::default()

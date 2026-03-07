@@ -11,7 +11,7 @@ impl DockerSandbox {
     /// Check if Docker daemon is available
     pub async fn check_docker_available() -> bool {
         if let Ok(docker) = Docker::connect_with_defaults() {
-            if let Ok(_) = docker.ping().await {
+            if docker.ping().await.is_ok() {
                 return true;
             }
         }
@@ -24,7 +24,8 @@ impl DockerSandbox {
             .map_err(|e| AgentError::SandboxError(format!("Failed to connect to Docker: {}", e)))?;
 
         // Verify connection
-        docker.ping()
+        docker
+            .ping()
             .await
             .map_err(|e| AgentError::SandboxError(format!("Docker ping failed: {}", e)))?;
 
@@ -40,8 +41,9 @@ impl DockerSandbox {
             image
         };
 
-        let cwd = std::env::current_dir()
-            .map_err(|e| AgentError::SandboxError(format!("Failed to get current directory: {}", e)))?;
+        let cwd = std::env::current_dir().map_err(|e| {
+            AgentError::SandboxError(format!("Failed to get current directory: {}", e))
+        })?;
 
         let config = Config {
             image: Some(image_name.to_string()),
@@ -72,8 +74,6 @@ impl DockerSandbox {
 
         Ok(container.id)
     }
-
-    /// Execute a command in the container
 
     /// Execute a command in the container
     pub async fn execute_in_container(
@@ -112,13 +112,15 @@ impl DockerSandbox {
         let output = match result {
             bollard::exec::StartExecResults::Attached { output, .. } => {
                 let mut full_output = Vec::new();
-                
+
                 let mut stream = output;
                 while let Some(result) = stream.next().await {
-                    let chunk = result.map_err(|e| AgentError::SandboxError(format!("Failed to read output: {}", e)))?;
+                    let chunk = result.map_err(|e| {
+                        AgentError::SandboxError(format!("Failed to read output: {}", e))
+                    })?;
                     full_output.extend_from_slice(&chunk.into_bytes());
                 }
-                
+
                 String::from_utf8_lossy(&full_output).to_string()
             }
             bollard::exec::StartExecResults::Detached => String::new(),
@@ -145,7 +147,10 @@ impl DockerSandbox {
             ..Default::default()
         };
 
-        let _ = self.docker.remove_container(container, Some(remove_options)).await;
+        let _ = self
+            .docker
+            .remove_container(container, Some(remove_options))
+            .await;
     }
 }
 

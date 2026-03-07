@@ -13,20 +13,22 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// TUI state for displaying agent events
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum TuiState {
     #[default]
     Idle,
     Thinking,
-    ToolExecuting { name: String, progress: f32 },
+    ToolExecuting {
+        name: String,
+        progress: f32,
+    },
     Error(String),
 }
-
 
 /// Bridge connecting limit-cli REPL to limit-tui components
 ///
 /// This struct manages the TUI rendering and event handling for the agent.
+#[allow(dead_code)]
 pub struct TuiBridge {
     /// Agent bridge for processing messages
     agent_bridge: AgentBridge,
@@ -42,6 +44,7 @@ pub struct TuiBridge {
     spinner: Arc<Mutex<Spinner>>,
 }
 
+#[allow(dead_code)]
 impl TuiBridge {
     /// Create a new TuiBridge with the given agent bridge and event channel
     ///
@@ -154,15 +157,15 @@ impl TuiBridge {
     }
 }
 
-
-
 /// TUI Application for running the limit CLI in a terminal UI
+#[allow(dead_code)]
 pub struct TuiApp {
     tui_bridge: TuiBridge,
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     running: bool,
 }
 
+#[allow(dead_code)]
 impl TuiApp {
     /// Create a new TUI application
     ///
@@ -173,8 +176,8 @@ impl TuiApp {
     /// A new TuiApp instance or an error
     pub fn new(tui_bridge: TuiBridge) -> Result<Self, CliError> {
         let backend = CrosstermBackend::new(io::stdout());
-        let terminal = Terminal::new(backend)
-            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+        let terminal =
+            Terminal::new(backend).map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         Ok(Self {
             tui_bridge,
