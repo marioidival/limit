@@ -1,4 +1,4 @@
-// Prompt Demo Example
+#![allow(clippy::all)]
 //
 // Run with: cargo run --package limit-tui --example prompt_demo
 //

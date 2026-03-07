@@ -1,4 +1,4 @@
-// Progress Indicators Demo
+#![allow(clippy::all)]
 //
 // Run with: cargo run --package limit-tui --example progress_demo
 //
