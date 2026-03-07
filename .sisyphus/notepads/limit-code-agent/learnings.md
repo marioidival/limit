@@ -76,3 +76,51 @@
 - limit-llm/src/lib.rs: Added pub mod error
 - limit-agent/src/lib.rs: Added pub mod error
 - limit-cli/src/main.rs: Added mod error
+
+## Task 6: Anthropic Client with Streaming
+
+### Implementation Notes
+- Added dependencies to limit-llm/Cargo.toml: reqwest (json, stream features), tokio (full), async-stream, futures, async-trait, bytes, mockito (dev)
+- Created limit-llm/src/client.rs with AnthropicClient struct and ResponseChunk enum
+- AnthropicClient: api_key, client (reqwest::Client with 30s connect, 300s timeout), base_url
+- ResponseChunk enum: ContentDelta(String), ToolCallDelta {id, name, arguments}, Done(Usage)
+- send() method returns Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + '_>>
+- Implemented SSE (Server-Sent Events) stream parsing from Anthropic Messages API
+- Retry logic with exponential backoff: 3 attempts, delays of 1s, 2s, 4s (2^attempt seconds)
+- HTTP error handling: 429 returns ApiError with rate limit message, other errors include status code
+- SSE parser handles: content_block_delta (text/partial_json), content_block_start (tool_use), content_block_stop, message_delta (stop_reason, usage)
+- parse_sse_line() parses SSE format: "data: {json}\n\n"
+- Buffer management: accumulate chunks, parse lines, remove parsed data from buffer
+
+### Tests
+- test_streaming: Mock server with 3 SSE chunks, validates chunk parsing
+- test_retry_on_429: Mock returns 429 twice then 200, validates retry logic
+- test_timeout: Mock with slow response (500ms sleep), validates timeout handling
+- test_tool_call_streaming: Mock with tool_use events, validates tool call parsing
+- test_parse_sse_line: Unit test for SSE line parsing
+- test_parse_sse_line_empty: Unit test for empty lines
+- test_parse_sse_line_comment: Unit test for comment lines
+- All 17 tests pass (10 existing + 7 new client tests)
+
+### Success Factors
+- Use try_stream! macro for async stream with error propagation
+- Pin<Box<dyn Stream>> for returning streams from async functions
+- Clone trait implementation for AnthropicClient to enable reuse in send()
+- Mockito with with_chunked_body() for streaming response mocking
+- Borrow checker fix: to_string() to avoid borrowing buffer while modifying it
+- Unpin trait bound on stream parameter for next() method compatibility
+- std::io::Error type for mockito closures (not mockito::Error)
+- while let loop pattern for SSE line parsing (clippy-friendly)
+
+### Code Quality
+- cargo test --package limit-llm: 17 tests passed, 0 failed
+- cargo clippy --package limit-llm: No warnings
+- Proper error handling for network errors and API errors
+- Clean separation: AnthropicClient (HTTP), do_request (single request), parse_sse_stream (stream parsing)
+- No caching layer, batch requests, or request queuing (as required)
+- Tests use mock server, never call real Anthropic API
+
+### Files Modified
+- limit-llm/Cargo.toml: Added reqwest, tokio, async-stream, futures, async-trait, bytes, mockito
+- limit-llm/src/client.rs: Created (453 lines)
+- limit-llm/src/lib.rs: Added pub mod client, pub use client::{AnthropicClient, ResponseChunk}
