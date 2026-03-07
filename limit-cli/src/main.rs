@@ -1,6 +1,7 @@
 mod error;
 mod repl;
 mod tools;
+mod render;
 
 fn main() {
     if let Err(e) = repl::Repl::new().and_then(|mut repl| repl.run()) {
