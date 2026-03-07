@@ -230,7 +230,7 @@ Max Concurrent: 6 (Wave 2)
 > Implementation + Test = ONE Task. Never separate.
 > EVERY task MUST have: Recommended Agent Profile + Parallelization info + QA Scenarios.
 
-- [ ] 1. Workspace Setup + Crate Scaffolding
+- [x] 1. Workspace Setup + Crate Scaffolding
 
   **What to do**:
   - Create Cargo workspace with 4 crates: limit-llm, limit-agent, limit-cli, limit-tui
@@ -292,7 +292,7 @@ Max Concurrent: 6 (Wave 2)
   - Message: `chore: initial workspace setup with 4 crates`
   - Files: Cargo.toml, limit-llm/Cargo.toml, limit-agent/Cargo.toml, limit-cli/Cargo.toml, limit-tui/Cargo.toml, .gitignore, README.md
 
-- [ ] 2. Config Schema + Loading
+- [x] 2. Config Schema + Loading
 
   **What to do**:
   - Add dependencies: `toml`, `serde`, `dirs` to limit-llm
@@ -341,7 +341,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 6)
 
-- [ ] 3. Error Types + thiserror Setup
+- [x] 3. Error Types + thiserror Setup
 
   **What to do**:
   - Add dependency: `thiserror` to all crates
@@ -390,7 +390,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 6)
 
-- [ ] 4. Event Schema Definition
+- [x] 4. Event Schema Definition
 
   **What to do**:
   - Create `limit-agent/src/events.rs` with Event enum
@@ -435,7 +435,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 10)
 
-- [ ] 5. limit-llm Types (Message, Tool, Response)
+- [x] 5. limit-llm Types (Message, Tool, Response)
 
   **What to do**:
   - Create `limit-llm/src/types.rs`
@@ -486,7 +486,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 6)
 
-- [ ] 6. limit-llm Anthropic Client (Streaming)
+- [x] 6. limit-llm Anthropic Client (Streaming)
 
   **What to do**:
   - Add dependencies: `reqwest`, `tokio`, `serde_json`, `async-stream`
@@ -553,7 +553,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-llm/src/client.rs, limit-llm/Cargo.toml
   - Pre-commit: `cargo test --package limit-llm`
 
-- [ ] 7. limit-llm SQLite Tracking
+- [x] 7. limit-llm SQLite Tracking
 
   **What to do**:
   - Add dependency: `rusqlite`
@@ -606,7 +606,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 9)
 
-- [ ] 8. limit-llm Binary Persistence
+- [x] 8. limit-llm Binary Persistence
 
   **What to do**:
   - Add dependency: `bincode`
@@ -658,7 +658,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 9)
 
-- [ ] 9. limit-llm Model Hand-off (Resume/Compact)
+- [x] 9. limit-llm Model Hand-off (Resume/Compact)
 
   **What to do**:
   - Create `limit-llm/src/handoff.rs` with ModelHandoff struct
@@ -712,7 +712,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-llm/src/tracking.rs, limit-llm/src/persistence.rs, limit-llm/src/handoff.rs
   - Pre-commit: `cargo test --package limit-llm`
 
-- [ ] 10. limit-agent Tool Trait + Registry
+- [x] 10. limit-agent Tool Trait + Registry
 
   **What to do**:
   - Create `limit-agent/src/tool.rs` with Tool trait
@@ -763,7 +763,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 12)
 
-- [ ] 11. limit-agent Tool Execution (Conditional)
+- [x] 11. limit-agent Tool Execution (Conditional)
 
   **What to do**:
   - Create `limit-agent/src/executor.rs` with ToolExecutor struct
@@ -815,7 +815,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 12)
 
-- [ ] 12. limit-agent Docker Sandbox (Optional)
+- [x] 12. limit-agent Docker Sandbox (Optional)
 
   **What to do**:
   - Add dependency: `bollard` (Docker SDK)
@@ -887,7 +887,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-agent/src/tool.rs, limit-agent/src/registry.rs, limit-agent/src/executor.rs, limit-agent/src/sandbox.rs
   - Pre-commit: `cargo test --package limit-agent`
 
-- [ ] 13. limit-agent State Management
+- [x] 13. limit-agent State Management
 
   **What to do**:
   - Create `limit-agent/src/state.rs` with AgentState struct
@@ -943,7 +943,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-agent/src/state.rs
   - Pre-commit: `cargo test --package limit-agent`
 
-- [ ] 14. limit-cli REPL Interface
+- [x] 14. limit-cli REPL Interface
 
   **What to do**:
   - Add dependencies: `rustyline`, `crossterm`
@@ -998,7 +998,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 15. limit-cli File Tools (Read/Write/Edit)
+- [x] 15. limit-cli File Tools (Read/Write/Edit)
 
   **What to do**:
   - Create `limit-cli/src/tools/file.rs`
@@ -1059,7 +1059,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 16. limit-cli Bash Tool
+- [x] 16. limit-cli Bash Tool
 
   **What to do**:
   - Create `limit-cli/src/tools/bash.rs`
@@ -1111,7 +1111,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 17. limit-cli Git Tools
+- [x] 17. limit-cli Git Tools
 
   **What to do**:
   - Create `limit-cli/src/tools/git.rs`
@@ -1165,7 +1165,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 18. limit-cli Code Analysis Tools (Grep/ast-grep/LSP)
+- [x] 18. limit-cli Code Analysis Tools (Grep/ast-grep/LSP)
 
   **What to do**:
   - Create `limit-cli/src/tools/analysis.rs`
@@ -1217,7 +1217,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 19. limit-cli Markdown Rendering (termimad)
+- [x] 19. limit-cli Markdown Rendering (termimad)
 
   **What to do**:
   - Add dependency: `termimad`
@@ -1266,7 +1266,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 20. limit-cli Session Persistence
+- [x] 20. limit-cli Session Persistence
 
   **What to do**:
   - Create `limit-cli/src/session.rs` with SessionManager struct
@@ -1320,7 +1320,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 21)
 
-- [ ] 21. limit-agent ↔ limit-cli Integration
+- [x] 21. limit-agent ↔ limit-cli Integration
 
   **What to do**:
   - Create `limit-cli/src/agent_bridge.rs` with AgentBridge struct
@@ -1376,7 +1376,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-cli/src/repl.rs, limit-cli/src/tools/*.rs, limit-cli/src/render.rs, limit-cli/src/session.rs, limit-cli/src/agent_bridge.rs
   - Pre-commit: `cargo test --package limit-cli`
 
-- [ ] 22. limit-tui Virtual DOM Core
+- [x] 22. limit-tui Virtual DOM Core
 
   **What to do**:
   - Create `limit-tui/src/vdom.rs` with VNode enum
@@ -1425,7 +1425,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 23)
 
-- [ ] 23. limit-tui Ratatui Integration
+- [x] 23. limit-tui Ratatui Integration
 
   **What to do**:
   - Add dependency: `ratatui`
@@ -1479,7 +1479,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-tui/src/vdom.rs, limit-tui/src/backend.rs
   - Pre-commit: `cargo test --package limit-tui`
 
-- [ ] 24. limit-tui Flexbox Layout
+- [x] 24. limit-tui Flexbox Layout
 
   **What to do**:
   - Create `limit-tui/src/layout.rs` with FlexboxLayout struct
@@ -1527,7 +1527,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 29)
 
-- [ ] 25. limit-tui Chat View Component
+- [x] 25. limit-tui Chat View Component
 
   **What to do**:
   - Create `limit-tui/src/components/chat.rs` with ChatView component
@@ -1575,7 +1575,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 29)
 
-- [ ] 26. limit-tui Diff View Component
+- [x] 26. limit-tui Diff View Component
 
   **What to do**:
   - Create `limit-tui/src/components/diff.rs` with DiffView component
@@ -1625,7 +1625,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 29)
 
-- [ ] 27. limit-tui Progress Indicators
+- [x] 27. limit-tui Progress Indicators
 
   **What to do**:
   - Create `limit-tui/src/components/progress.rs` with ProgressBar and Spinner components
@@ -1673,7 +1673,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 29)
 
-- [ ] 28. limit-tui Interactive Prompts
+- [x] 28. limit-tui Interactive Prompts
 
   **What to do**:
   - Create `limit-tui/src/components/prompt.rs` with InputPrompt and SelectPrompt components
@@ -1723,7 +1723,7 @@ Max Concurrent: 6 (Wave 2)
 
   **Commit**: NO (groups with Task 29)
 
-- [ ] 29. limit-cli ↔ limit-tui Integration
+- [x] 29. limit-cli ↔ limit-tui Integration
 
   **What to do**:
   - Create `limit-cli/src/tui_bridge.rs` with TuiBridge struct
@@ -1776,7 +1776,7 @@ Max Concurrent: 6 (Wave 2)
   - Files: limit-tui/src/components/*.rs, limit-tui/src/layout.rs, limit-cli/src/tui_bridge.rs
   - Pre-commit: `cargo test --workspace`
 
-- [ ] 30. End-to-End Integration Test
+- [x] 30. End-to-End Integration Test
 
   **What to do**:
   - Create integration test: `tests/e2e_test.rs`

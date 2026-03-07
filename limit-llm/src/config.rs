@@ -3,7 +3,7 @@ use std::{fs, io};
 
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct Config {
     pub api_key: Option<String>,
     #[serde(default = "default_model")]

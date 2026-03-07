@@ -2,6 +2,7 @@ use termimad::MadSkin;
 
 pub struct MarkdownRenderer {
     skin: MadSkin,
+    #[allow(dead_code)]
     width: usize,
 }
 
