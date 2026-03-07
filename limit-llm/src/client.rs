@@ -6,7 +6,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::pin::Pin;
 use std::time::Duration;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 pub struct AnthropicClient {
     api_key: String,
@@ -231,6 +231,7 @@ fn parse_sse_stream(
                 }
 
                 if let Ok(parsed) = serde_json::from_str::<Value>(&event.data) {
+                    trace!("SSE: {}", &event.data.chars().take(200).collect::<String>());
                     let chunk_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
                     match chunk_type {
@@ -300,6 +301,7 @@ fn parse_sse_stream(
                         "message_delta" => {
                             if let Some(delta) = parsed.get("delta") {
                                 if let Some(stop_reason) = delta.get("stop_reason").and_then(|v| v.as_str()) {
+                                    debug!("stop_reason: {}", stop_reason);
                                     if stop_reason == "end_turn" || stop_reason == "tool_use" {
                                         if let Some(usage) = parsed.get("usage") {
                                             if let Ok(usage_obj) = serde_json::from_value::<Usage>(usage.clone()) {
@@ -311,7 +313,9 @@ fn parse_sse_stream(
                                 }
                             }
                         }
-                        _ => {}
+                        _ => {
+                            debug!("Unknown chunk_type: {}", chunk_type);
+                        }
                     }
                 }
             }

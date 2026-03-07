@@ -33,5 +33,5 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 rusqlite = "0.31"
 limit-llm = { path = "../limit-llm" }
 limit-tui = { path = "../limit-tui" }
-tracing = { version = "0.1", features = ["max_level_debug", "release_max_level_off"] }
+tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_warn"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -11,7 +11,7 @@ use limit_llm::client::{AnthropicClient, ResponseChunk};
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use serde_json::json;
 use tokio::sync::mpsc;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 /// Event types for streaming from agent to REPL
 #[derive(Debug, Clone)]
@@ -196,6 +196,7 @@ impl AgentBridge {
 
         while iteration < max_iterations {
             iteration += 1;
+            debug!("Agent loop iteration {}", iteration);
 
             // Send thinking event
             self.send_event(AgentEvent::Thinking);
@@ -226,6 +227,7 @@ impl AgentBridge {
                         name,
                         arguments,
                     }) => {
+                        debug!("ToolCallDelta: id={}, name={}", id, name);
                         // Store/merge tool call arguments
                         accumulated_calls.insert(id.clone(), (name.clone(), arguments.clone()));
                     }
@@ -253,6 +255,9 @@ impl AgentBridge {
                 })
                 .collect();
             full_response.push_str(&current_content);
+
+            debug!("After iter {}: content.len()={}, tool_calls={}, response.len()={}", 
+                iteration, current_content.len(), tool_calls.len(), full_response.len());
 
             // If no tool calls, we're done
             if tool_calls.is_empty() {
