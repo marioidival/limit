@@ -301,6 +301,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -317,6 +318,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -361,6 +363,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -384,6 +387,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -407,6 +411,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();

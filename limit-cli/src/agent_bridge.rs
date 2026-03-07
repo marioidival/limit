@@ -58,7 +58,13 @@ impl AgentBridge {
             .as_ref()
             .ok_or_else(|| CliError::ConfigError("API key not found in config".to_string()))?;
 
-        let llm_client = AnthropicClient::new(api_key.clone());
+        let llm_client = AnthropicClient::new(
+            api_key.clone(),
+            config.base_url.as_deref(),
+            config.timeout,
+            &config.model,
+            config.max_tokens,
+        );
 
         let mut tool_registry = ToolRegistry::new();
         Self::register_tools(&mut tool_registry);
@@ -626,6 +632,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -639,6 +646,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let result = AgentBridge::new(config);
@@ -652,6 +660,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -705,6 +714,7 @@ mod tests {
             model: "claude-3-5-sonnet-20241022".to_string(),
             max_tokens: 4096,
             timeout: 60,
+            base_url: None,
         };
 
         let bridge = AgentBridge::new(config_with_key.clone()).unwrap();

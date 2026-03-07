@@ -11,8 +11,9 @@ pub struct AnthropicClient {
     api_key: String,
     client: Client,
     base_url: String,
+    model: String,
+    max_tokens: u32,
 }
-
 pub enum ResponseChunk {
     ContentDelta(String),
     ToolCallDelta {
@@ -34,14 +35,22 @@ impl Clone for AnthropicClient {
             api_key: self.api_key.clone(),
             client: self.client.clone(),
             base_url: self.base_url.clone(),
+            model: self.model.clone(),
+            max_tokens: self.max_tokens,
         }
     }
 }
 
 impl AnthropicClient {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(
+        api_key: String,
+        base_url: Option<&str>,
+        timeout: u64,
+        model: &str,
+        max_tokens: u32,
+    ) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(300))
+            .timeout(Duration::from_secs(timeout))
             .connect_timeout(Duration::from_secs(30))
             .build()
             .expect("Failed to build HTTP client");
@@ -49,7 +58,11 @@ impl AnthropicClient {
         Self {
             api_key,
             client,
-            base_url: "https://api.anthropic.com/v1/messages".to_string(),
+            base_url: base_url
+                .unwrap_or("https://api.anthropic.com/v1/messages")
+                .to_string(),
+            model: model.to_string(),
+            max_tokens,
         }
     }
 
@@ -60,12 +73,14 @@ impl AnthropicClient {
     ) -> Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + '_>> {
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
+        let model = self.model.clone();
+        let max_tokens = self.max_tokens;
         let messages_cloned = messages.clone();
         let tools_cloned = tools.clone();
         let client_clone = self.client.clone();
 
         Box::pin(stream! {
-            let request_body = match build_request_body(&messages_cloned, &tools_cloned) {
+            let request_body = match build_request_body(&messages_cloned, &tools_cloned, &model, max_tokens) {
                 Ok(body) => body,
                 Err(e) => {
                     yield Err(e);
@@ -134,10 +149,15 @@ async fn do_request(
     Ok(stream)
 }
 
-fn build_request_body(messages: &[Message], tools: &[Tool]) -> Result<Value, LlmError> {
+fn build_request_body(
+    messages: &[Message],
+    tools: &[Tool],
+    model: &str,
+    max_tokens: u32,
+) -> Result<Value, LlmError> {
     let mut request = serde_json::json!({
-        "model": "claude-3-5-sonnet-20241022",
-        "max_tokens": 4096,
+        "model": model,
+        "max_tokens": max_tokens,
         "messages": messages,
         "stream": true
     });
@@ -277,7 +297,13 @@ mod tests {
             .create_async()
             .await;
 
-        let client = AnthropicClient::new("test-key".to_string());
+        let client = AnthropicClient::new(
+            "test-key".to_string(),
+            None,
+            300,
+            "claude-3-5-sonnet-20241022",
+            4096,
+        );
         let messages = vec![Message {
             role: crate::types::Role::User,
             content: "Hello".to_string(),
@@ -289,6 +315,8 @@ mod tests {
             api_key: "test-key".to_string(),
             client: client.client,
             base_url,
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            max_tokens: 4096,
         };
 
         let stream = client_with_url.send(messages, vec![]).await;
@@ -323,7 +351,13 @@ mod tests {
             .create_async()
             .await;
 
-        let client = AnthropicClient::new("test-key".to_string());
+        let client = AnthropicClient::new(
+            "test-key".to_string(),
+            None,
+            300,
+            "claude-3-5-sonnet-20241022",
+            4096,
+        );
         let messages = vec![Message {
             role: crate::types::Role::User,
             content: "Hello".to_string(),
@@ -335,6 +369,8 @@ mod tests {
             api_key: "test-key".to_string(),
             client: client.client,
             base_url,
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            max_tokens: 4096,
         };
 
         let stream = client_with_url.send(messages, vec![]).await;
@@ -363,7 +399,13 @@ mod tests {
             .create_async()
             .await;
 
-        let client = AnthropicClient::new("test-key".to_string());
+        let client = AnthropicClient::new(
+            "test-key".to_string(),
+            None,
+            300,
+            "claude-3-5-sonnet-20241022",
+            4096,
+        );
         let messages = vec![Message {
             role: crate::types::Role::User,
             content: "Hello".to_string(),
@@ -375,6 +417,8 @@ mod tests {
             api_key: "test-key".to_string(),
             client: client.client,
             base_url,
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            max_tokens: 4096,
         };
 
         // The test should pass since timeout is 300s
@@ -399,7 +443,13 @@ mod tests {
             .create_async()
             .await;
 
-        let client = AnthropicClient::new("test-key".to_string());
+        let client = AnthropicClient::new(
+            "test-key".to_string(),
+            None,
+            300,
+            "claude-3-5-sonnet-20241022",
+            4096,
+        );
         let messages = vec![Message {
             role: crate::types::Role::User,
             content: "Use test_tool".to_string(),
@@ -420,6 +470,8 @@ mod tests {
             api_key: "test-key".to_string(),
             client: client.client,
             base_url,
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            max_tokens: 4096,
         };
 
         let stream = client_with_url.send(messages, tools).await;

@@ -16,6 +16,7 @@ fn test_tui_integration_full_conversation() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     // Create agent bridge
@@ -37,6 +38,7 @@ fn test_tui_bridge_event_ordering() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -78,6 +80,7 @@ fn test_tui_bridge_tool_execution_display() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -128,6 +131,7 @@ fn test_tui_bridge_error_handling() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -156,6 +160,7 @@ fn test_tui_bridge_spinner_animation() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -198,6 +203,7 @@ fn test_tui_bridge_content_streaming() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -225,6 +231,7 @@ fn test_tui_bridge_is_ready() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -243,6 +250,7 @@ fn test_tui_bridge_get_tool_definitions() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -262,6 +270,7 @@ fn test_tui_bridge_tool_schema() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -288,6 +297,7 @@ fn test_tui_bridge_with_good_config() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 8192,
         timeout: 120,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -315,6 +325,7 @@ fn test_tui_bridge_from_string_config() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();

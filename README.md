@@ -40,6 +40,8 @@ api_key = "sk-ant-api03-..."
 model = "claude-3-5-sonnet-20241022"
 max_tokens = 4096
 timeout = 60
+# Optional: Custom API endpoint for Anthropic-compatible providers
+# base_url = "https://api.custom-provider.com/v1/messages"
 ```
 
 ## Usage

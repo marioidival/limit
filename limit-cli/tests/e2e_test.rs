@@ -24,6 +24,7 @@ fn test_e2e_chat_with_mock_api() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     // Create agent bridge
@@ -61,6 +62,7 @@ async fn test_e2e_file_read_and_verify() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
@@ -93,6 +95,7 @@ async fn test_e2e_bash_command_and_verify() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
@@ -128,6 +131,7 @@ async fn test_e2e_git_status_and_verify() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
@@ -197,6 +201,7 @@ fn test_e2e_tui_rendering_components() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
@@ -255,6 +260,7 @@ fn test_e2e_all_tools_registered() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
@@ -299,6 +305,7 @@ fn test_e2e_event_ordering() {
         model: "claude-3-5-sonnet-20241022".to_string(),
         max_tokens: 4096,
         timeout: 60,
+        base_url: None,
     };
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
