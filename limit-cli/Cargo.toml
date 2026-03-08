@@ -8,7 +8,7 @@ name = "limit_cli"
 path = "src/lib.rs"
 
 [[bin]]
-name = "limit"
+name = "lim"
 path = "src/main.rs"
 
 [dependencies]

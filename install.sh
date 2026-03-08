@@ -20,7 +20,7 @@ NC='\033[0m'
 GITHUB_REPO="marioidival/limit"
 GITHUB_API_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
 INSTALL_DIR="${HOME}/.local/bin"
-BINARY_NAME="limit"
+BINARY_NAME="lim"
 
 # Print functions
 info() { echo -e "${BLUE}➜${NC} $1"; }
@@ -77,9 +77,9 @@ get_latest_version() {
 
 # Download and install
 install_binary() {
-    local DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/limit-${OS}-${ARCH}.tar.gz"
+    local DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/lim-${OS}-${ARCH}.tar.gz"
     local TEMP_DIR=$(mktemp -d)
-    local TEMP_FILE="${TEMP_DIR}/limit.tar.gz"
+    local TEMP_FILE="${TEMP_DIR}/lim.tar.gz"
     
     # Cleanup on exit
     cleanup() {
@@ -87,15 +87,15 @@ install_binary() {
     }
     trap cleanup EXIT
     
-    info "Downloading Limit ${VERSION} for ${OS}-${ARCH}..."
+    info "Downloading Lim ${VERSION} for ${OS}-${ARCH}..."
     
     if command -v curl &> /dev/null; then
         curl -fsSL -o "$TEMP_FILE" "$DOWNLOAD_URL" || {
-            error "Download failed. Release may not exist for ${OS}-${ARCH}.\n\nTry building from source:\n  git clone https://github.com/${GITHUB_REPO}\n  cd limit && cargo build --release"
+  cd limit && cargo build --release"
         }
     elif command -v wget &> /dev/null; then
         wget -q -O "$TEMP_FILE" "$DOWNLOAD_URL" || {
-            error "Download failed. Release may not exist for ${OS}-${ARCH}.\n\nTry building from source:\n  git clone https://github.com/${GITHUB_REPO}\n  cd limit && cargo build --release"
+  cd limit && cargo build --release"
         }
     fi
     
@@ -151,7 +151,7 @@ main() {
     echo "     export ANTHROPIC_API_KEY=\"your-key-here\""
     echo ""
     echo "  2. Run:"
-    echo "     limit"
+    echo "     lim"
     echo ""
 }
 

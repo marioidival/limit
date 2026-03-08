@@ -94,7 +94,7 @@ That's it! Start chatting with your AI coding assistant.
 curl -fsSL https://raw.githubusercontent.com/marioidival/limit/main/install.sh | bash
 ```
 
-This will install Limit to `~/.local/bin/limit`.
+This will install Limit to `~/.local/bin/lim`.
 
 ### From Source
 
@@ -181,20 +181,20 @@ Provider API keys can be set via environment variables as fallback:
 ### TUI Mode (Default)
 
 ```bash
-limit
+lim
 ```
 
 ### REPL Mode (Text-only)
 
 ```bash
-limit --no-tui
+lim --no-tui
 ```
 
 > If installed from source without the install script: `cargo run --package limit-cli`
 ### Example Interaction
 
 ```
-limit> Read the file src/main.rs and explain what it does
+lim> Read the file src/main.rs and explain what it does
 
 [Reading src/main.rs...]
 
