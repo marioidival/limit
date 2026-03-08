@@ -61,7 +61,7 @@ fn test_tui_bridge_event_ordering() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Simulate event sequence: Thinking -> ToolStart -> ToolComplete -> Done
     let events = vec![
@@ -111,7 +111,7 @@ fn test_tui_bridge_tool_execution_display() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Add user message
     tui_bridge.add_user_message("Read the file /tmp/test.txt".to_string());
@@ -170,7 +170,7 @@ fn test_tui_bridge_error_handling() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Send error event
     tx.send(limit_cli::AgentEvent::Error(
@@ -207,7 +207,7 @@ fn test_tui_bridge_spinner_animation() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Send thinking event
     tx.send(limit_cli::AgentEvent::Thinking).unwrap();
@@ -258,7 +258,7 @@ fn test_tui_bridge_content_streaming() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Send multiple content chunks
     let chunks = ["Hello", " ", "World", "!"];
@@ -294,7 +294,7 @@ fn test_tui_bridge_is_ready() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (_tx, rx) = mpsc::unbounded_channel();
 
-    let tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // The underlying agent bridge should be ready
     assert!(tui_bridge.agent_bridge().is_ready());
@@ -321,7 +321,7 @@ fn test_tui_bridge_get_tool_definitions() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (_tx, rx) = mpsc::unbounded_channel();
 
-    let tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Get tool definitions through the agent bridge
     let tools = tui_bridge.agent_bridge().get_tool_definitions();
@@ -349,7 +349,7 @@ fn test_tui_bridge_tool_schema() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (_tx, rx) = mpsc::unbounded_channel();
 
-    let tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Verify file_read tool schema
     let tools = tui_bridge.agent_bridge().get_tool_definitions();
@@ -384,7 +384,7 @@ fn test_tui_bridge_with_good_config() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (_tx, rx) = mpsc::unbounded_channel();
 
-    let tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Verify the bridge was created successfully
     assert_eq!(tui_bridge.state(), TuiState::Idle);
@@ -420,7 +420,7 @@ fn test_tui_bridge_from_string_config() {
     let agent_bridge = AgentBridge::new(config).unwrap();
     let (_tx, rx) = mpsc::unbounded_channel();
 
-    let tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Verify the bridge was created and is ready
     assert!(tui_bridge.agent_bridge().is_ready());

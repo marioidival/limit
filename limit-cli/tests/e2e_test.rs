@@ -196,7 +196,7 @@ fn test_e2e_tui_rendering_components() {
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
     let (tx, rx) = mpsc::unbounded_channel();
 
-    let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Test initial state
     assert_eq!(tui_bridge.state(), TuiState::Idle);
@@ -287,7 +287,7 @@ fn test_e2e_event_ordering() {
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
     let (tx, rx) = mpsc::unbounded_channel();
-    let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+    let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Simulate a complete conversation flow
     let events = vec![

@@ -116,7 +116,7 @@ impl SessionManager {
         Ok(session_manager)
     }
 
-    fn init_db(&self) -> Result<(), CliError> {
+    pub fn init_db(&self) -> Result<(), CliError> {
         let conn = Connection::open(&self.db_path)
             .map_err(|e| CliError::ConfigError(format!("Failed to open database: {}", e)))?;
 

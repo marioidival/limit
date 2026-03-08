@@ -1,5 +1,6 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
+use crate::session::SessionManager;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
     KeyModifiers, MouseEventKind,
@@ -66,22 +67,80 @@ pub struct TuiBridge {
     total_input_tokens: Arc<Mutex<u64>>,
     /// Total output tokens for the session
     total_output_tokens: Arc<Mutex<u64>>,
+    /// Session manager for persistence
+    session_manager: Arc<Mutex<SessionManager>>,
+    /// Current session ID
+    session_id: Arc<Mutex<String>>,
 }
 
 impl TuiBridge {
     /// Create a new TuiBridge with the given agent bridge and event channel
-    pub fn new(agent_bridge: AgentBridge, event_rx: mpsc::UnboundedReceiver<AgentEvent>) -> Self {
-        Self {
+    pub fn new(agent_bridge: AgentBridge, event_rx: mpsc::UnboundedReceiver<AgentEvent>) -> Result<Self, CliError> {
+        let session_manager = SessionManager::new()
+            .map_err(|e| CliError::ConfigError(format!("Failed to create session manager: {}", e)))?;
+
+        // Always create a new session on TUI startup
+        let session_id = session_manager.create_new_session()
+            .map_err(|e| CliError::ConfigError(format!("Failed to create session: {}", e)))?;
+        tracing::info!("Created new TUI session: {}", session_id);
+
+        // Start with empty messages - never load previous session
+        let messages: Vec<limit_llm::Message> = Vec::new();
+
+        // Get token counts from session info
+        let sessions = session_manager.list_sessions()
+            .unwrap_or_default();
+        let session_info = sessions.iter()
+            .find(|s| s.id == session_id);
+        let initial_input = session_info.map(|s| s.total_input_tokens).unwrap_or(0);
+        let initial_output = session_info.map(|s| s.total_output_tokens).unwrap_or(0);
+
+        let chat_view = Arc::new(Mutex::new(ChatView::new()));
+
+        // Add loaded messages to chat view for display
+        for msg in &messages {
+            match msg.role {
+                limit_llm::Role::User => {
+                    let chat_msg = Message::user(msg.content.clone().unwrap_or_default());
+                    chat_view.lock().unwrap().add_message(chat_msg);
+                }
+                limit_llm::Role::Assistant => {
+                    let content = msg.content.clone().unwrap_or_default();
+                    let chat_msg = Message::assistant(content);
+                    chat_view.lock().unwrap().add_message(chat_msg);
+                }
+                limit_llm::Role::System => {
+                    // Skip system messages in display
+                }
+                limit_llm::Role::Tool => {
+                    // Skip tool messages in display
+                }
+            }
+        }
+
+        tracing::info!("Loaded {} messages into chat view", messages.len());
+
+        // Add system message to indicate this is a new session
+        let session_short_id = format!("...{}", &session_id[session_id.len().saturating_sub(8)..]);
+        let welcome_msg = Message::system(format!(
+            "🆕 New TUI session started: {}",
+            session_short_id
+        ));
+        chat_view.lock().unwrap().add_message(welcome_msg);
+
+        Ok(Self {
             agent_bridge: Arc::new(Mutex::new(agent_bridge)),
             event_rx,
             state: Arc::new(Mutex::new(TuiState::Idle)),
-            chat_view: Arc::new(Mutex::new(ChatView::new())),
+            chat_view,
             progress_bar: Arc::new(Mutex::new(ProgressBar::new("Tool execution"))),
             spinner: Arc::new(Mutex::new(Spinner::new("Thinking..."))),
-            messages: Arc::new(Mutex::new(Vec::new())),
-            total_input_tokens: Arc::new(Mutex::new(0)),
-            total_output_tokens: Arc::new(Mutex::new(0)),
-        }
+            messages: Arc::new(Mutex::new(messages)),
+            total_input_tokens: Arc::new(Mutex::new(initial_input)),
+            total_output_tokens: Arc::new(Mutex::new(initial_output)),
+            session_manager: Arc::new(Mutex::new(session_manager)),
+            session_id: Arc::new(Mutex::new(session_id)),
+        })
     }
 
     /// Get a clone of the agent bridge Arc for spawning tasks
@@ -188,6 +247,28 @@ impl TuiBridge {
     pub fn total_output_tokens(&self) -> u64 {
         *self.total_output_tokens.lock().unwrap()
     }
+
+    /// Get the current session ID
+    pub fn session_id(&self) -> String {
+        self.session_id.lock().unwrap().clone()
+    }
+
+    /// Save the current session
+    pub fn save_session(&self) -> Result<(), CliError> {
+        let session_id = self.session_id.lock().unwrap().clone();
+        let messages = self.messages.lock().unwrap().clone();
+        let input_tokens = self.total_input_tokens();
+        let output_tokens = self.total_output_tokens();
+
+        tracing::debug!("Saving session {} with {} messages, {} in tokens, {} out tokens",
+                        session_id, messages.len(), input_tokens, output_tokens);
+
+        let session_manager = self.session_manager.lock().unwrap();
+        session_manager.save_session(&session_id, &messages, input_tokens, output_tokens)?;
+        tracing::info!("✓ Session {} saved successfully ({} messages, {} in tokens, {} out tokens)",
+                      session_id, messages.len(), input_tokens, output_tokens);
+        Ok(())
+    }
 }
 
 /// TUI Application for running the limit CLI in a terminal UI
@@ -209,6 +290,9 @@ impl TuiApp {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal =
             Terminal::new(backend).map_err(|e| CliError::IoError(io::Error::other(e)))?;
+
+        let session_id = tui_bridge.session_id();
+        tracing::info!("TUI started with session: {}", session_id);
 
         Ok(Self {
             tui_bridge,
@@ -293,27 +377,40 @@ impl TuiApp {
             self.draw()?;
         }
 
+        // Save session before exiting
+        if let Err(e) = self.tui_bridge.save_session() {
+            tracing::error!("Failed to save session: {}", e);
+        }
+
         Ok(())
     }
 
     fn update_status(&mut self) {
+        let session_id = self.tui_bridge.session_id();
         match self.tui_bridge.state() {
             TuiState::Idle => {
-                self.status_message = "Ready - Type a message and press Enter".to_string();
+                self.status_message = format!("Ready - Type a message and press Enter | Session: {}",
+                                             session_id.chars().take(8).collect::<String>());
                 self.status_is_error = false;
             }
             TuiState::Thinking => {
                 let spinner = self.tui_bridge.spinner().lock().unwrap();
-                self.status_message = format!("{} Thinking...", spinner.current_frame());
+                self.status_message = format!("{} Thinking... | Session: {}",
+                                             spinner.current_frame(),
+                                             session_id.chars().take(8).collect::<String>());
                 self.status_is_error = false;
             }
             TuiState::ToolExecuting { name, progress } => {
                 let pct = (progress * 100.0) as u32;
-                self.status_message = format!("⏳ Executing: {} ({}%)", name, pct);
+                self.status_message = format!("⏳ Executing: {} ({}%) | Session: {}",
+                                             name, pct,
+                                             session_id.chars().take(8).collect::<String>());
                 self.status_is_error = false;
             }
             TuiState::Error(msg) => {
-                self.status_message = format!("❌ Error: {}", msg);
+                self.status_message = format!("❌ Error: {} | Session: {}",
+                                             msg,
+                                             session_id.chars().take(8).collect::<String>());
                 self.status_is_error = true;
             }
         }
@@ -536,12 +633,17 @@ impl TuiApp {
             return Ok(());
         }
 
-        // Add user message to chat
+        // Add user message to chat (for display)
         self.tui_bridge.add_user_message(text.clone());
 
         // Clone Arcs for the spawned thread
         let messages = self.tui_bridge.messages.clone();
+        let chat_view = self.tui_bridge.chat_view().clone();
         let agent_bridge = self.tui_bridge.agent_bridge_arc();
+        let session_manager = self.tui_bridge.session_manager.clone();
+        let session_id = self.tui_bridge.session_id();
+        let total_input_tokens = self.tui_bridge.total_input_tokens.clone();
+        let total_output_tokens = self.tui_bridge.total_output_tokens.clone();
 
         tracing::debug!("Spawning LLM processing thread");
 
@@ -556,8 +658,31 @@ impl TuiApp {
                 let mut messages_guard = messages.lock().unwrap();
                 let mut bridge = agent_bridge.lock().unwrap();
 
-                if let Err(e) = bridge.process_message(&text, &mut messages_guard).await {
-                    tracing::error!("LLM error: {}", e);
+                match bridge.process_message(&text, &mut messages_guard).await {
+                    Ok(response) => {
+                        // Add assistant response to chat view for display
+                        chat_view.lock().unwrap().add_message(Message::assistant(response));
+
+                        // Auto-save session after successful response
+                        let msgs = messages_guard.clone();
+                        let input_tokens = *total_input_tokens.lock().unwrap();
+                        let output_tokens = *total_output_tokens.lock().unwrap();
+
+                        if let Err(e) = session_manager.lock().unwrap().save_session(
+                            &session_id,
+                            &msgs,
+                            input_tokens,
+                            output_tokens,
+                        ) {
+                            tracing::error!("✗ Failed to auto-save session {}: {}", session_id, e);
+                        } else {
+                            tracing::info!("✓ Session {} auto-saved ({} messages, {} in, {} out tokens)",
+                                         session_id, msgs.len(), input_tokens, output_tokens);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("LLM error: {}", e);
+                    }
                 }
             });
         });
@@ -736,11 +861,11 @@ impl TuiApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limit_llm::{Config as LlmConfig, ProviderConfig};
-    use std::collections::HashMap;
 
-    fn create_test_config() -> LlmConfig {
-        let mut providers = HashMap::new();
+    /// Create a test config for AgentBridge
+    fn create_test_config() -> limit_llm::Config {
+        use limit_llm::ProviderConfig;
+        let mut providers = std::collections::HashMap::new();
         providers.insert(
             "anthropic".to_string(),
             ProviderConfig {
@@ -751,7 +876,7 @@ mod tests {
                 timeout: 60,
             },
         );
-        LlmConfig {
+        limit_llm::Config {
             provider: "anthropic".to_string(),
             providers,
         }
@@ -763,7 +888,7 @@ mod tests {
         let agent_bridge = AgentBridge::new(config).unwrap();
         let (_tx, rx) = mpsc::unbounded_channel();
 
-        let tui_bridge = TuiBridge::new(agent_bridge, rx);
+        let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
         assert_eq!(tui_bridge.state(), TuiState::Idle);
     }
 
@@ -773,7 +898,7 @@ mod tests {
         let agent_bridge = AgentBridge::new(config).unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
 
-        let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
+        let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
         tx.send(AgentEvent::Thinking).unwrap();
         tui_bridge.process_events().unwrap();
@@ -790,7 +915,7 @@ mod tests {
         let agent_bridge = AgentBridge::new(config).unwrap();
         let (_tx, rx) = mpsc::unbounded_channel();
 
-        let tui_bridge = TuiBridge::new(agent_bridge, rx);
+        let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
         tui_bridge.add_user_message("Hello".to_string());
         assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 1);

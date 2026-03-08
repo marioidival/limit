@@ -48,7 +48,7 @@ fn run_tui() -> Result<(), CliError> {
     let mut bridge = AgentBridge::new(config)?;
     bridge.set_event_tx(tx);
 
-    let tui_bridge = TuiBridge::new(bridge, rx);
+    let tui_bridge = TuiBridge::new(bridge, rx)?;
     let mut app = TuiApp::new(tui_bridge)?;
     app.run()
 }
