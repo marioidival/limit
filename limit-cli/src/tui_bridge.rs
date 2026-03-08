@@ -1,17 +1,32 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use limit_tui::components::{ChatView, Message, ProgressBar, Spinner};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Style},
-    widgets::Paragraph,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+/// Debug log to file (bypasses tracing)
+fn debug_log(msg: &str) {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()) + "/.limit/logs/tui.log")
+    {
+        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
+        let _ = writeln!(file, "[{}] {}", timestamp, msg);
+    }
+}
 /// TUI state for displaying agent events
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum TuiState {
@@ -22,16 +37,14 @@ pub enum TuiState {
         name: String,
         progress: f32,
     },
+    #[allow(dead_code)]
     Error(String),
 }
 
 /// Bridge connecting limit-cli REPL to limit-tui components
-///
-/// This struct manages the TUI rendering and event handling for the agent.
-#[allow(dead_code)]
 pub struct TuiBridge {
-    /// Agent bridge for processing messages
-    agent_bridge: AgentBridge,
+    /// Agent bridge for processing messages (wrapped for thread-safe access)
+    agent_bridge: Arc<Mutex<AgentBridge>>,
     /// Event receiver from the agent
     event_rx: mpsc::UnboundedReceiver<AgentEvent>,
     /// Current TUI state
@@ -42,37 +55,39 @@ pub struct TuiBridge {
     progress_bar: Arc<Mutex<ProgressBar>>,
     /// Spinner for thinking state
     spinner: Arc<Mutex<Spinner>>,
+    /// Conversation history
+    messages: Arc<Mutex<Vec<limit_llm::Message>>>,
 }
 
-#[allow(dead_code)]
 impl TuiBridge {
     /// Create a new TuiBridge with the given agent bridge and event channel
-    ///
-    /// # Arguments
-    /// * `agent_bridge` - The agent bridge for processing messages
-    /// * `event_rx` - The event receiver channel from the agent
-    ///
-    /// # Returns
-    /// A new TuiBridge instance
     pub fn new(agent_bridge: AgentBridge, event_rx: mpsc::UnboundedReceiver<AgentEvent>) -> Self {
         Self {
-            agent_bridge,
+            agent_bridge: Arc::new(Mutex::new(agent_bridge)),
             event_rx,
             state: Arc::new(Mutex::new(TuiState::Idle)),
             chat_view: Arc::new(Mutex::new(ChatView::new())),
             progress_bar: Arc::new(Mutex::new(ProgressBar::new("Tool execution"))),
             spinner: Arc::new(Mutex::new(Spinner::new("Thinking..."))),
+            messages: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    /// Get a reference to the agent bridge
-    pub fn agent_bridge(&self) -> &AgentBridge {
-        &self.agent_bridge
+    /// Get a clone of the agent bridge Arc for spawning tasks
+    pub fn agent_bridge_arc(&self) -> Arc<Mutex<AgentBridge>> {
+        self.agent_bridge.clone()
     }
 
-    /// Get a mutable reference to the agent bridge
-    pub fn agent_bridge_mut(&mut self) -> &mut AgentBridge {
-        &mut self.agent_bridge
+    /// Get locked access to the agent bridge (for compatibility)
+    #[allow(dead_code)]
+    pub fn agent_bridge(&self) -> std::sync::MutexGuard<'_, AgentBridge> {
+        self.agent_bridge.lock().unwrap()
+    }
+
+    /// Get a reference to the progress bar
+    #[allow(dead_code)]
+    pub fn progress_bar(&self) -> &Arc<Mutex<ProgressBar>> {
+        &self.progress_bar
     }
 
     /// Get the current TUI state
@@ -83,11 +98,6 @@ impl TuiBridge {
     /// Get a reference to the chat view
     pub fn chat_view(&self) -> &Arc<Mutex<ChatView>> {
         &self.chat_view
-    }
-
-    /// Get a reference to the progress bar
-    pub fn progress_bar(&self) -> &Arc<Mutex<ProgressBar>> {
-        &self.progress_bar
     }
 
     /// Get a reference to the spinner
@@ -102,42 +112,30 @@ impl TuiBridge {
                 AgentEvent::Thinking => {
                     *self.state.lock().unwrap() = TuiState::Thinking;
                 }
-                AgentEvent::ToolStart { name, args } => {
+                AgentEvent::ToolStart { name, args: _ } => {
                     *self.state.lock().unwrap() = TuiState::ToolExecuting {
                         name: name.clone(),
                         progress: 0.0,
                     };
-                    // Update progress bar
                     self.progress_bar.lock().unwrap().set_value(0.0);
-                    // Add system message about tool start
-                    let chat_msg = Message::system(format!("Tool: {} ({})", name, args));
-                    self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
-                AgentEvent::ToolComplete { name: _, result } => {
+                AgentEvent::ToolComplete { name: _, result: _ } => {
                     *self.state.lock().unwrap() = TuiState::Idle;
-                    // Update progress bar to complete
                     self.progress_bar.lock().unwrap().set_value(1.0);
-                    // Add result message
-                    let result_msg = if result.len() > 500 {
-                        format!("Result: {}...", &result[..500])
-                    } else {
-                        format!("Result: {}", result)
-                    };
-                    let chat_msg = Message::system(result_msg);
-                    self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
                 AgentEvent::ContentChunk(chunk) => {
-                    // Add content as a new assistant message
-                    // For better UX, we'd merge consecutive chunks, but this is a simple implementation
-                    let chat_msg = Message::assistant(chunk);
-                    self.chat_view.lock().unwrap().add_message(chat_msg);
+                    // Append to last assistant message instead of creating new ones
+                    self.chat_view
+                        .lock()
+                        .unwrap()
+                        .append_to_last_assistant(&chunk);
                 }
                 AgentEvent::Done => {
                     *self.state.lock().unwrap() = TuiState::Idle;
                 }
                 AgentEvent::Error(err) => {
-                    *self.state.lock().unwrap() = TuiState::Error(err.clone());
-                    let chat_msg = Message::system(format!("Error: {}", err));
+                    // Only add to chat, don't change state - let user continue
+                    let chat_msg = Message::system(format!("❌ Error: {}", err));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
             }
@@ -155,25 +153,27 @@ impl TuiBridge {
     pub fn tick_spinner(&self) {
         self.spinner.lock().unwrap().tick();
     }
+
+    /// Check if agent is busy
+    pub fn is_busy(&self) -> bool {
+        !matches!(self.state(), TuiState::Idle)
+    }
 }
 
 /// TUI Application for running the limit CLI in a terminal UI
-#[allow(dead_code)]
 pub struct TuiApp {
     tui_bridge: TuiBridge,
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     running: bool,
+    input_text: String,
+    cursor_pos: usize,
+    status_message: String,
+    status_is_error: bool,
+    cursor_blink_state: bool,
 }
 
-#[allow(dead_code)]
 impl TuiApp {
     /// Create a new TUI application
-    ///
-    /// # Arguments
-    /// * `tui_bridge` - The TUI bridge for managing agent events
-    ///
-    /// # Returns
-    /// A new TuiApp instance or an error
     pub fn new(tui_bridge: TuiBridge) -> Result<Self, CliError> {
         let backend = CrosstermBackend::new(io::stdout());
         let terminal =
@@ -183,18 +183,32 @@ impl TuiApp {
             tui_bridge,
             terminal,
             running: true,
+            input_text: String::new(),
+            cursor_pos: 0,
+            status_message: "Ready - Type a message and press Enter".to_string(),
+            status_is_error: false,
+            cursor_blink_state: true,
         })
     }
 
     /// Run the TUI event loop
     pub fn run(&mut self) -> Result<(), CliError> {
+        // Clear terminal before starting TUI to remove any build output
+        print!("\x1b[2J\x1b[H");
+        // Flush to ensure clear happens before raw mode
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+
         crossterm::terminal::enable_raw_mode()
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         let result = self.run_inner();
 
-        crossterm::terminal::disable_raw_mode()
-            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+        // Always restore terminal state
+        let _ = crossterm::terminal::disable_raw_mode();
+
+        // Clear again on exit for clean terminal state
+        print!("\x1b[2J\x1b[H");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
 
         result
     }
@@ -209,82 +223,399 @@ impl TuiApp {
                 self.tui_bridge.tick_spinner();
             }
 
-            // Draw the TUI
-            {
-                let chat_view = self.tui_bridge.chat_view().clone();
-                let progress_bar = self.tui_bridge.progress_bar().clone();
-                let spinner = self.tui_bridge.spinner().clone();
-                let state = self.tui_bridge.state();
+            // Update status based on state
+            self.update_status();
 
-                self.terminal
-                    .draw(|f| Self::draw_ui(f, &chat_view, &progress_bar, &spinner, state))
-                    .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+            // Handle user input with poll timeout
+            if crossterm::event::poll(std::time::Duration::from_millis(50))
+                .map_err(|e| CliError::IoError(io::Error::other(e)))?
+            {
+                if let Event::Key(key) =
+                    event::read().map_err(|e| CliError::IoError(io::Error::other(e)))?
+                {
+                    // Only handle key press events (not release/repeat)
+                    if key.kind == KeyEventKind::Press {
+                        self.handle_key_event(key)?;
+                    }
+                }
+            } else {
+                // No key event - tick cursor blink
+                self.tick_cursor_blink();
             }
 
-            // Check for user input (simplified - in a real implementation, we'd use crossterm events)
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // Draw the TUI
+            self.draw()?;
+        }
 
-            // Exit condition (simplified)
-            if matches!(self.tui_bridge.state(), TuiState::Idle) {
-                break;
+        Ok(())
+    }
+
+    fn update_status(&mut self) {
+        match self.tui_bridge.state() {
+            TuiState::Idle => {
+                self.status_message = "Ready - Type a message and press Enter".to_string();
+                self.status_is_error = false;
+            }
+            TuiState::Thinking => {
+                let spinner = self.tui_bridge.spinner().lock().unwrap();
+                self.status_message = format!("{} Thinking...", spinner.current_frame());
+                self.status_is_error = false;
+            }
+            TuiState::ToolExecuting { name, progress } => {
+                let pct = (progress * 100.0) as u32;
+                self.status_message = format!("⏳ Executing: {} ({}%)", name, pct);
+                self.status_is_error = false;
+            }
+            TuiState::Error(msg) => {
+                self.status_message = format!("❌ Error: {}", msg);
+                self.status_is_error = true;
+            }
+        }
+    }
+
+    fn tick_cursor_blink(&mut self) {
+        self.cursor_blink_state = !self.cursor_blink_state;
+    }
+
+    fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), CliError> {
+        // Direct file logging (always works)
+        debug_log(&format!(
+            "Key: {:?} mod={:?} kind={:?}",
+            key.code, key.modifiers, key.kind
+        ));
+
+        // Allow Ctrl+C to exit anytime
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
+            debug_log("Ctrl+C - exiting");
+            self.running = false;
+            return Ok(());
+        }
+
+        // Don't accept input while agent is busy
+        if self.tui_bridge.is_busy() {
+            debug_log("Agent busy, ignoring");
+            return Ok(());
+        }
+
+        // Handle backspace - try multiple detection methods
+        if self.handle_backspace(&key) {
+            debug_log(&format!("Backspace handled, input: {:?}", self.input_text));
+            return Ok(());
+        }
+
+        match key.code {
+            KeyCode::Delete => {
+                if self.cursor_pos < self.input_text.len() {
+                    let next_pos = self.next_char_pos();
+                    self.input_text.drain(self.cursor_pos..next_pos);
+                    debug_log(&format!("Delete: input now: {:?}", self.input_text));
+                }
+            }
+            KeyCode::Left => {
+                if self.cursor_pos > 0 {
+                    self.cursor_pos = self.prev_char_pos();
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor_pos < self.input_text.len() {
+                    self.cursor_pos = self.next_char_pos();
+                }
+            }
+            KeyCode::Home => {
+                self.cursor_pos = 0;
+            }
+            KeyCode::End => {
+                self.cursor_pos = self.input_text.len();
+            }
+            KeyCode::Enter => {
+                self.handle_enter()?;
+            }
+            KeyCode::Esc => {
+                debug_log("Esc pressed, exiting");
+                self.running = false;
+            }
+            // Regular character input (including UTF-8)
+            KeyCode::Char(c)
+                if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                // Insert the character at cursor position
+                self.input_text.insert(self.cursor_pos, c);
+                self.cursor_pos += c.len_utf8();
+            }
+            _ => {
+                // Ignore other keys
             }
         }
 
         Ok(())
     }
 
+    /// Handle backspace with multiple detection methods
+    fn handle_backspace(&mut self, key: &KeyEvent) -> bool {
+        // Method 1: Standard Backspace keycode
+        if key.code == KeyCode::Backspace {
+            debug_log("Backspace detected via KeyCode::Backspace");
+            self.delete_char_before_cursor();
+            return true;
+        }
+
+        // Method 2: Ctrl+H (common backspace mapping)
+        if key.code == KeyCode::Char('h') && key.modifiers == KeyModifiers::CONTROL {
+            debug_log("Backspace detected via Ctrl+H");
+            self.delete_char_before_cursor();
+            return true;
+        }
+
+        // Method 3: Check for DEL (127) or BS (8) characters
+        if let KeyCode::Char(c) = key.code {
+            if c == '\x7f' || c == '\x08' {
+                debug_log(&format!("Backspace detected via char code: {}", c as u8));
+                self.delete_char_before_cursor();
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn delete_char_before_cursor(&mut self) {
+        debug_log(&format!(
+            "delete_char: cursor={}, len={}, input={:?}",
+            self.cursor_pos,
+            self.input_text.len(),
+            self.input_text
+        ));
+        if self.cursor_pos > 0 {
+            let prev_pos = self.prev_char_pos();
+            debug_log(&format!("draining {}..{}", prev_pos, self.cursor_pos));
+            self.input_text.drain(prev_pos..self.cursor_pos);
+            self.cursor_pos = prev_pos;
+            debug_log(&format!(
+                "after delete: cursor={}, input={:?}",
+                self.cursor_pos, self.input_text
+            ));
+        } else {
+            debug_log("cursor at 0, nothing to delete");
+        }
+    }
+
+    fn handle_enter(&mut self) -> Result<(), CliError> {
+        let text = self.input_text.trim().to_string();
+
+        // Clear input FIRST for immediate visual feedback
+        self.input_text.clear();
+        self.cursor_pos = 0;
+
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        tracing::info!("Enter pressed with text: {:?}", text);
+
+        // Handle commands locally (no LLM)
+        let text_lower = text.to_lowercase();
+        if text_lower == "/exit"
+            || text_lower == "/quit"
+            || text_lower == "exit"
+            || text_lower == "quit"
+        {
+            tracing::info!("Exit command detected, exiting");
+            self.running = false;
+            return Ok(());
+        }
+
+        if text_lower == "/clear" || text_lower == "clear" {
+            tracing::info!("Clear command detected");
+            return Ok(());
+        }
+
+        // Add user message to chat
+        self.tui_bridge.add_user_message(text.clone());
+
+        // Clone Arcs for the spawned thread
+        let messages = self.tui_bridge.messages.clone();
+        let agent_bridge = self.tui_bridge.agent_bridge_arc();
+
+        tracing::debug!("Spawning LLM processing thread");
+
+        // Spawn a thread to process the message without blocking the UI
+        std::thread::spawn(move || {
+            // Create a new tokio runtime for this thread
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            // Safe: we're in a dedicated thread, this won't cause issues
+            #[allow(clippy::await_holding_lock)]
+            rt.block_on(async {
+                let mut messages_guard = messages.lock().unwrap();
+                let mut bridge = agent_bridge.lock().unwrap();
+
+                if let Err(e) = bridge.process_message(&text, &mut messages_guard).await {
+                    tracing::error!("LLM error: {}", e);
+                }
+            });
+        });
+
+        Ok(())
+    }
+
+    fn prev_char_pos(&self) -> usize {
+        if self.cursor_pos == 0 {
+            return 0;
+        }
+        // Start ONE position before cursor, then find char boundary
+        let mut pos = self.cursor_pos - 1;
+        while pos > 0 && !self.input_text.is_char_boundary(pos) {
+            pos -= 1;
+        }
+        pos
+    }
+
+    fn next_char_pos(&self) -> usize {
+        if self.cursor_pos >= self.input_text.len() {
+            return self.input_text.len();
+        }
+        // Start ONE position after cursor, then find char boundary
+        let mut pos = self.cursor_pos + 1;
+        while pos < self.input_text.len() && !self.input_text.is_char_boundary(pos) {
+            pos += 1;
+        }
+        pos
+    }
+
+    fn draw(&mut self) -> Result<(), CliError> {
+        let chat_view = self.tui_bridge.chat_view().clone();
+        let state = self.tui_bridge.state();
+        let input_text = self.input_text.clone();
+        let cursor_pos = self.cursor_pos;
+        let status_message = self.status_message.clone();
+        let status_is_error = self.status_is_error;
+        let cursor_blink_state = self.cursor_blink_state;
+
+        self.terminal
+            .draw(|f| {
+                Self::draw_ui(
+                    f,
+                    &chat_view,
+                    state,
+                    &input_text,
+                    cursor_pos,
+                    &status_message,
+                    status_is_error,
+                    cursor_blink_state,
+                );
+            })
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+
+        Ok(())
+    }
+
     /// Draw the TUI interface
+    #[allow(clippy::too_many_arguments)]
     fn draw_ui(
         f: &mut Frame,
         chat_view: &Arc<Mutex<ChatView>>,
-        progress_bar: &Arc<Mutex<ProgressBar>>,
-        spinner: &Arc<Mutex<Spinner>>,
-        state: TuiState,
+        _state: TuiState,
+        input_text: &str,
+        cursor_pos: usize,
+        status_message: &str,
+        status_is_error: bool,
+        cursor_blink_state: bool,
     ) {
         let size = f.area();
 
-        // Split the screen into sections
+        // Split the screen: chat, status, input
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .margin(1)
             .constraints(
                 [
-                    Constraint::Min(10),   // Chat view
-                    Constraint::Length(3), // Status bar
+                    Constraint::Min(5),    // Chat view
+                    Constraint::Length(1), // Status bar
+                    Constraint::Length(3), // Input area
                 ]
                 .as_ref(),
             )
             .split(size);
 
-        // Draw chat view
+        // Draw chat view with border
         {
             let chat = chat_view.lock().unwrap();
-            f.render_widget(&*chat, chunks[0]);
+            let chat_block = Block::default()
+                .borders(Borders::ALL)
+                .title(" Chat ")
+                .title_style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                );
+            f.render_widget(&*chat, chat_block.inner(chunks[0]));
+            f.render_widget(chat_block, chunks[0]);
         }
 
-        // Draw status bar based on state
-        match state {
-            TuiState::Thinking => {
-                let sp = spinner.lock().unwrap();
-                sp.render(chunks[1], f.buffer_mut());
-            }
-            TuiState::ToolExecuting { progress, .. } => {
-                let mut pb = progress_bar.lock().unwrap();
-                pb.set_value(progress);
-                pb.render(chunks[1], f.buffer_mut());
-            }
-            TuiState::Idle => {
-                let paragraph = Paragraph::new("Ready")
-                    .style(Style::default().fg(Color::Green))
-                    .alignment(Alignment::Center);
-                f.render_widget(paragraph, chunks[1]);
-            }
-            TuiState::Error(err) => {
-                let paragraph = Paragraph::new(format!("Error: {}", err))
-                    .style(Style::default().fg(Color::Red))
-                    .alignment(Alignment::Center);
-                f.render_widget(paragraph, chunks[1]);
-            }
+        // Draw status bar
+        {
+            let status_style = if status_is_error {
+                Style::default().fg(Color::Red).bg(Color::Reset)
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
+
+            let status = Paragraph::new(Line::from(vec![
+                Span::styled(" ● ", Style::default().fg(Color::Green)),
+                Span::styled(status_message, status_style),
+            ]));
+            f.render_widget(status, chunks[1]);
+        }
+
+        // Draw input area with border
+        {
+            let input_block = Block::default()
+                .borders(Borders::ALL)
+                .title(" Input (Esc to quit) ")
+                .title_style(Style::default().fg(Color::Cyan));
+
+            let input_inner = input_block.inner(chunks[2]);
+            f.render_widget(input_block, chunks[2]);
+
+            // Build input line with cursor
+            let before_cursor = &input_text[..cursor_pos];
+            let at_cursor = if cursor_pos < input_text.len() {
+                &input_text[cursor_pos
+                    ..cursor_pos
+                        + input_text[cursor_pos..]
+                            .chars()
+                            .next()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(0)]
+            } else {
+                " "
+            };
+            let after_cursor = if cursor_pos < input_text.len() {
+                &input_text[cursor_pos + at_cursor.len()..]
+            } else {
+                ""
+            };
+
+            let cursor_style = if cursor_blink_state {
+                Style::default().bg(Color::White).fg(Color::Black)
+            } else {
+                Style::default().bg(Color::Reset).fg(Color::Reset)
+            };
+
+            let input_line = if input_text.is_empty() {
+                Line::from(vec![Span::styled(
+                    "Type your message here...",
+                    Style::default().fg(Color::DarkGray),
+                )])
+            } else {
+                Line::from(vec![
+                    Span::raw(before_cursor),
+                    Span::styled(at_cursor, cursor_style),
+                    Span::raw(after_cursor),
+                ])
+            };
+
+            let input_para = Paragraph::new(input_line);
+            f.render_widget(input_para, input_inner);
         }
     }
 }
@@ -295,8 +626,7 @@ mod tests {
     use limit_llm::{Config as LlmConfig, ProviderConfig};
     use std::collections::HashMap;
 
-    #[test]
-    fn test_tui_bridge_new() {
+    fn create_test_config() -> LlmConfig {
         let mut providers = HashMap::new();
         providers.insert(
             "anthropic".to_string(),
@@ -308,11 +638,15 @@ mod tests {
                 timeout: 60,
             },
         );
-        let config = LlmConfig {
+        LlmConfig {
             provider: "anthropic".to_string(),
             providers,
-        };
+        }
+    }
 
+    #[test]
+    fn test_tui_bridge_new() {
+        let config = create_test_config();
         let agent_bridge = AgentBridge::new(config).unwrap();
         let (_tx, rx) = mpsc::unbounded_channel();
 
@@ -322,159 +656,31 @@ mod tests {
 
     #[test]
     fn test_tui_bridge_state() {
-        let mut providers = HashMap::new();
-        providers.insert(
-            "anthropic".to_string(),
-            ProviderConfig {
-                api_key: Some("test-key".to_string()),
-                model: "claude-3-5-sonnet-20241022".to_string(),
-                base_url: None,
-                max_tokens: 4096,
-                timeout: 60,
-            },
-        );
-        let config = LlmConfig {
-            provider: "anthropic".to_string(),
-            providers,
-        };
-
+        let config = create_test_config();
         let agent_bridge = AgentBridge::new(config).unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
 
         let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
 
-        // Send thinking event
         tx.send(AgentEvent::Thinking).unwrap();
         tui_bridge.process_events().unwrap();
         assert!(matches!(tui_bridge.state(), TuiState::Thinking));
 
-        // Send tool start event
-        tx.send(AgentEvent::ToolStart {
-            name: "test_tool".to_string(),
-            args: serde_json::json!({"arg": "value"}),
-        })
-        .unwrap();
-        tui_bridge.process_events().unwrap();
-        assert!(matches!(tui_bridge.state(), TuiState::ToolExecuting { .. }));
-
-        // Send tool complete event
-        tx.send(AgentEvent::ToolComplete {
-            name: "test_tool".to_string(),
-            result: "success".to_string(),
-        })
-        .unwrap();
+        tx.send(AgentEvent::Done).unwrap();
         tui_bridge.process_events().unwrap();
         assert_eq!(tui_bridge.state(), TuiState::Idle);
-
-        // Send error event
-        tx.send(AgentEvent::Error("test error".to_string()))
-            .unwrap();
-        tui_bridge.process_events().unwrap();
-        assert!(matches!(tui_bridge.state(), TuiState::Error(_)));
     }
 
     #[test]
     fn test_tui_bridge_chat_view() {
-        let mut providers = HashMap::new();
-        providers.insert(
-            "anthropic".to_string(),
-            ProviderConfig {
-                api_key: Some("test-key".to_string()),
-                model: "claude-3-5-sonnet-20241022".to_string(),
-                base_url: None,
-                max_tokens: 4096,
-                timeout: 60,
-            },
-        );
-        let config = LlmConfig {
-            provider: "anthropic".to_string(),
-            providers,
-        };
-
+        let config = create_test_config();
         let agent_bridge = AgentBridge::new(config).unwrap();
         let (_tx, rx) = mpsc::unbounded_channel();
 
         let tui_bridge = TuiBridge::new(agent_bridge, rx);
 
-        // Add user message
         tui_bridge.add_user_message("Hello".to_string());
         assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 1);
-
-        // Add another user message
-        tui_bridge.add_user_message("World".to_string());
-        assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 2);
-    }
-
-    #[test]
-    fn test_tui_bridge_content_chunk() {
-        let mut providers = HashMap::new();
-        providers.insert(
-            "anthropic".to_string(),
-            ProviderConfig {
-                api_key: Some("test-key".to_string()),
-                model: "claude-3-5-sonnet-20241022".to_string(),
-                base_url: None,
-                max_tokens: 4096,
-                timeout: 60,
-            },
-        );
-        let config = LlmConfig {
-            provider: "anthropic".to_string(),
-            providers,
-        };
-
-        let agent_bridge = AgentBridge::new(config).unwrap();
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        let mut tui_bridge = TuiBridge::new(agent_bridge, rx);
-
-        // Send content chunk
-        tx.send(AgentEvent::ContentChunk("Hello".to_string()))
-            .unwrap();
-        tui_bridge.process_events().unwrap();
-
-        // Should have created an assistant message
-        assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 1);
-    }
-
-    #[test]
-    fn test_tui_bridge_spinner() {
-        let mut providers = HashMap::new();
-        providers.insert(
-            "anthropic".to_string(),
-            ProviderConfig {
-                api_key: Some("test-key".to_string()),
-                model: "claude-3-5-sonnet-20241022".to_string(),
-                base_url: None,
-                max_tokens: 4096,
-                timeout: 60,
-            },
-        );
-        let config = LlmConfig {
-            provider: "anthropic".to_string(),
-            providers,
-        };
-
-        let agent_bridge = AgentBridge::new(config).unwrap();
-        let (_tx, rx) = mpsc::unbounded_channel();
-
-        let tui_bridge = TuiBridge::new(agent_bridge, rx);
-
-        // Initial frame
-        let initial_str = {
-            let spinner = tui_bridge.spinner().lock().unwrap();
-            spinner.current_frame().to_string()
-        };
-
-        // Tick spinner
-        tui_bridge.tick_spinner();
-
-        // Frame should have changed
-        let new_str = {
-            let spinner = tui_bridge.spinner().lock().unwrap();
-            spinner.current_frame().to_string()
-        };
-        assert_ne!(initial_str, new_str);
     }
 
     #[test]

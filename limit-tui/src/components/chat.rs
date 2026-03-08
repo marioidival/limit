@@ -8,7 +8,7 @@ use ratatui::{
     prelude::Widget,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 /// Role of a message sender
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,11 +111,23 @@ impl ChatView {
     }
 
     /// Add a message to the chat
-    /// Add a message to the chat
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);
         // Auto-scroll to bottom on new message
         self.scroll_to_bottom();
+    }
+
+    /// Append content to the last assistant message, or create a new one if none exists
+    pub fn append_to_last_assistant(&mut self, content: &str) {
+        if let Some(last) = self.messages.last_mut() {
+            if matches!(last.role, Role::Assistant) {
+                last.content.push_str(content);
+                self.scroll_to_bottom();
+                return;
+            }
+        }
+        // No assistant message to append to, create new
+        self.add_message(Message::assistant(content.to_string()));
     }
 
     /// Get the number of messages
@@ -362,16 +374,8 @@ impl ChatView {
 
 impl ratatui::widgets::Widget for &ChatView {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let block = Block::default().borders(Borders::ALL).title("Chat");
-
-        // Calculate inner area before rendering
-        let inner_area = block.inner(area);
-
-        // Render the block
-        block.render(area, buf);
-
-        // Render messages inside the bordered area
-        (*self).render_to_buffer(inner_area, buf);
+        // No border here - let the parent draw_ui handle borders for consistent layout
+        (*self).render_to_buffer(area, buf);
     }
 }
 

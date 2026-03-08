@@ -12,6 +12,7 @@ use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use limit_llm::ProviderFactory;
 use limit_llm::ProviderResponseChunk;
+use limit_llm::TrackingDb;
 use serde_json::json;
 use tokio::sync::mpsc;
 use tracing::{debug, instrument};
@@ -46,6 +47,8 @@ pub struct AgentBridge {
     config: limit_llm::Config,
     /// Event sender for streaming events to REPL
     event_tx: Option<mpsc::UnboundedSender<AgentEvent>>,
+    /// Token usage tracking database
+    tracking_db: TrackingDb,
 }
 
 impl AgentBridge {
@@ -91,6 +94,7 @@ impl AgentBridge {
             tool_names,
             config,
             event_tx: None,
+            tracking_db: TrackingDb::new().map_err(|e| CliError::ConfigError(e.to_string()))?,
         })
     }
 
@@ -206,6 +210,9 @@ impl AgentBridge {
             // Send thinking event
             self.send_event(AgentEvent::Thinking);
 
+            // Track timing for token usage
+            let request_start = std::time::Instant::now();
+
             // Call LLM
             let mut stream = self
                 .llm_client
@@ -241,7 +248,18 @@ impl AgentBridge {
                         // Store/merge tool call arguments
                         accumulated_calls.insert(id.clone(), (name.clone(), arguments.clone()));
                     }
-                    Ok(ProviderResponseChunk::Done(_)) => {
+                    Ok(ProviderResponseChunk::Done(usage)) => {
+                        // Track token usage
+                        let duration_ms = request_start.elapsed().as_millis() as u64;
+                        let cost =
+                            calculate_cost(self.model(), usage.input_tokens, usage.output_tokens);
+                        let _ = self.tracking_db.track_request(
+                            self.model(),
+                            usage.input_tokens,
+                            usage.output_tokens,
+                            cost,
+                            duration_ms,
+                        );
                         break;
                     }
                     Err(e) => {
@@ -676,6 +694,21 @@ impl AgentBridge {
             .map(|p| p.timeout)
             .unwrap_or(60)
     }
+}
+/// Calculate cost based on model pricing (per 1M tokens)
+fn calculate_cost(model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
+    let (input_price, output_price) = match model {
+        // Claude 3.5 Sonnet: $3/1M input, $15/1M output
+        "claude-3-5-sonnet-20241022" | "claude-3-5-sonnet" => (3.0, 15.0),
+        // GPT-4: $30/1M input, $60/1M output
+        "gpt-4" => (30.0, 60.0),
+        // GPT-4 Turbo: $10/1M input, $30/1M output
+        "gpt-4-turbo" | "gpt-4-turbo-preview" => (10.0, 30.0),
+        // Default: no cost tracking
+        _ => (0.0, 0.0),
+    };
+    (input_tokens as f64 * input_price / 1_000_000.0)
+        + (output_tokens as f64 * output_price / 1_000_000.0)
 }
 
 #[cfg(test)]
