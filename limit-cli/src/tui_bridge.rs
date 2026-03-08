@@ -139,7 +139,8 @@ impl TuiBridge {
                     *self.state.lock().unwrap() = TuiState::Idle;
                 }
                 AgentEvent::Error(err) => {
-                    // Only add to chat, don't change state - let user continue
+                    // Reset state to Idle so user can continue
+                    *self.state.lock().unwrap() = TuiState::Idle;
                     let chat_msg = Message::system(format!("❌ Error: {}", err));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
                 }

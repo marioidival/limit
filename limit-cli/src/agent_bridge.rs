@@ -200,7 +200,7 @@ impl AgentBridge {
         // Main processing loop
         let mut full_response = String::new();
         let mut tool_calls: Vec<LlmToolCall> = Vec::new();
-        let max_iterations = 15; // Increased from 10 to allow more tool calls
+        let max_iterations = 30; // Allow enough iterations for complex tasks
         let mut iteration = 0;
 
         while iteration < max_iterations {
@@ -344,12 +344,30 @@ impl AgentBridge {
             }
         }
 
-        // If we hit max iterations with pending work, make one final request to get a response
+        // If we hit max iterations, make one final request to get a response (no tools = forced text)
         if iteration >= max_iterations && !messages.is_empty() {
-            debug!("Making final LLM call after hitting max iterations");
+            debug!("Making final LLM call after hitting max iterations (forcing text response)");
+
+            // Add constraint message to force text response
+            let constraint_message = Message {
+                role: Role::User,
+                content: Some(
+                    "We've reached the iteration limit. Please provide a summary of:\n\
+                    1. What you've completed so far\n\
+                    2. What remains to be done\n\
+                    3. Recommended next steps for the user to continue"
+                        .to_string(),
+                ),
+                tool_calls: None,
+                tool_call_id: None,
+            };
+            messages.push(constraint_message);
+
+            // Send with NO tools to force text response
+            let no_tools: Vec<LlmTool> = vec![];
             let mut stream = self
                 .llm_client
-                .send(messages.clone(), tool_definitions.clone())
+                .send(messages.clone(), no_tools)
                 .await
                 .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
