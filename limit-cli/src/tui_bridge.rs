@@ -246,22 +246,17 @@ impl TuiApp {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
                         self.handle_key_event(key)?;
                     }
-                    Event::Mouse(mouse) => {
-                        debug_log(&format!("Mouse event: {:?}", mouse));
-                        match mouse.kind {
-                            MouseEventKind::ScrollUp => {
-                                debug_log("ScrollUp detected");
-                                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                                chat.scroll_up();
-                            }
-                            MouseEventKind::ScrollDown => {
-                                debug_log("ScrollDown detected");
-                                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                                chat.scroll_down();
-                            }
-                            _ => {}
+                    Event::Mouse(mouse) => match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                            chat.scroll_up();
                         }
-                    }
+                        MouseEventKind::ScrollDown => {
+                            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                            chat.scroll_down();
+                        }
+                        _ => {}
+                    },
                     _ => {}
                 }
             } else {
