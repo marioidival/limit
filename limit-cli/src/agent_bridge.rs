@@ -196,7 +196,7 @@ impl AgentBridge {
         // Main processing loop
         let mut full_response = String::new();
         let mut tool_calls: Vec<LlmToolCall> = Vec::new();
-        let max_iterations = 10;
+        let max_iterations = 15; // Increased from 10 to allow more tool calls
         let mut iteration = 0;
 
         while iteration < max_iterations {
@@ -322,6 +322,33 @@ impl AgentBridge {
                         tool_call_id: Some(result.call_id),
                     };
                     messages.push(tool_result_message);
+                }
+            }
+        }
+
+        // If we hit max iterations with pending work, make one final request to get a response
+        if iteration >= max_iterations && !messages.is_empty() {
+            debug!("Making final LLM call after hitting max iterations");
+            let mut stream = self
+                .llm_client
+                .send(messages.clone(), tool_definitions.clone())
+                .await
+                .map_err(|e| CliError::ConfigError(e.to_string()))?;
+
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(ProviderResponseChunk::ContentDelta(text)) => {
+                        full_response.push_str(&text);
+                        self.send_event(AgentEvent::ContentChunk(text));
+                    }
+                    Ok(ProviderResponseChunk::Done(_)) => {
+                        break;
+                    }
+                    Err(e) => {
+                        debug!("Error in final LLM call: {}", e);
+                        break;
+                    }
+                    _ => {}
                 }
             }
         }
