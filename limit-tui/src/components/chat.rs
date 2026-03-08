@@ -163,6 +163,13 @@ impl ChatView {
     pub fn scroll_to_top(&mut self) {
         self.scroll_offset = 0;
     }
+
+    /// Clear all messages
+    pub fn clear(&mut self) {
+        self.messages.clear();
+        self.scroll_offset = 0;
+    }
+
     /// Estimate the number of lines needed to display text with wrapping
     fn estimate_line_count(text: &str, width: usize) -> usize {
         if width == 0 {

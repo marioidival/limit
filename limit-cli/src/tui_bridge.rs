@@ -170,6 +170,7 @@ pub struct TuiApp {
     status_message: String,
     status_is_error: bool,
     cursor_blink_state: bool,
+    cursor_blink_timer: std::time::Instant,
 }
 
 impl TuiApp {
@@ -188,6 +189,7 @@ impl TuiApp {
             status_message: "Ready - Type a message and press Enter".to_string(),
             status_is_error: false,
             cursor_blink_state: true,
+            cursor_blink_timer: std::time::Instant::now(),
         })
     }
 
@@ -274,7 +276,11 @@ impl TuiApp {
     }
 
     fn tick_cursor_blink(&mut self) {
-        self.cursor_blink_state = !self.cursor_blink_state;
+        // Blink every 500ms for standard terminal cursor behavior
+        if self.cursor_blink_timer.elapsed().as_millis() > 500 {
+            self.cursor_blink_state = !self.cursor_blink_state;
+            self.cursor_blink_timer = std::time::Instant::now();
+        }
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), CliError> {
@@ -289,6 +295,25 @@ impl TuiApp {
             debug_log("Ctrl+C - exiting");
             self.running = false;
             return Ok(());
+        }
+
+        // Allow scrolling even when agent is busy
+        match key.code {
+            KeyCode::PageUp => {
+                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                for _ in 0..5 {
+                    chat.scroll_up();
+                }
+                return Ok(());
+            }
+            KeyCode::PageDown => {
+                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                for _ in 0..5 {
+                    chat.scroll_down();
+                }
+                return Ok(());
+            }
+            _ => {}
         }
 
         // Don't accept input while agent is busy
@@ -426,6 +451,27 @@ impl TuiApp {
 
         if text_lower == "/clear" || text_lower == "clear" {
             tracing::info!("Clear command detected");
+            self.tui_bridge.chat_view().lock().unwrap().clear();
+            return Ok(());
+        }
+
+        if text_lower == "/help" || text_lower == "help" {
+            tracing::info!("Help command detected");
+            let help_msg = Message::system(
+                "Available commands:\n\
+                 /help  - Show this help message\n\
+                 /clear - Clear chat history\n\
+                 /exit  - Exit the application\n\
+                 /quit  - Exit the application\n\
+                 \n\
+                 Page Up/Down - Scroll chat history"
+                    .to_string(),
+            );
+            self.tui_bridge
+                .chat_view()
+                .lock()
+                .unwrap()
+                .add_message(help_msg);
             return Ok(());
         }
 
