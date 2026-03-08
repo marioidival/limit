@@ -140,23 +140,36 @@ impl ChatView {
         &self.messages
     }
 
-    /// Scroll up by one line
+    /// Scroll up by multiple lines (better UX than single line)
     pub fn scroll_up(&mut self) {
-        if self.scroll_offset > 0 {
-            self.scroll_offset -= 1;
-        }
+        const SCROLL_LINES: usize = 5;
+        self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_LINES);
     }
 
-    /// Scroll down by one line
+    /// Scroll down by multiple lines
     pub fn scroll_down(&mut self) {
-        // We don't limit scroll_down here as we don't know the viewport height
-        // The render method will clamp it
-        self.scroll_offset += 1;
+        const SCROLL_LINES: usize = 5;
+        self.scroll_offset = self.scroll_offset.saturating_add(SCROLL_LINES);
+        // Render method will clamp to max valid offset
+    }
+
+    /// Scroll up by one page (viewport height)
+    pub fn scroll_page_up(&mut self, viewport_height: u16) {
+        let page_size = viewport_height as usize;
+        self.scroll_offset = self.scroll_offset.saturating_sub(page_size);
+    }
+
+    /// Scroll down by one page
+    pub fn scroll_page_down(&mut self, viewport_height: u16) {
+        let page_size = viewport_height as usize;
+        self.scroll_offset = self.scroll_offset.saturating_add(page_size);
+        // Render method will clamp to max valid offset
     }
 
     /// Scroll to the bottom (show newest messages)
+    /// Uses a very large offset and relies on render() to clamp it properly
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = self.messages.len().saturating_sub(1);
+        self.scroll_offset = usize::MAX;
     }
 
     /// Scroll to the top (show oldest messages)

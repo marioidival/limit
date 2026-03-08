@@ -301,16 +301,33 @@ impl TuiApp {
         match key.code {
             KeyCode::PageUp => {
                 let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                for _ in 0..5 {
-                    chat.scroll_up();
-                }
+                // Get terminal height and estimate chat viewport (terminal - status - input - borders)
+                let viewport_height = self
+                    .terminal
+                    .size()
+                    .map(|s| s.height.saturating_sub(6))
+                    .unwrap_or(20);
+                chat.scroll_page_up(viewport_height);
                 return Ok(());
             }
             KeyCode::PageDown => {
                 let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                for _ in 0..5 {
-                    chat.scroll_down();
-                }
+                let viewport_height = self
+                    .terminal
+                    .size()
+                    .map(|s| s.height.saturating_sub(6))
+                    .unwrap_or(20);
+                chat.scroll_page_down(viewport_height);
+                return Ok(());
+            }
+            KeyCode::Up => {
+                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                chat.scroll_up();
+                return Ok(());
+            }
+            KeyCode::Down => {
+                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                chat.scroll_down();
                 return Ok(());
             }
             _ => {}
