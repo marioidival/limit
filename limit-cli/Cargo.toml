@@ -26,6 +26,14 @@ async-trait = "0.1"
 tempfile = "3.8"
 termimad = "0.34"
 regex = "1.10"
+syntect = { version = "5.2", default-features = false, features = [
+    "default-fancy",
+    "regex-fancy",
+    "parsing",
+    "html",
+    "yaml-load",
+    "dump-load",
+] }
 lsp-types = "0.95"
 bincode = "1.0"
 chrono = { version = "0.4", features = ["serde"] }

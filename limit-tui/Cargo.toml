@@ -8,3 +8,9 @@ ratatui = "0.29"
 tracing = "0.1"
 crossterm = "0.29"
 chrono = "0.4.44"
+thiserror = "1.0"
+syntect = { version = "5.2", default-features = false, features = [
+    "default-fancy",
+    "regex-fancy",
+    "parsing",
+] }

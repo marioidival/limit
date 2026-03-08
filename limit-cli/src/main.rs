@@ -6,6 +6,7 @@ mod logging;
 mod render;
 mod repl;
 mod session;
+mod syntax;
 mod tools;
 mod tui_bridge;
 
