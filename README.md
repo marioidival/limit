@@ -5,20 +5,23 @@ A Rust-based code agent with multi-provider LLM support (Anthropic Claude, OpenA
 ## Features
 
 - **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, and z.ai with streaming API
-- **15 Built-in Tools** - File I/O, Bash, Git, and code analysis
+- **16 Built-in Tools** - File I/O, Bash, Git, and code analysis
 - **Session Persistence** - Auto-save/restore conversation history
 - **Token Tracking** - SQLite-based usage tracking
 - **Terminal UI** - Ratatui-based TUI with virtual DOM rendering
 - **Docker Sandbox** - Optional containerized tool execution
+- **Markdown Rendering** - Syntax highlighting for code blocks
+- **Customizable System Prompts** - Configurable agent behavior
+- **Logging System** - Tracing-based structured logging
 
 ## Crates
 
 | Crate | Description |
 |-------|-------------|
-| `limit-llm` | Multi-provider LLM client (Anthropic, OpenAI) with streaming, SQLite tracking, binary persistence |
-| `limit-agent` | Agent runtime with tool registry, conditional execution, Docker sandbox |
-| `limit-cli` | REPL interface with 15 tools, markdown rendering, session management |
-| `limit-tui` | Terminal UI with Virtual DOM, flexbox layout, chat/diff views |
+| `limit-llm` | Multi-provider LLM client (Anthropic, OpenAI, z.ai) with streaming, SQLite tracking, binary persistence, model handoff |
+| `limit-agent` | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
+| `limit-cli` | REPL interface with 16 tools, markdown rendering, session management, system prompts |
+| `limit-tui` | Terminal UI with Virtual DOM, flexbox layout, chat/diff views, interactive prompts |
 
 ## Installation
 
@@ -143,18 +146,21 @@ limit> /exit
 limit/
 ├── limit-llm/           # LLM API layer
 │   ├── client.rs        # Anthropic streaming client
-│   ├── openai_provider.rs  # OpenAI/z.ai streaming client
+│   ├── openai_provider.rs  # OpenAI streaming client
+│   ├── zai_provider.rs     # z.ai streaming client with thinking mode
 │   ├── provider_factory.rs # Provider factory
 │   ├── providers.rs     # LlmProvider trait
 │   ├── config.rs        # Configuration loading
 │   ├── tracking.rs      # Token usage tracking
 │   ├── persistence.rs   # Binary state persistence
-│   └── handoff.rs       # Model context handoff
+│   ├── handoff.rs       # Model context handoff
+│   └── types.rs         # Message, Tool, Response, Usage types
 │
 ├── limit-agent/         # Agent runtime
-│   ├── tool.rs          # Tool trait definition
+│   ├── tool.rs          # Tool trait definition + EchoTool
 │   ├── registry.rs      # Tool registry
 │   ├── executor.rs      # Parallel tool execution
+│   ├── events.rs        # Event system
 │   ├── sandbox.rs       # Docker sandbox
 │   └── state.rs         # Agent state management
 │
@@ -163,7 +169,14 @@ limit/
 │   ├── agent_bridge.rs  # LLM-Agent integration
 │   ├── tui_bridge.rs    # TUI integration
 │   ├── session.rs       # Session persistence
+│   ├── system_prompt.rs # System prompt configuration
+│   ├── logging.rs       # Logging setup
+│   ├── render.rs        # Markdown rendering
 │   └── tools/           # Tool implementations
+│       ├── file.rs      # File operations
+│       ├── bash.rs      # Shell execution
+│       ├── git.rs       # Git operations
+│       └── analysis.rs  # Code analysis tools
 │
 └── limit-tui/           # Terminal UI
     ├── vdom.rs          # Virtual DOM
@@ -171,9 +184,9 @@ limit/
     ├── layout.rs        # Flexbox layout
     └── components/      # UI components
         ├── chat.rs      # Chat view
-        ├── diff.rs      # Diff view
-        ├── progress.rs  # Progress indicators
-        └── prompt.rs    # Interactive prompts
+        ├── diff.rs      # Diff view with syntax highlighting
+        ├── progress.rs  # Progress indicators (ProgressBar, Spinner)
+        └── prompt.rs    # Interactive prompts (InputPrompt, SelectPrompt)
 ```
 
 ## Development
@@ -217,6 +230,7 @@ Sessions are automatically saved to `~/.limit/sessions/` and include:
 - Conversation history (messages)
 - Session metadata (SQLite)
 - Agent state
+- Tool registry state
 
 On startup, the last session is automatically restored.
 
@@ -244,11 +258,27 @@ Sandbox features:
 - 512MB memory limit
 - 60s timeout
 
+## System Prompts
+
+Configure custom system prompts to change agent behavior. The system prompt defines:
+- Agent identity and behavior
+- Tool usage guidelines
+- Response style preferences
+- Session management rules
+
+## Logging
+
+Structured logging using `tracing`:
+- Configurable log levels (DEBUG, INFO, WARN, ERROR)
+- Tool execution tracking
+- LLM request/response logging
+- Error diagnostics
+
 ## Constraints
 
 The MVP has these intentional limitations:
 - Unix-only TUI (no Windows support)
-- No syntax highlighting
+- No syntax highlighting (in TUI)
 - No mouse support
 - No split views/tabs
 - Max 50MB file reads
