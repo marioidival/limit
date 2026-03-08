@@ -8,7 +8,7 @@ use ratatui::{
     layout::Rect,
     prelude::Widget,
     style::{Color, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
 };
 /// Type of diff line
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

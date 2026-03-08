@@ -8,6 +8,7 @@ use thiserror::Error;
 
 /// Syntax highlighting errors
 #[derive(Debug, Error)]
+#[allow(dead_code)]
 pub enum HighlightError {
     #[error("Syntax not found: {0}")]
     SyntaxNotFound(String),
