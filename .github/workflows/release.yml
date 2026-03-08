@@ -9,23 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  changelog:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Generate changelog
-        uses: fcurella/git-chglog-release-action@v1
-        with:
-          version: ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-and-release:
-    needs: changelog
     strategy:
       matrix:
         include:
