@@ -19,6 +19,8 @@ pub struct SessionInfo {
     #[allow(dead_code)]
     pub last_accessed: DateTime<Utc>,
     pub message_count: usize,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,7 +125,9 @@ impl SessionManager {
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
                 last_accessed TEXT NOT NULL,
-                message_count INTEGER NOT NULL
+                message_count INTEGER NOT NULL,
+                total_input_tokens INTEGER NOT NULL DEFAULT 0,
+                total_output_tokens INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )
@@ -149,8 +153,8 @@ impl SessionManager {
 
         let conn = self.get_connection()?;
         conn.execute(
-            "INSERT INTO sessions (id, created_at, last_accessed, message_count) VALUES (?1, ?2, ?3, ?4)",
-            params![&session_id, &now, &now, 0],
+            "INSERT INTO sessions (id, created_at, last_accessed, message_count, total_input_tokens, total_output_tokens) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![&session_id, &now, &now, 0, 0, 0],
         )
         .map_err(|e| CliError::ConfigError(format!("Failed to create session: {}", e)))?;
 
@@ -158,7 +162,13 @@ impl SessionManager {
     }
 
     #[instrument(skip(self, messages))]
-    pub fn save_session(&self, session_id: &str, messages: &[Message]) -> Result<(), CliError> {
+    pub fn save_session(
+        &self,
+        session_id: &str,
+        messages: &[Message],
+        total_input_tokens: u64,
+        total_output_tokens: u64,
+    ) -> Result<(), CliError> {
         let file_path = self.sessions_dir.join(format!("{}.bin", session_id));
 
         fs::create_dir_all(&self.sessions_dir).map_err(|e| {
@@ -182,8 +192,8 @@ impl SessionManager {
         let now = Utc::now().to_rfc3339();
         let conn = self.get_connection()?;
         conn.execute(
-            "UPDATE sessions SET last_accessed = ?1, message_count = ?2 WHERE id = ?3",
-            params![&now, messages.len() as i64, session_id],
+            "UPDATE sessions SET last_accessed = ?1, message_count = ?2, total_input_tokens = ?3, total_output_tokens = ?4 WHERE id = ?5",
+            params![&now, messages.len() as i64, total_input_tokens as i64, total_output_tokens as i64, session_id],
         )
         .map_err(|e| CliError::ConfigError(format!("Failed to update session metadata: {}", e)))?;
 
@@ -231,7 +241,7 @@ impl SessionManager {
         let conn = self.get_connection()?;
 
         let mut stmt = conn
-            .prepare("SELECT id, created_at, last_accessed, message_count FROM sessions ORDER BY last_accessed DESC")
+            .prepare("SELECT id, created_at, last_accessed, message_count, total_input_tokens, total_output_tokens FROM sessions ORDER BY last_accessed DESC")
             .map_err(|e| CliError::ConfigError(format!("Failed to prepare query: {}", e)))?;
 
         let session_iter = stmt
@@ -245,6 +255,8 @@ impl SessionManager {
                         .unwrap()
                         .with_timezone(&Utc),
                     message_count: row.get::<_, i64>(3)? as usize,
+                    total_input_tokens: row.get::<_, i64>(4)? as u64,
+                    total_output_tokens: row.get::<_, i64>(5)? as u64,
                 })
             })
             .map_err(|e| CliError::ConfigError(format!("Failed to query sessions: {}", e)))?;
@@ -265,7 +277,7 @@ impl SessionManager {
         let conn = self.get_connection()?;
 
         let mut stmt = conn
-            .prepare("SELECT id, created_at, last_accessed, message_count FROM sessions ORDER BY last_accessed DESC LIMIT 1")
+            .prepare("SELECT id, created_at, last_accessed, message_count, total_input_tokens, total_output_tokens FROM sessions ORDER BY last_accessed DESC LIMIT 1")
             .map_err(|e| CliError::ConfigError(format!("Failed to prepare query: {}", e)))?;
 
         let mut session_iter = stmt
@@ -279,6 +291,8 @@ impl SessionManager {
                         .unwrap()
                         .with_timezone(&Utc),
                     message_count: row.get::<_, i64>(3)? as usize,
+                    total_input_tokens: row.get::<_, i64>(4)? as u64,
+                    total_output_tokens: row.get::<_, i64>(5)? as u64,
                 })
             })
             .map_err(|e| CliError::ConfigError(format!("Failed to query last session: {}", e)))?;
@@ -289,6 +303,23 @@ impl SessionManager {
             })?)),
             None => Ok(None),
         }
+    }
+
+    /// Update token counts for a session
+    #[allow(dead_code)]
+    pub fn update_session_tokens(
+        &self,
+        session_id: &str,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) -> Result<(), CliError> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE sessions SET total_input_tokens = total_input_tokens + ?1, total_output_tokens = total_output_tokens + ?2 WHERE id = ?3",
+            params![input_tokens as i64, output_tokens as i64, session_id],
+        )
+        .map_err(|e| CliError::ConfigError(format!("Failed to update session tokens: {}", e)))?;
+        Ok(())
     }
 }
 
@@ -372,7 +403,7 @@ mod tests {
             },
         ];
 
-        manager.save_session(&session_id, &messages).unwrap();
+        manager.save_session(&session_id, &messages, 0, 0).unwrap();
 
         let loaded = manager.load_session(&session_id).unwrap();
 
@@ -460,7 +491,7 @@ mod tests {
             tool_call_id: None,
         }];
 
-        manager1.save_session(&session_id, &messages).unwrap();
+        manager1.save_session(&session_id, &messages, 0, 0).unwrap();
 
         drop(manager1);
 
