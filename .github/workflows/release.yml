@@ -56,13 +56,12 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           mv limit ${{ matrix.name }}
-          tar czf ../../${{ matrix.name }}.tar.gz ${{ matrix.name }}
-          cd ../../..
+          tar czf ${{ github.workspace }}/${{ matrix.name }}.tar.gz ${{ matrix.name }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ matrix.name }}.tar.gz
+          files: ${{ github.workspace }}/${{ matrix.name }}.tar.gz
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
