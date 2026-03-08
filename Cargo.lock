@@ -1556,6 +1556,7 @@ dependencies = [
 name = "limit-tui"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossterm 0.29.0",
  "ratatui",
  "tracing",
