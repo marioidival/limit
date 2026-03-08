@@ -1,5 +1,4 @@
 name: Release
-
 on:
   push:
     tags:
@@ -9,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  build:
     strategy:
       matrix:
         include:
@@ -31,16 +30,22 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          cargo install cross
+        run: cargo install cross
 
       - name: Build
         shell: bash
@@ -51,17 +56,40 @@ jobs:
             cargo build --release --target ${{ matrix.target }}
           fi
 
-      - name: Prepare binary
+      - name: Prepare artifacts
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
           mv limit ${{ matrix.name }}
-          tar czf ${{ github.workspace }}/${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          tar czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz
+            target/${{ matrix.target }}/release/${{ matrix.name }}.tar.gz.sha256
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ github.workspace }}/${{ matrix.name }}.tar.gz
+          files: artifacts/*.tar.gz*
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
