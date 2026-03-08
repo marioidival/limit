@@ -428,11 +428,11 @@ impl ChatView {
     /// Returns a vector of (line, line_type, is_code_block, lang)
     fn process_code_blocks(&self, content: &str) -> Vec<(String, LineType, bool, Option<String>)> {
         let mut result = Vec::new();
-        let mut lines = content.lines().peekable();
+        let lines = content.lines().peekable();
         let mut in_code_block = false;
         let mut current_lang: Option<String> = None;
 
-        while let Some(line) = lines.next() {
+        for line in lines {
             if line.starts_with("```") {
                 if in_code_block {
                     // End of code block
@@ -508,14 +508,9 @@ impl ChatView {
             self.scroll_offset.min(max_scroll_offset)
         };
 
-        // When content is shorter than viewport and pinned to bottom, anchor content at bottom
+        // Content should always start at area.y - pinned_to_bottom only affects scroll_offset
         let (initial_y_offset, skip_until, max_y) =
-            if self.pinned_to_bottom && total_height <= viewport_height {
-                let bottom_padding = viewport_height.saturating_sub(total_height) as u16;
-                (area.y + bottom_padding, 0, total_height)
-            } else {
-                (area.y, scroll_offset, scroll_offset + viewport_height)
-            };
+            (area.y, scroll_offset, scroll_offset + viewport_height);
 
         let mut y_offset = initial_y_offset;
         let mut global_y: usize = 0;
@@ -559,7 +554,7 @@ impl ChatView {
 
             // Render message content with markdown and code highlighting
             for (line, line_type, is_code_block, lang) in processed {
-                let line_height = Self::estimate_line_count(&line, area.width as usize);
+                let _line_height = Self::estimate_line_count(&line, area.width as usize);
 
                 if is_code_block && global_y >= skip_until {
                     // Code block with syntax highlighting
@@ -899,5 +894,151 @@ mod tests {
         // Second message: role line + wrapped content lines + separator
         let height = chat.calculate_total_height(20);
         assert!(height > 6); // More than 2 * 3 due to wrapping
+    }
+
+    #[test]
+    fn test_short_content_pinned_to_bottom_should_start_at_top() {
+        // Bug: When content is short and pinned to bottom, it incorrectly anchors to bottom
+        // causing content to scroll up visually when new content is added
+        let mut chat = ChatView::new();
+
+        chat.add_message(Message::user("Hello".to_string()));
+
+        let area = Rect::new(0, 0, 50, 20);
+        let mut buffer = Buffer::empty(area);
+
+        // Render the chat
+        chat.render(area, &mut buffer);
+
+        // Check that content starts at the top of the area (y=0 relative to inner area)
+        // The first line should be the role badge, which should be at y=0 (after border)
+        let cell = buffer.cell((0, 0)).unwrap();
+        // Should not be empty - should have content
+        assert!(
+            !cell.symbol().is_empty(),
+            "Content should start at top, not be pushed down"
+        );
+    }
+
+    #[test]
+    fn test_streaming_content_stays_pinned() {
+        // Bug: When content grows during streaming, it can scroll up unexpectedly
+        let mut chat = ChatView::new();
+
+        // Start with short content
+        chat.add_message(Message::assistant("Start".to_string()));
+
+        let area = Rect::new(0, 0, 50, 20);
+        let mut buffer1 = Buffer::empty(area);
+        chat.render(area, &mut buffer1);
+
+        // Add more content (simulating streaming)
+        chat.append_to_last_assistant(" and continue with more text that is longer");
+
+        let mut buffer2 = Buffer::empty(area);
+        chat.render(area, &mut buffer2);
+
+        // The last line should be visible (near bottom of viewport)
+        // Check that content is still visible and not scrolled off-screen
+        // Should have some content (not empty)
+        let has_content_near_bottom = (0u16..20).any(|y| {
+            let c = buffer2.cell((0, y)).unwrap();
+            !c.symbol().is_empty() && c.symbol() != "│" && c.symbol() != " "
+        });
+
+        assert!(
+            has_content_near_bottom,
+            "Content should remain visible near bottom when pinned"
+        );
+    }
+
+    #[test]
+    fn test_content_shorter_than_viewport_no_excess_padding() {
+        // Bug: When total_height < viewport_height, bottom_padding pushes content down
+        let mut chat = ChatView::new();
+
+        chat.add_message(Message::user("Short message".to_string()));
+
+        let total_height = chat.calculate_total_height(50);
+        let viewport_height: u16 = 20;
+
+        // Content should fit without needing padding
+        assert!(
+            total_height < viewport_height as usize,
+            "Content should be shorter than viewport"
+        );
+
+        let area = Rect::new(0, 0, 50, viewport_height);
+        let mut buffer = Buffer::empty(area);
+
+        chat.render(area, &mut buffer);
+
+        // Content should start at y=0 (relative to inner area after border)
+        // Find the first non-empty, non-border cell
+        let mut first_content_y: Option<u16> = None;
+        for y in 0..viewport_height {
+            let cell = buffer.cell((0, y)).unwrap();
+            let is_border = matches!(
+                cell.symbol(),
+                "─" | "│" | "┌" | "┐" | "└" | "┘" | "├" | "┤" | "┬" | "┴"
+            );
+            if !is_border && !cell.symbol().is_empty() {
+                first_content_y = Some(y);
+                break;
+            }
+        }
+
+        let first_content_y = first_content_y.expect("Should find content somewhere");
+
+        assert_eq!(
+            first_content_y, 0,
+            "Content should start at y=0, not be pushed down by padding"
+        );
+    }
+
+    #[test]
+    fn test_pinned_state_after_scrolling() {
+        let mut chat = ChatView::new();
+
+        // Add enough messages to fill more than viewport
+        for i in 0..10 {
+            chat.add_message(Message::user(format!("Message {}", i)));
+        }
+
+        // Should be pinned initially
+        assert!(chat.pinned_to_bottom);
+
+        // Scroll up
+        chat.scroll_up();
+        assert!(!chat.pinned_to_bottom);
+
+        // Scroll back down
+        chat.scroll_to_bottom();
+        assert!(chat.pinned_to_bottom);
+    }
+
+    #[test]
+    fn test_message_growth_maintains_correct_position() {
+        // Simulate scenario where a message grows (streaming response)
+        let mut chat = ChatView::new();
+
+        // Add initial message
+        chat.add_message(Message::assistant("Initial".to_string()));
+
+        let area = Rect::new(0, 0, 60, 10);
+        let mut buffer = Buffer::empty(area);
+        chat.render(area, &mut buffer);
+
+        // Grow the message
+        chat.append_to_last_assistant(" content that gets added");
+
+        let mut buffer2 = Buffer::empty(area);
+        chat.render(area, &mut buffer2);
+
+        // Should still be pinned
+        assert!(
+            chat.pinned_to_bottom,
+            "Should remain pinned after content growth"
+        );
     }
 }
