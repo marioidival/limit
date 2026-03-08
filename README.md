@@ -1,38 +1,121 @@
-# limit
+<div align="center">
+  <img src="assets/logo.png" alt="Limit Logo" width="200"/>
+</div>
 
-A Rust-based code agent with multi-provider LLM support (Anthropic Claude, OpenAI, z.ai). Features a REPL interface with file operations, bash execution, git operations, code analysis tools, and a terminal UI.
+# Limit
+
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/limit-cli.svg)](https://crates.io/crates/limit-cli)
+
+**Your AI pair programmer that lives in the terminal.**
+
+Edit files, run commands, analyze code, manage git — all through natural language. Limit connects to Anthropic Claude, OpenAI, or z.ai to help you code, with a beautiful TUI or simple REPL.
+
+## Quick Start
+
+### One-line Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/marioidival/limit/main/install.sh | bash
+```
+
+### Manual Install
+
+```bash
+# 1. Clone and build
+git clone https://github.com/marioidival/limit.git && cd limit
+cargo build --release
+
+# 2. Configure your LLM provider
+echo 'provider = "anthropic"' > ~/.limit/config.toml
+export ANTHROPIC_API_KEY="your-key-here"
+
+# 3. Run
+cargo run --release --package limit-cli
+```
+
+That's it! Start chatting with your AI coding assistant.
+
+> Use `--no-tui` flag for text-based REPL: `cargo run --package limit-cli -- --no-tui`
+## Screenshots
+
+### TUI Chat View
+> *[Screenshot placeholder: Interactive chat with syntax-highlighted code blocks]*
+
+### Diff View with Syntax Highlighting  
+> *[Screenshot placeholder: Side-by-side diff showing code changes]*
+
+### Interactive Prompts
+> *[Screenshot placeholder: Select prompt with multiple choices]*
+
+---
 
 ## Features
 
-- **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, and z.ai with streaming API
-- **16 Built-in Tools** - File I/O, Bash, Git, and code analysis
-- **Session Persistence** - Auto-save/restore conversation history
-- **Token Tracking** - SQLite-based usage tracking
-- **Terminal UI** - Ratatui-based TUI with virtual DOM rendering
-- **Docker Sandbox** - Optional containerized tool execution
-- **Markdown Rendering** - Syntax highlighting for code blocks
-- **Customizable System Prompts** - Configurable agent behavior
-- **Logging System** - Tracing-based structured logging
+- **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, and z.ai with streaming API
+- **16 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis
+- **Terminal UI** — Ratatui-based TUI with Virtual DOM rendering and syntax highlighting
+- **Session Persistence** — Auto-save/restore conversation history
+- **Token Tracking** — SQLite-based usage tracking with cost estimation
+- **Docker Sandbox** — Optional containerized tool execution for isolation
+- **LSP Integration** — Go-to-definition, find-references
+- **AST-Aware Search** — Code search that understands syntax (Rust, TypeScript, Python)
+- **Markdown Rendering** — Rich formatting with syntax-highlighted code blocks
 
-## Crates
+---
 
-| Crate | Description |
-|-------|-------------|
-| `limit-llm` | Multi-provider LLM client (Anthropic, OpenAI, z.ai) with streaming, SQLite tracking, binary persistence, model handoff |
-| `limit-agent` | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
-| `limit-cli` | REPL interface with 16 tools, markdown rendering, session management, system prompts |
-| `limit-tui` | Terminal UI with Virtual DOM, flexbox layout, chat/diff views, interactive prompts |
+## Why Limit?
+
+| Feature | Limit | Aider | Cursor | GitHub Copilot |
+|---------|:-----:|:-----:|:------:|:--------------:|
+| Terminal-native | ✅ | ✅ | ❌ | ❌ |
+| Multi-provider LLM | ✅ | ✅ | ❌ | ❌ |
+| Docker sandbox | ✅ | ❌ | ❌ | ❌ |
+| Session persistence | ✅ | ✅ | ✅ | ✅ |
+| Token tracking | ✅ | ❌ | ❌ | ✅ |
+| Open source | ✅ | ✅ | ❌ | ❌ |
+| AST-aware search | ✅ | ❌ | ✅ | ❌ |
+| LSP integration | ✅ | ❌ | ✅ | ✅ |
+
+**Perfect for:**
+- 🖥️ Developers who live in the terminal
+- 🔒 Privacy-conscious teams wanting Docker isolation
+- 📊 Projects requiring audit trails of AI interactions
+- 🔄 Multi-model workflows (switch between Claude, GPT-4, z.ai)
+
+---
 
 ## Installation
 
+### One-line Install (Recommended)
+
 ```bash
-# Clone the repository
+curl -fsSL https://raw.githubusercontent.com/marioidival/limit/main/install.sh | bash
+```
+
+This will install Limit to `~/.local/bin/limit`.
+
+### From Source
+
+```bash
 git clone https://github.com/marioidival/limit.git
 cd limit
-
-# Build all crates
 cargo build --workspace --release
 ```
+
+### Requirements
+
+**One-line install:**
+- curl or wget
+- Unix-like OS (Linux, macOS)
+
+**From source:**
+- Rust 1.70+
+- git
+- Unix-like OS (Linux, macOS)
+
+---
 
 ## Configuration
 
@@ -75,36 +158,47 @@ provider = "zai"
 # api_key is optional - falls back to ZAI_API_KEY env var
 api_key = "..."
 model = "glm-4.7"
-# Optional: Custom endpoint (defaults to ZAI coding path)
-# base_url = "https://api.z.ai/api/coding/paas/v4/chat/completions"
 max_tokens = 4096
 timeout = 300000
-# Optional: Enable thinking mode (default: false)
+# Optional: Enable thinking mode
 # thinking_enabled = true
-# Optional: Preserve thinking across turns (default: true)
-# clear_thinking = false
 ```
+
 ### Environment Variables
 
 Provider API keys can be set via environment variables as fallback:
 
-- `ANTHROPIC_API_KEY` - For Anthropic Claude
-- `OPENAI_API_KEY` - For OpenAI
-- `ZAI_API_KEY` - For z.ai provider
+| Variable | Provider |
+|----------|----------|
+| `ANTHROPIC_API_KEY` | Anthropic Claude |
+| `OPENAI_API_KEY` | OpenAI |
+| `ZAI_API_KEY` | z.ai |
+
+---
 
 ## Usage
 
-### REPL Interface
+### TUI Mode (Default)
 
 ```bash
-cargo run --package limit-cli
+limit
 ```
 
+### REPL Mode (Text-only)
+
+```bash
+limit --no-tui
 ```
-limit> Read the file src/main.rs
-limit> What does this code do?
-limit> /help
-limit> /exit
+
+> If installed from source without the install script: `cargo run --package limit-cli`
+### Example Interaction
+
+```
+limit> Read the file src/main.rs and explain what it does
+
+[Reading src/main.rs...]
+
+This file contains the main entry point for the CLI application...
 ```
 
 ### Available Commands
@@ -112,117 +206,71 @@ limit> /exit
 | Command | Description |
 |---------|-------------|
 | `/exit` | Save session and exit |
-| `/clear` | Clear conversation history |
+| `/clear` | Clear the screen |
 | `/help` | Show available commands |
+| `/model` | Show current model configuration |
+| `/session list` | List all saved sessions |
+| `/session new` | Create a new session |
+| `/session load <id>` | Load a specific session by ID |
+
+---
 
 ## Built-in Tools
 
 ### File Operations
-- **file_read** - Read file contents (max 50MB)
-- **file_write** - Write content to file
-- **file_edit** - Edit file using diff-based replacement
+| Tool | Description |
+|------|-------------|
+| `file_read` | Read file contents (max 50MB) |
+| `file_write` | Write content to file |
+| `file_edit` | Edit file using diff-based replacement |
 
 ### Shell
-- **bash** - Execute shell commands with timeout
+| Tool | Description |
+|------|-------------|
+| `bash` | Execute shell commands with timeout |
 
 ### Git
-- **git_status** - Show repository status
-- **git_diff** - Show changes
-- **git_log** - Show commit history
-- **git_add** - Stage files
-- **git_commit** - Create commit
-- **git_push** - Push to remote
-- **git_pull** - Pull from remote
-- **git_clone** - Clone repository
+| Tool | Description |
+|------|-------------|
+| `git_status` | Show repository status |
+| `git_diff` | Show changes |
+| `git_log` | Show commit history |
+| `git_add` | Stage files |
+| `git_commit` | Create commit |
+| `git_push` | Push to remote |
+| `git_pull` | Pull from remote |
+| `git_clone` | Clone repository |
 
 ### Code Analysis
-- **grep** - Search files with regex
-- **ast_grep** - AST-aware code search (Rust, TypeScript, Python)
-- **lsp** - LSP operations (go-to-definition, find-references)
+| Tool | Description |
+|------|-------------|
+| `grep` | Search files with regex |
+| `ast_grep` | AST-aware code search (Rust, TypeScript, Python) |
+| `lsp` | LSP operations (go-to-definition, find-references) |
 
-## Architecture
+---
 
-```
-limit/
-├── limit-llm/           # LLM API layer
-│   ├── client.rs        # Anthropic streaming client
-│   ├── openai_provider.rs  # OpenAI streaming client
-│   ├── zai_provider.rs     # z.ai streaming client with thinking mode
-│   ├── provider_factory.rs # Provider factory
-│   ├── providers.rs     # LlmProvider trait
-│   ├── config.rs        # Configuration loading
-│   ├── tracking.rs      # Token usage tracking
-│   ├── persistence.rs   # Binary state persistence
-│   ├── handoff.rs       # Model context handoff
-│   └── types.rs         # Message, Tool, Response, Usage types
-│
-├── limit-agent/         # Agent runtime
-│   ├── tool.rs          # Tool trait definition + EchoTool
-│   ├── registry.rs      # Tool registry
-│   ├── executor.rs      # Parallel tool execution
-│   ├── events.rs        # Event system
-│   ├── sandbox.rs       # Docker sandbox
-│   └── state.rs         # Agent state management
-│
-├── limit-cli/           # CLI application
-│   ├── repl.rs          # REPL interface
-│   ├── agent_bridge.rs  # LLM-Agent integration
-│   ├── tui_bridge.rs    # TUI integration
-│   ├── session.rs       # Session persistence
-│   ├── system_prompt.rs # System prompt configuration
-│   ├── logging.rs       # Logging setup
-│   ├── render.rs        # Markdown rendering
-│   └── tools/           # Tool implementations
-│       ├── file.rs      # File operations
-│       ├── bash.rs      # Shell execution
-│       ├── git.rs       # Git operations
-│       └── analysis.rs  # Code analysis tools
-│
-└── limit-tui/           # Terminal UI
-    ├── vdom.rs          # Virtual DOM
-    ├── backend.rs       # Ratatui backend
-    ├── layout.rs        # Flexbox layout
-    └── components/      # UI components
-        ├── chat.rs      # Chat view
-        ├── diff.rs      # Diff view with syntax highlighting
-        ├── progress.rs  # Progress indicators (ProgressBar, Spinner)
-        └── prompt.rs    # Interactive prompts (InputPrompt, SelectPrompt)
-```
+## Crates
+
+| Crate | Description |
+|-------|-------------|
+| [`limit-llm`](limit-llm) | Multi-provider LLM client with streaming, SQLite tracking, binary persistence, model handoff |
+| [`limit-agent`](limit-agent) | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
+| [`limit-cli`](limit-cli) | REPL interface with 16 tools, markdown rendering, session management |
+| [`limit-tui`](limit-tui) | Terminal UI with Virtual DOM, flexbox layout, chat/diff views |
+
+---
 
 ## Development
 
-```bash
-# Build all crates
-cargo build --workspace
+See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
+- Building and testing
+- Project structure
+- Adding new tools/providers
+- Code style guidelines
+- Debugging tips
 
-# Run all tests
-cargo test --workspace -- --test-threads=1
-
-# Run specific package tests
-cargo test --package limit-cli
-
-# Run E2E integration tests
-cargo test --package limit-cli --test e2e_test
-
-# Run with release optimizations
-cargo build --workspace --release
-```
-
-### Running Examples
-
-```bash
-# Chat view demo
-cargo run --package limit-tui --example chat_demo
-
-# Diff view demo
-cargo run --package limit-tui --example diff_demo
-
-# Progress indicators demo
-cargo run --package limit-tui --example progress_demo
-
-# Interactive prompts demo
-cargo run --package limit-tui --example prompt_demo
-```
+---
 
 ## Session Persistence
 
@@ -230,9 +278,11 @@ Sessions are automatically saved to `~/.limit/sessions/` and include:
 - Conversation history (messages)
 - Session metadata (SQLite)
 - Agent state
-- Tool registry state
+- Token usage statistics
 
 On startup, the last session is automatically restored.
+
+---
 
 ## Token Tracking
 
@@ -241,6 +291,8 @@ Usage statistics are tracked in `~/.limit/tracking.db`:
 - Input/output tokens
 - Cost estimation
 - Duration metrics
+
+---
 
 ## Docker Sandbox (Optional)
 
@@ -252,37 +304,35 @@ Limit can execute tools in isolated Docker containers:
 ```
 
 Sandbox features:
-- Isolated execution environment
-- Read-only project mount
-- No network access
-- 512MB memory limit
-- 60s timeout
+- 🔒 Isolated execution environment
+- 📁 Read-only project mount
+- 🚫 No network access
+- 💾 512MB memory limit
+- ⏱️ 60s timeout
 
-## System Prompts
+---
 
-Configure custom system prompts to change agent behavior. The system prompt defines:
-- Agent identity and behavior
-- Tool usage guidelines
-- Response style preferences
-- Session management rules
+## Contributing
 
-## Logging
+We welcome contributions! 
 
-Structured logging using `tracing`:
-- Configurable log levels (DEBUG, INFO, WARN, ERROR)
-- Tool execution tracking
-- LLM request/response logging
-- Error diagnostics
+1. Fork and clone the repository
+2. Create a feature branch
+3. Run tests: `cargo test --workspace`
+4. Run lints: `cargo clippy --all-targets && cargo fmt`
+5. Submit a PR with conventional commit message
 
-## Constraints
 
-The MVP has these intentional limitations:
-- Unix-only TUI (no Windows support)
-- No syntax highlighting (in TUI)
-- No mouse support
-- No split views/tabs
-- Max 50MB file reads
-- Max 50 tool calls per session
+## Known Limitations
+
+| Limitation | Status |
+|------------|--------|
+| Unix-only TUI | Windows support planned |
+| Max 50MB file reads | By design |
+| Max 50 tool calls per session | Configurable |
+| No syntax highlighting in REPL | TUI only |
+
+---
 
 ## License
 
