@@ -3,7 +3,7 @@ use crate::openai_provider::OpenAiProvider;
 use crate::providers::{LlmProvider, ProviderResponseChunk};
 use crate::types::{Message, Tool};
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use std::pin::Pin;
 
 #[derive(Clone, Debug)]
@@ -24,7 +24,9 @@ impl Default for ThinkingConfig {
 #[derive(Clone)]
 pub struct ZaiProvider {
     openai: OpenAiProvider,
+    #[allow(dead_code)]
     thinking_config: ThinkingConfig,
+}
 impl ZaiProvider {
     pub fn new(
         api_key: String,
@@ -54,6 +56,7 @@ impl ZaiProvider {
 
 #[async_trait]
 impl LlmProvider for ZaiProvider {
+    #[allow(clippy::type_complexity)]
     async fn send(
         &self,
         messages: Vec<Message>,

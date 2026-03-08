@@ -1,9 +1,12 @@
 use crate::error::LlmError;
+use crate::providers::{LlmProvider, ProviderResponseChunk};
+
 use crate::types::{Message, Tool, Usage};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use reqwest::Client;
 use serde_json::Value;
+use std::boxed::Box;
 use std::pin::Pin;
 use std::time::Duration;
 use tracing::{debug, error, info, instrument, trace, warn};
@@ -14,15 +17,6 @@ pub struct AnthropicClient {
     base_url: String,
     model: String,
     max_tokens: u32,
-}
-pub enum ResponseChunk {
-    ContentDelta(String),
-    ToolCallDelta {
-        id: String,
-        name: String,
-        arguments: Value,
-    },
-    Done(Usage),
 }
 
 #[derive(Debug)]
@@ -39,6 +33,32 @@ impl Clone for AnthropicClient {
             model: self.model.clone(),
             max_tokens: self.max_tokens,
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl LlmProvider for AnthropicClient {
+    async fn send(
+        &self,
+        messages: Vec<Message>,
+        tools: Vec<Tool>,
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + '_>>,
+        LlmError,
+    > {
+        Ok(self.send(messages, tools).await)
+    }
+
+    fn provider_name(&self) -> &str {
+        "anthropic"
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn clone_box(&self) -> Box<dyn LlmProvider> {
+        Box::new(self.clone())
     }
 }
 
@@ -72,7 +92,7 @@ impl AnthropicClient {
         &self,
         messages: Vec<Message>,
         tools: Vec<Tool>,
-    ) -> Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + '_>> {
         let api_key = self.api_key.clone();
         let base_url = self.base_url.clone();
         let model = self.model.clone();
@@ -119,13 +139,16 @@ impl AnthropicClient {
 }
 
 #[instrument(skip_all)]
+#[allow(clippy::type_complexity)]
 async fn do_request(
     client: &Client,
     api_key: &str,
     base_url: &str,
     request_body: &Value,
-) -> Result<Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + 'static>>, LlmError>
-{
+) -> Result<
+    Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + 'static>>,
+    LlmError,
+> {
     let response = client
         .post(base_url)
         .header("x-api-key", api_key)
@@ -198,129 +221,128 @@ fn parse_partial_json(json: &str) -> serde_json::Value {
     serde_json::json!({})
 }
 
-
 fn parse_sse_stream(
     byte_stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Send + Unpin + 'static,
-) -> Pin<Box<dyn Stream<Item = Result<ResponseChunk, LlmError>> + Send + 'static>> {
+) -> Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + 'static>> {
     Box::pin(stream! {
-        let mut buffer = String::new();
-        let mut tool_calls_by_id: std::collections::HashMap<u64, (String, String)> = std::collections::HashMap::new();
+            let mut buffer = String::new();
+            let mut tool_calls_by_id: std::collections::HashMap<u64, (String, String)> = std::collections::HashMap::new();
 
-        let mut tool_partial_json: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
+            let mut tool_partial_json: std::collections::HashMap<u64, String> = std::collections::HashMap::new();
 
-        let mut lines = byte_stream
-            .map(|chunk| chunk.map_err(|e| LlmError::NetworkError(e.to_string())));
+            let mut lines = byte_stream
+                .map(|chunk| chunk.map_err(|e| LlmError::NetworkError(e.to_string())));
 
-        while let Some(chunk_result) = lines.next().await {
-            let chunk = match chunk_result {
-                Ok(c) => c,
-                Err(e) => {
-                    yield Err(e);
-                    continue;
-                }
-            };
+            while let Some(chunk_result) = lines.next().await {
+                let chunk = match chunk_result {
+                    Ok(c) => c,
+                    Err(e) => {
+                        yield Err(e);
+                        continue;
+                    }
+                };
 
-            let text = String::from_utf8_lossy(&chunk);
+                let text = String::from_utf8_lossy(&chunk);
 
-            buffer.push_str(&text);
+                buffer.push_str(&text);
 
-            while let Some(event) = parse_sse_line(&mut buffer) {
+                while let Some(event) = parse_sse_line(&mut buffer) {
 
-                if event.data == "[DONE]" {
-                    return;
-                }
+                    if event.data == "[DONE]" {
+                        return;
+                    }
 
-                if let Ok(parsed) = serde_json::from_str::<Value>(&event.data) {
-                    trace!("SSE: {}", &event.data.chars().take(200).collect::<String>());
-                    let chunk_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if let Ok(parsed) = serde_json::from_str::<Value>(&event.data) {
+                        trace!("SSE: {}", &event.data.chars().take(200).collect::<String>());
+                        let chunk_type = parsed.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-                    match chunk_type {
-                        "content_block_delta" => {
-                            if let Some(delta) = parsed.get("delta") {
-                                // Handle text deltas
-                                if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                                    yield Ok(ResponseChunk::ContentDelta(text.to_string()));
+                        match chunk_type {
+                            "content_block_delta" => {
+                                if let Some(delta) = parsed.get("delta") {
+                                    // Handle text deltas
+                                    if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
+                                        yield Ok(ProviderResponseChunk::ContentDelta(text.to_string()));
+                                    }
+
+                                    // Handle tool argument deltas (input_json_delta)
+                                    let delta_type = delta.get("type").and_then(|v| v.as_str());
+                                    if delta_type == Some("input_json_delta") {
+                                        if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
+                                            // Get tool call index
+                                            if let Some(index) = parsed.get("index").and_then(|v| v.as_u64()) {
+                                                // Accumulate partial JSON
+    tool_partial_json.entry(index)
+                                                    .or_default()
+                                                    .push_str(partial_json);
+
+                                                // Look up tool call metadata and parse accumulated JSON
+                                                if let Some((id, name)) = tool_calls_by_id.get(&index) {
+                                                    let accumulated = tool_partial_json.get(&index).unwrap();
+                                                    let args = parse_partial_json(accumulated);
+
+                                                    yield Ok(ProviderResponseChunk::ToolCallDelta {
+                                                        id: id.clone(),
+                                                        name: name.clone(),
+                                                        arguments: args,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                                
-                                // Handle tool argument deltas (input_json_delta)
-                                let delta_type = delta.get("type").and_then(|v| v.as_str());
-                                if delta_type == Some("input_json_delta") {
-                                    if let Some(partial_json) = delta.get("partial_json").and_then(|v| v.as_str()) {
-                                        // Get tool call index
+                            }
+                            "content_block_start" => {
+                                if let Some(content_block) = parsed.get("content_block") {
+                                    let block_type = content_block.get("type").and_then(|v| v.as_str());
+                                    if block_type == Some("tool_use") {
+                                        let id = content_block.get("id")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let name = content_block.get("name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+
+                                        // Track tool call by index
                                         if let Some(index) = parsed.get("index").and_then(|v| v.as_u64()) {
-                                            // Accumulate partial JSON
-                                            tool_partial_json.entry(index)
-                                                .or_insert_with(String::new)
-                                                .push_str(partial_json);
-                                            
-                                            // Look up tool call metadata and parse accumulated JSON
-                                            if let Some((id, name)) = tool_calls_by_id.get(&index) {
-                                                let accumulated = tool_partial_json.get(&index).unwrap();
-                                                let args = parse_partial_json(accumulated);
-                                                
-                                                yield Ok(ResponseChunk::ToolCallDelta {
-                                                    id: id.clone(),
-                                                    name: name.clone(),
-                                                    arguments: args,
-                                                });
+                                            tool_calls_by_id.insert(index, (id.clone(), name.clone()));
+                                        }
+
+                                        yield Ok(ProviderResponseChunk::ToolCallDelta {
+                                            id,
+                                            name,
+                                            arguments: serde_json::json!({}),
+                                        });
+                                    }
+                                }
+                            }
+                            "content_block_stop" => {
+                                // Tool call completed
+                            }
+                            "message_delta" => {
+                                if let Some(delta) = parsed.get("delta") {
+                                    if let Some(stop_reason) = delta.get("stop_reason").and_then(|v| v.as_str()) {
+                                        debug!("stop_reason: {}", stop_reason);
+                                        if stop_reason == "end_turn" || stop_reason == "tool_use" {
+                                            if let Some(usage) = parsed.get("usage") {
+                                                if let Ok(usage_obj) = serde_json::from_value::<Usage>(usage.clone()) {
+                                                    yield Ok(ProviderResponseChunk::Done(usage_obj));
+                                                    return;
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-                        "content_block_start" => {
-                            if let Some(content_block) = parsed.get("content_block") {
-                                let block_type = content_block.get("type").and_then(|v| v.as_str());
-                                if block_type == Some("tool_use") {
-                                    let id = content_block.get("id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let name = content_block.get("name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("")
-                                        .to_string();
-
-                                    // Track tool call by index
-                                    if let Some(index) = parsed.get("index").and_then(|v| v.as_u64()) {
-                                        tool_calls_by_id.insert(index, (id.clone(), name.clone()));
-                                    }
-
-                                    yield Ok(ResponseChunk::ToolCallDelta {
-                                        id,
-                                        name,
-                                        arguments: serde_json::json!({}),
-                                    });
-                                }
+                            _ => {
+                                debug!("Unknown chunk_type: {}", chunk_type);
                             }
-                        }
-                        "content_block_stop" => {
-                            // Tool call completed
-                        }
-                        "message_delta" => {
-                            if let Some(delta) = parsed.get("delta") {
-                                if let Some(stop_reason) = delta.get("stop_reason").and_then(|v| v.as_str()) {
-                                    debug!("stop_reason: {}", stop_reason);
-                                    if stop_reason == "end_turn" || stop_reason == "tool_use" {
-                                        if let Some(usage) = parsed.get("usage") {
-                                            if let Ok(usage_obj) = serde_json::from_value::<Usage>(usage.clone()) {
-                                                yield Ok(ResponseChunk::Done(usage_obj));
-                                                return;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            debug!("Unknown chunk_type: {}", chunk_type);
                         }
                     }
                 }
             }
-        }
-    })
+        })
 }
 
 fn parse_sse_line(buffer: &mut String) -> Option<SseEvent> {
@@ -379,8 +401,9 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: "Hello".to_string(),
+            content: Some("Hello".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         let base_url = format!("{}/v1/messages", server.url());
@@ -433,8 +456,9 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: "Hello".to_string(),
+            content: Some("Hello".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         let base_url = format!("{}/v1/messages", server.url());
@@ -481,8 +505,9 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: "Hello".to_string(),
+            content: Some("Hello".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         let base_url = format!("{}/v1/messages", server.url());
@@ -525,8 +550,9 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: "Use test_tool".to_string(),
+            content: Some("Use test_tool".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         let tools = vec![Tool {
