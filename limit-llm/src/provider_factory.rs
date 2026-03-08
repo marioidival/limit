@@ -37,7 +37,10 @@ impl ProviderFactory {
             ))),
             "zai" => Ok(Box::new(OpenAiProvider::new(
                 api_key,
-                provider_config.base_url.as_deref().or(Some("https://api.z.ai/api/coding/paas/v4/chat/completions")),
+                provider_config
+                    .base_url
+                    .as_deref()
+                    .or(Some("https://api.z.ai/api/coding/paas/v4/chat/completions")),
                 &provider_config.model,
                 provider_config.max_tokens,
                 provider_config.timeout,

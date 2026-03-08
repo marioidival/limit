@@ -23,6 +23,7 @@ pub enum ProviderResponseChunk {
 #[async_trait]
 pub trait LlmProvider: Send + Sync {
     /// Send messages to the LLM and receive streaming response
+    #[allow(clippy::type_complexity)]
     async fn send(
         &self,
         messages: Vec<Message>,
