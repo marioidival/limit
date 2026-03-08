@@ -16,7 +16,7 @@ async-stream = "0.3"
 futures = "0.3"
 async-trait = "0.1"
 bytes = "1.0"
-rusqlite = "0.31"
+rusqlite = { version = "0.31", features = ["bundled"] }
 tiktoken-rs = "0.5"
 tracing = "0.1"
 [dev-dependencies]
