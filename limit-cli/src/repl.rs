@@ -15,6 +15,8 @@ pub struct Repl {
     messages: Vec<limit_llm::Message>,
     agent_bridge: Option<AgentBridge>,
     event_rx: Option<mpsc::UnboundedReceiver<AgentEvent>>,
+    total_input_tokens: u64,
+    total_output_tokens: u64,
 }
 
 impl Repl {
@@ -71,6 +73,8 @@ impl Repl {
             messages,
             agent_bridge,
             event_rx,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         })
     }
 
@@ -171,6 +175,17 @@ impl Repl {
                         AgentEvent::ContentChunk(_chunk) => {
                             // Don't stream content - will be shown in final response
                         }
+                        AgentEvent::TokenUsage {
+                            input_tokens,
+                            output_tokens,
+                        } => {
+                            self.total_input_tokens += input_tokens;
+                            self.total_output_tokens += output_tokens;
+                            println!(
+                                "\x1B[90mTokens: In: {} | Out: {}\x1B[0m",
+                                input_tokens, output_tokens
+                            );
+                        }
                         AgentEvent::Done => {
                             println!();
                         }
@@ -243,8 +258,12 @@ impl Repl {
     }
 
     fn save_current_session(&self) -> Result<(), CliError> {
-        self.session_manager
-            .save_session(&self.session_id, &self.messages)?;
+        self.session_manager.save_session(
+            &self.session_id,
+            &self.messages,
+            self.total_input_tokens,
+            self.total_output_tokens,
+        )?;
         println!("Session {} saved.", self.session_id);
         Ok(())
     }
@@ -281,6 +300,8 @@ impl Repl {
         let new_id = self.session_manager.create_new_session()?;
         self.session_id = new_id;
         self.messages.clear();
+        self.total_input_tokens = 0;
+        self.total_output_tokens = 0;
 
         println!("Created new session: {}", self.session_id);
         Ok(())
@@ -289,12 +310,25 @@ impl Repl {
     fn load_session(&mut self, session_id: &str) -> Result<(), CliError> {
         self.save_current_session()?;
 
+        // Get session info including tokens from database
+        let sessions = self.session_manager.list_sessions()?;
+        let session_info = sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .ok_or_else(|| CliError::ConfigError(format!("Session not found: {}", session_id)))?;
+
         let messages = self.session_manager.load_session(session_id)?;
         self.session_id = session_id.to_string();
         self.messages = messages;
+        self.total_input_tokens = session_info.total_input_tokens;
+        self.total_output_tokens = session_info.total_output_tokens;
 
         println!("Loaded session: {}", self.session_id);
         println!("Loaded {} messages.", self.messages.len());
+        println!(
+            "Total tokens: In: {} | Out: {}",
+            self.total_input_tokens, self.total_output_tokens
+        );
         Ok(())
     }
 }
