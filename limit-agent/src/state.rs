@@ -150,8 +150,9 @@ mod tests {
     fn create_test_message() -> Message {
         Message {
             role: limit_llm::types::Role::User,
-            content: "test message".to_string(),
+            content: Some("test message".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }
     }
 

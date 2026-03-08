@@ -10,22 +10,35 @@
 
 use limit_cli::{AgentBridge, SessionManager, TuiBridge, TuiState};
 use limit_llm::Config as LlmConfig;
+use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
+fn create_test_config() -> LlmConfig {
+    let mut providers = HashMap::new();
+    providers.insert(
+        "anthropic".to_string(),
+        limit_llm::ProviderConfig {
+            api_key: Some("test-key".to_string()),
+            model: "claude-3-5-sonnet-20241022".to_string(),
+            base_url: None,
+            max_tokens: 4096,
+            timeout: 60,
+        },
+    );
+    LlmConfig {
+        provider: "anthropic".to_string(),
+        providers,
+    }
+}
+
 /// Scenario 1: Chat with Anthropic (mock API)
 /// Verifies that the agent bridge can handle conversation messages.
 #[test]
 fn test_e2e_chat_with_mock_api() {
-    let config = LlmConfig {
-        api_key: Some("test-api-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     // Create agent bridge
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
@@ -57,13 +70,7 @@ async fn test_e2e_file_read_and_verify() {
     let content = "Hello, World!\nThis is a test file.\nLine 3 here.";
     std::fs::write(&test_file, content).expect("Failed to write test file");
 
-    let config = LlmConfig {
-        api_key: Some("test-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
 
@@ -90,13 +97,7 @@ async fn test_e2e_file_read_and_verify() {
 /// Tests the bash tool execution end-to-end.
 #[tokio::test]
 async fn test_e2e_bash_command_and_verify() {
-    let config = LlmConfig {
-        api_key: Some("test-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
 
@@ -126,13 +127,7 @@ async fn test_e2e_bash_command_and_verify() {
 /// Tests git tool availability and schema.
 #[tokio::test]
 async fn test_e2e_git_status_and_verify() {
-    let config = LlmConfig {
-        api_key: Some("test-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
 
@@ -196,13 +191,7 @@ fn test_e2e_session_save_and_load() {
 /// Tests TUI components rendering correctly.
 #[test]
 fn test_e2e_tui_rendering_components() {
-    let config = LlmConfig {
-        api_key: Some("test-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
     let (tx, rx) = mpsc::unbounded_channel();
@@ -255,13 +244,7 @@ fn test_e2e_tui_rendering_components() {
 /// Test all tools are registered
 #[test]
 fn test_e2e_all_tools_registered() {
-    let config = LlmConfig {
-        api_key: Some("test-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
     let tools = agent_bridge.get_tool_definitions();
@@ -300,13 +283,7 @@ fn test_e2e_all_tools_registered() {
 /// Test event ordering in TUI
 #[test]
 fn test_e2e_event_ordering() {
-    let config = LlmConfig {
-        api_key: Some("test-key".to_string()),
-        model: "claude-3-5-sonnet-20241022".to_string(),
-        max_tokens: 4096,
-        timeout: 60,
-        base_url: None,
-    };
+    let config = create_test_config();
 
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
     let (tx, rx) = mpsc::unbounded_channel();

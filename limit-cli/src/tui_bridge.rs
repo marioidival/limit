@@ -292,16 +292,25 @@ impl TuiApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limit_llm::Config as LlmConfig;
+    use limit_llm::{Config as LlmConfig, ProviderConfig};
+    use std::collections::HashMap;
 
     #[test]
     fn test_tui_bridge_new() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -313,12 +322,20 @@ mod tests {
 
     #[test]
     fn test_tui_bridge_state() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -358,12 +375,20 @@ mod tests {
 
     #[test]
     fn test_tui_bridge_chat_view() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -382,12 +407,20 @@ mod tests {
 
     #[test]
     fn test_tui_bridge_content_chunk() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();
@@ -406,12 +439,20 @@ mod tests {
 
     #[test]
     fn test_tui_bridge_spinner() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let agent_bridge = AgentBridge::new(config).unwrap();

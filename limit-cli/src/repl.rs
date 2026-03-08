@@ -42,7 +42,12 @@ impl Repl {
         let config = limit_llm::Config::load()
             .map_err(|e| CliError::ConfigError(format!("Failed to load config: {}", e)))?;
 
-        let (agent_bridge, event_rx) = if config.api_key.is_some() {
+        let (agent_bridge, event_rx) = if config
+            .providers
+            .get(&config.provider)
+            .and_then(|p| p.api_key_or_env(&config.provider))
+            .is_some()
+        {
             let (tx, rx) = mpsc::unbounded_channel();
             let mut bridge = AgentBridge::new(config)?;
             bridge.set_event_tx(tx);
@@ -139,11 +144,8 @@ impl Repl {
             let rt = tokio::runtime::Runtime::new()
                 .map_err(|e| CliError::IoError(std::io::Error::other(e)))?;
 
-            let result = rt.block_on(async {
-                bridge
-                    .process_message(line, &mut self.messages)
-                    .await
-            });
+            let result =
+                rt.block_on(async { bridge.process_message(line, &mut self.messages).await });
 
             // Process events from the agent
             if let Some(ref mut rx) = self.event_rx {
@@ -201,8 +203,9 @@ impl Repl {
 
             let user_message = limit_llm::Message {
                 role: limit_llm::Role::User,
-                content: line.to_string(),
+                content: Some(line.to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             };
 
             self.messages.push(user_message);

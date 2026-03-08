@@ -24,7 +24,11 @@ impl ModelHandoff {
     }
 
     pub fn count_message_tokens(&self, message: &Message) -> usize {
-        let mut total = self.count_tokens(&message.content);
+        let mut total = message
+            .content
+            .as_ref()
+            .map(|c| self.count_tokens(c))
+            .unwrap_or(0);
 
         // Add role overhead (4 tokens for message format)
         total += 4;
@@ -143,8 +147,9 @@ mod tests {
         let handoff = ModelHandoff::new();
         let msg = Message {
             role: Role::User,
-            content: "Hello, world!".to_string(),
+            content: Some("Hello, world!".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         };
         let tokens = handoff.count_message_tokens(&msg);
         assert!(tokens > 4); // Content tokens + role overhead
@@ -155,7 +160,7 @@ mod tests {
         let handoff = ModelHandoff::new();
         let msg = Message {
             role: Role::Assistant,
-            content: "".to_string(),
+            content: Some("".to_string()),
             tool_calls: Some(vec![ToolCall {
                 id: "call_123".to_string(),
                 tool_type: "function".to_string(),
@@ -164,6 +169,7 @@ mod tests {
                     arguments: serde_json::json!({"arg": "value"}),
                 },
             }]),
+            tool_call_id: None,
         };
         let tokens = handoff.count_message_tokens(&msg);
         assert!(tokens > 10);
@@ -175,13 +181,15 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::User,
-                content: "Hello".to_string(),
+                content: Some("Hello".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
             Message {
                 role: Role::Assistant,
-                content: "Hi there!".to_string(),
+                content: Some("Hi there!".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
         ];
         let total = handoff.count_total_tokens(&messages);
@@ -194,13 +202,15 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::System,
-                content: "You are a helpful assistant.".to_string(),
+                content: Some("You are a helpful assistant.".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
             Message {
                 role: Role::User,
-                content: "Hello".to_string(),
+                content: Some("Hello".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
         ];
         let compacted = handoff.compact_messages(&messages, 500);
@@ -215,8 +225,9 @@ mod tests {
         let handoff = ModelHandoff::new();
         let mut messages = vec![Message {
             role: Role::System,
-            content: "System".to_string(),
+            content: Some("System".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         // Add 100 messages
@@ -227,8 +238,9 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: format!("Message {}", i),
+                content: Some(format!("Message {}", i)),
                 tool_calls: None,
+                tool_call_id: None,
             });
         }
 
@@ -240,7 +252,10 @@ mod tests {
         assert!(matches!(compacted[0].role, Role::System));
 
         // Last message should be preserved
-        assert_eq!(compacted.last().unwrap().content, "Message 99");
+        assert_eq!(
+            compacted.last().unwrap().content,
+            Some("Message 99".to_string())
+        );
     }
 
     #[test]
@@ -248,8 +263,9 @@ mod tests {
         let handoff = ModelHandoff::new();
         let messages = vec![Message {
             role: Role::User,
-            content: "Hello".to_string(),
+            content: Some("Hello".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         let result = handoff.handoff_to_model(
@@ -268,8 +284,9 @@ mod tests {
         let handoff = ModelHandoff::new();
         let mut messages = vec![Message {
             role: Role::System,
-            content: "System".to_string(),
+            content: Some("System".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         // Create 5000 messages with substantial content to exceed 200K context
@@ -280,11 +297,12 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: format!(
+                content: Some(format!(
                     "This is message number {}. It contains significantly more content to ensure we exceed the context window limit. Each message should be approximately 50-60 tokens in length when encoded with the cl100k_base tokenizer. This allows us to test the compaction functionality effectively. ",
                     i
-                ),
+                )),
                 tool_calls: None,
+                tool_call_id: None,
             });
         }
 

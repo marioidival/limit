@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-const CURRENT_VERSION: u32 = 1;
+const CURRENT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedState {
@@ -16,8 +16,9 @@ struct PersistedState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedMessage {
     role: PersistedRole,
-    content: String,
+    content: Option<String>,
     tool_calls: Option<Vec<crate::types::ToolCall>>,
+    tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -25,6 +26,7 @@ enum PersistedRole {
     User,
     Assistant,
     System,
+    Tool,
 }
 
 impl From<PersistedRole> for crate::types::Role {
@@ -33,6 +35,7 @@ impl From<PersistedRole> for crate::types::Role {
             PersistedRole::User => crate::types::Role::User,
             PersistedRole::Assistant => crate::types::Role::Assistant,
             PersistedRole::System => crate::types::Role::System,
+            PersistedRole::Tool => crate::types::Role::Tool,
         }
     }
 }
@@ -43,6 +46,7 @@ impl From<crate::types::Role> for PersistedRole {
             crate::types::Role::User => PersistedRole::User,
             crate::types::Role::Assistant => PersistedRole::Assistant,
             crate::types::Role::System => PersistedRole::System,
+            crate::types::Role::Tool => PersistedRole::Tool,
         }
     }
 }
@@ -53,6 +57,7 @@ impl From<PersistedMessage> for Message {
             role: msg.role.into(),
             content: msg.content,
             tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id,
         }
     }
 }
@@ -63,6 +68,7 @@ impl From<Message> for PersistedMessage {
             role: msg.role.into(),
             content: msg.content,
             tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id,
         }
     }
 }
@@ -112,7 +118,8 @@ impl StatePersistence {
             LlmError::PersistenceError(format!("Failed to deserialize state: {}", e))
         })?;
 
-        if state.version != CURRENT_VERSION {
+        // Handle version migration if needed
+        if state.version > CURRENT_VERSION {
             return Err(LlmError::PersistenceError(format!(
                 "Version mismatch: expected {}, found {}",
                 CURRENT_VERSION, state.version
@@ -141,13 +148,15 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::User,
-                content: "Hello".to_string(),
+                content: Some("Hello".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
             Message {
                 role: Role::Assistant,
-                content: "Hi there!".to_string(),
+                content: Some("Hi there!".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
         ];
 
@@ -158,6 +167,28 @@ mod tests {
         assert_eq!(loaded.len(), messages.len());
         assert_eq!(loaded[0].content, messages[0].content);
         assert_eq!(loaded[1].content, messages[1].content);
+    }
+
+    #[test]
+    fn test_save_load_with_tool_result() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_state.bin");
+
+        let persistence = StatePersistence::new(&file_path);
+
+        let messages = vec![Message {
+            role: Role::Tool,
+            content: Some("tool output".to_string()),
+            tool_calls: None,
+            tool_call_id: Some("call_123".to_string()),
+        }];
+
+        persistence.save(&messages).unwrap();
+
+        let loaded = persistence.load().unwrap();
+
+        assert_eq!(loaded[0].role, Role::Tool);
+        assert_eq!(loaded[0].tool_call_id, Some("call_123".to_string()));
     }
 
     #[test]
@@ -191,9 +222,11 @@ mod tests {
         assert_eq!(PersistedRole::User, Role::User.into());
         assert_eq!(PersistedRole::Assistant, Role::Assistant.into());
         assert_eq!(PersistedRole::System, Role::System.into());
+        assert_eq!(PersistedRole::Tool, Role::Tool.into());
 
         assert_eq!(Role::User, PersistedRole::User.into());
         assert_eq!(Role::Assistant, PersistedRole::Assistant.into());
         assert_eq!(Role::System, PersistedRole::System.into());
+        assert_eq!(Role::Tool, PersistedRole::Tool.into());
     }
 }

@@ -6,10 +6,10 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use uuid::Uuid;
 use tracing::instrument;
+use uuid::Uuid;
 
-const CURRENT_VERSION: u32 = 1;
+const CURRENT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone)]
 pub struct SessionInfo {
@@ -30,8 +30,9 @@ struct PersistedState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedMessage {
     role: PersistedRole,
-    content: String,
+    content: Option<String>,
     tool_calls: Option<Vec<limit_llm::ToolCall>>,
+    tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -39,6 +40,7 @@ enum PersistedRole {
     User,
     Assistant,
     System,
+    Tool,
 }
 
 impl From<PersistedRole> for limit_llm::Role {
@@ -47,6 +49,7 @@ impl From<PersistedRole> for limit_llm::Role {
             PersistedRole::User => limit_llm::Role::User,
             PersistedRole::Assistant => limit_llm::Role::Assistant,
             PersistedRole::System => limit_llm::Role::System,
+            PersistedRole::Tool => limit_llm::Role::Tool,
         }
     }
 }
@@ -57,6 +60,7 @@ impl From<limit_llm::Role> for PersistedRole {
             limit_llm::Role::User => PersistedRole::User,
             limit_llm::Role::Assistant => PersistedRole::Assistant,
             limit_llm::Role::System => PersistedRole::System,
+            limit_llm::Role::Tool => PersistedRole::Tool,
         }
     }
 }
@@ -67,6 +71,7 @@ impl From<PersistedMessage> for Message {
             role: msg.role.into(),
             content: msg.content,
             tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id,
         }
     }
 }
@@ -77,6 +82,7 @@ impl From<Message> for PersistedMessage {
             role: msg.role.into(),
             content: msg.content,
             tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id,
         }
     }
 }
@@ -194,7 +200,8 @@ impl SessionManager {
         let state: PersistedState = deserialize(&data)
             .map_err(|e| CliError::ConfigError(format!("Failed to deserialize messages: {}", e)))?;
 
-        if state.version != CURRENT_VERSION {
+        // Handle version migration if needed
+        if state.version > CURRENT_VERSION {
             return Err(CliError::ConfigError(format!(
                 "Version mismatch: expected {}, found {}",
                 CURRENT_VERSION, state.version
@@ -353,13 +360,15 @@ mod tests {
         let messages = vec![
             Message {
                 role: limit_llm::Role::User,
-                content: "Hello".to_string(),
+                content: Some("Hello".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
             Message {
                 role: limit_llm::Role::Assistant,
-                content: "Hi there!".to_string(),
+                content: Some("Hi there!".to_string()),
                 tool_calls: None,
+                tool_call_id: None,
             },
         ];
 
@@ -446,8 +455,9 @@ mod tests {
 
         let messages = vec![Message {
             role: limit_llm::Role::User,
-            content: "Test message".to_string(),
+            content: Some("Test message".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         }];
 
         manager1.save_session(&session_id, &messages).unwrap();
@@ -463,6 +473,6 @@ mod tests {
 
         let loaded = manager2.load_session(&session_id).unwrap();
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].content, "Test message");
+        assert_eq!(loaded[0].content, Some("Test message".to_string()));
     }
 }

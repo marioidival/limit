@@ -3,9 +3,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub role: Role,
-    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14,6 +17,7 @@ pub enum Role {
     User,
     Assistant,
     System,
+    Tool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,14 +31,22 @@ pub struct ToolCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionCall {
     pub name: String,
+    #[serde(serialize_with = "serialize_arguments")]
     pub arguments: serde_json::Value,
+}
+
+fn serialize_arguments<S>(value: &serde_json::Value, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    // Serialize arguments as a JSON string, not as a JSON object
+    serializer.serialize_str(&value.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
     #[serde(rename = "type")]
     pub tool_type: String,
-    #[serde(flatten)]
     pub function: ToolFunction,
 }
 
@@ -67,8 +79,9 @@ mod tests {
     fn test_message_serialization() {
         let msg = Message {
             role: Role::User,
-            content: "Hello".to_string(),
+            content: Some("Hello".to_string()),
             tool_calls: None,
+            tool_call_id: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: Message = serde_json::from_str(&json).unwrap();
@@ -79,7 +92,7 @@ mod tests {
     fn test_message_with_tool_calls() {
         let msg = Message {
             role: Role::Assistant,
-            content: "".to_string(),
+            content: Some("".to_string()),
             tool_calls: Some(vec![ToolCall {
                 id: "call_123".to_string(),
                 tool_type: "function".to_string(),
@@ -88,10 +101,48 @@ mod tests {
                     arguments: serde_json::json!({"arg": "value"}),
                 },
             }]),
+            tool_call_id: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: Message = serde_json::from_str(&json).unwrap();
         assert!(deserialized.tool_calls.is_some());
+    }
+
+    #[test]
+    fn test_tool_result_message() {
+        let msg = Message {
+            role: Role::Tool,
+            content: Some("result output".to_string()),
+            tool_calls: None,
+            tool_call_id: Some("call_123".to_string()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        println!("Tool result message JSON: {}", json);
+        assert!(json.contains("tool_call_id"));
+        let deserialized: Message = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.tool_call_id, Some("call_123".to_string()));
+    }
+
+    #[test]
+    fn test_assistant_with_tool_calls_serialization() {
+        let msg = Message {
+            role: Role::Assistant,
+            content: None, // Empty content
+            tool_calls: Some(vec![ToolCall {
+                id: "call_123".to_string(),
+                tool_type: "function".to_string(),
+                function: FunctionCall {
+                    name: "test_tool".to_string(),
+                    arguments: serde_json::json!({}),
+                },
+            }]),
+            tool_call_id: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        println!("Assistant with tool_calls JSON: {}", json);
+        // Content should be omitted when None
+        assert!(!json.contains("\"content\":null"));
+        assert!(json.contains("tool_calls"));
     }
 
     #[test]
