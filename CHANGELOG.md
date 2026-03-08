@@ -2,55 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.13] - 2026-03-08
+
+### 🚜 Refactor
+
+- *(ci)* Split build and release jobs, add checksums and caching
+
 ## [0.0.12] - 2026-03-08
-
-### 🚀 Features
-
-- *(tui)* Fix session behavior to always create new sessions
-- *(tui)* Auto-save sessions after each LLM response
-- *(tui)* Display session ID in status bar (last 8 chars)
-- *(tui)* Add welcome message for new TUI sessions
-- *(tui)* Enhanced logging for session save operations
 
 ### 🐛 Bug Fixes
 
-- *(tui)* Fix sessions being reused instead of creating new ones
-- *(tests)* Fix test files to unwrap TuiBridge::new() Result
-- *(tests)* Remove unused test helper accessing private SessionManager fields
-- *(clippy)* Remove unused methods from AgentBridge
-- *(clippy)* Resolve all clippy warnings and errors
-
-### 📚 Documentation
-
-- Add TUI_SESSION_NOTES.md with implementation details
-- Add FIX_SUMMARY_TUI_SESSION.md with before/after comparison
-- Add CLIPPY_FIXES_SUMMARY.md with all fixes documented
-- Add SESSION_COMPLETE_SUMMARY.md with complete overview
+- *(ci)* Use absolute path for tar.gz location
+- *(ci)* Update softprops/action-gh-release to v2 and use absolute paths
 
 ### ⚙️ Miscellaneous Tasks
 
-- Bump version to 0.0.12
+- Bump version - lock
 
 ## [0.0.11] - 2026-03-08
 
-### 🚀 Features
-
-- *(tui)* Add session persistence to TUI interface
-- *(tui)* Load previous session messages on startup
-- *(tui)* Display conversation history in TUI chat view
-- *(tui)* Auto-save session after each LLM response
-- *(tui)* Display token counts in TUI title bar
-- *(tui)* Filter system/tool messages from display
-- Add test script for TUI session verification
-
 ### 🐛 Bug Fixes
 
-- Resolve compilation errors in TuiBridge session integration
-- Fix session ID propagation in TUI event loop
-
-### 📚 Documentation
-
-- Add TUI_SESSION_NOTES.md with implementation details
+- *(ci)* Correct binary path in prepare step
+- *(ci)* Use bundled sqlite for cross-compilation
+- *(ci)* Use limit-{os}-{arch} naming for install script compatibility
 
 ### ⚙️ Miscellaneous Tasks
 
