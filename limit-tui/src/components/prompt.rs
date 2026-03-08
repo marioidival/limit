@@ -8,7 +8,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, Paragraph, Widget, Wrap},
 };
 /// Result from InputPrompt interaction
 #[derive(Debug, Clone, PartialEq)]
@@ -207,8 +207,8 @@ impl InputPrompt {
             ])])
         };
 
-        // Create paragraph with text
-        let paragraph = Paragraph::new(display_text);
+        // Create paragraph with text and enable wrapping
+        let paragraph = Paragraph::new(display_text).wrap(Wrap { trim: false });
 
         // Render the paragraph
         paragraph.render(area, buf);
@@ -224,7 +224,8 @@ impl InputPrompt {
             let error_text = Paragraph::new(Text::from(vec![Line::from(vec![Span::styled(
                 error_msg,
                 Style::default().fg(Color::Red),
-            )])]));
+            )])]))
+                .wrap(Wrap { trim: false });
             error_text.render(error_area, buf);
         }
     }

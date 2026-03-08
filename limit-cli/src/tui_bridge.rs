@@ -13,7 +13,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -75,12 +75,17 @@ pub struct TuiBridge {
 
 impl TuiBridge {
     /// Create a new TuiBridge with the given agent bridge and event channel
-    pub fn new(agent_bridge: AgentBridge, event_rx: mpsc::UnboundedReceiver<AgentEvent>) -> Result<Self, CliError> {
-        let session_manager = SessionManager::new()
-            .map_err(|e| CliError::ConfigError(format!("Failed to create session manager: {}", e)))?;
+    pub fn new(
+        agent_bridge: AgentBridge,
+        event_rx: mpsc::UnboundedReceiver<AgentEvent>,
+    ) -> Result<Self, CliError> {
+        let session_manager = SessionManager::new().map_err(|e| {
+            CliError::ConfigError(format!("Failed to create session manager: {}", e))
+        })?;
 
         // Always create a new session on TUI startup
-        let session_id = session_manager.create_new_session()
+        let session_id = session_manager
+            .create_new_session()
             .map_err(|e| CliError::ConfigError(format!("Failed to create session: {}", e)))?;
         tracing::info!("Created new TUI session: {}", session_id);
 
@@ -88,10 +93,8 @@ impl TuiBridge {
         let messages: Vec<limit_llm::Message> = Vec::new();
 
         // Get token counts from session info
-        let sessions = session_manager.list_sessions()
-            .unwrap_or_default();
-        let session_info = sessions.iter()
-            .find(|s| s.id == session_id);
+        let sessions = session_manager.list_sessions().unwrap_or_default();
+        let session_info = sessions.iter().find(|s| s.id == session_id);
         let initial_input = session_info.map(|s| s.total_input_tokens).unwrap_or(0);
         let initial_output = session_info.map(|s| s.total_output_tokens).unwrap_or(0);
 
@@ -122,10 +125,8 @@ impl TuiBridge {
 
         // Add system message to indicate this is a new session
         let session_short_id = format!("...{}", &session_id[session_id.len().saturating_sub(8)..]);
-        let welcome_msg = Message::system(format!(
-            "🆕 New TUI session started: {}",
-            session_short_id
-        ));
+        let welcome_msg =
+            Message::system(format!("🆕 New TUI session started: {}", session_short_id));
         chat_view.lock().unwrap().add_message(welcome_msg);
 
         Ok(Self {
@@ -260,13 +261,23 @@ impl TuiBridge {
         let input_tokens = self.total_input_tokens();
         let output_tokens = self.total_output_tokens();
 
-        tracing::debug!("Saving session {} with {} messages, {} in tokens, {} out tokens",
-                        session_id, messages.len(), input_tokens, output_tokens);
+        tracing::debug!(
+            "Saving session {} with {} messages, {} in tokens, {} out tokens",
+            session_id,
+            messages.len(),
+            input_tokens,
+            output_tokens
+        );
 
         let session_manager = self.session_manager.lock().unwrap();
         session_manager.save_session(&session_id, &messages, input_tokens, output_tokens)?;
-        tracing::info!("✓ Session {} saved successfully ({} messages, {} in tokens, {} out tokens)",
-                      session_id, messages.len(), input_tokens, output_tokens);
+        tracing::info!(
+            "✓ Session {} saved successfully ({} messages, {} in tokens, {} out tokens)",
+            session_id,
+            messages.len(),
+            input_tokens,
+            output_tokens
+        );
         Ok(())
     }
 }
@@ -389,28 +400,37 @@ impl TuiApp {
         let session_id = self.tui_bridge.session_id();
         match self.tui_bridge.state() {
             TuiState::Idle => {
-                self.status_message = format!("Ready - Type a message and press Enter | Session: {}",
-                                             session_id.chars().take(8).collect::<String>());
+                self.status_message = format!(
+                    "Ready - Type a message and press Enter | Session: {}",
+                    session_id.chars().take(8).collect::<String>()
+                );
                 self.status_is_error = false;
             }
             TuiState::Thinking => {
                 let spinner = self.tui_bridge.spinner().lock().unwrap();
-                self.status_message = format!("{} Thinking... | Session: {}",
-                                             spinner.current_frame(),
-                                             session_id.chars().take(8).collect::<String>());
+                self.status_message = format!(
+                    "{} Thinking... | Session: {}",
+                    spinner.current_frame(),
+                    session_id.chars().take(8).collect::<String>()
+                );
                 self.status_is_error = false;
             }
             TuiState::ToolExecuting { name, progress } => {
                 let pct = (progress * 100.0) as u32;
-                self.status_message = format!("⏳ Executing: {} ({}%) | Session: {}",
-                                             name, pct,
-                                             session_id.chars().take(8).collect::<String>());
+                self.status_message = format!(
+                    "⏳ Executing: {} ({}%) | Session: {}",
+                    name,
+                    pct,
+                    session_id.chars().take(8).collect::<String>()
+                );
                 self.status_is_error = false;
             }
             TuiState::Error(msg) => {
-                self.status_message = format!("❌ Error: {} | Session: {}",
-                                             msg,
-                                             session_id.chars().take(8).collect::<String>());
+                self.status_message = format!(
+                    "❌ Error: {} | Session: {}",
+                    msg,
+                    session_id.chars().take(8).collect::<String>()
+                );
                 self.status_is_error = true;
             }
         }
@@ -661,7 +681,10 @@ impl TuiApp {
                 match bridge.process_message(&text, &mut messages_guard).await {
                     Ok(response) => {
                         // Add assistant response to chat view for display
-                        chat_view.lock().unwrap().add_message(Message::assistant(response));
+                        chat_view
+                            .lock()
+                            .unwrap()
+                            .add_message(Message::assistant(response));
 
                         // Auto-save session after successful response
                         let msgs = messages_guard.clone();
@@ -676,8 +699,13 @@ impl TuiApp {
                         ) {
                             tracing::error!("✗ Failed to auto-save session {}: {}", session_id, e);
                         } else {
-                            tracing::info!("✓ Session {} auto-saved ({} messages, {} in, {} out tokens)",
-                                         session_id, msgs.len(), input_tokens, output_tokens);
+                            tracing::info!(
+                                "✓ Session {} auto-saved ({} messages, {} in, {} out tokens)",
+                                session_id,
+                                msgs.len(),
+                                input_tokens,
+                                output_tokens
+                            );
                         }
                     }
                     Err(e) => {
@@ -852,7 +880,7 @@ impl TuiApp {
                 ])
             };
 
-            let input_para = Paragraph::new(input_line);
+            let input_para = Paragraph::new(input_line).wrap(Wrap { trim: false });
             f.render_widget(input_para, input_inner);
         }
     }
