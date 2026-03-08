@@ -60,8 +60,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          mv limit ${{ matrix.name }}
-          tar czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          tar czf ${{ matrix.name }}.tar.gz limit
           shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
 
       - name: Upload artifact
