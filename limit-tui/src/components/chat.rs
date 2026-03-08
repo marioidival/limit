@@ -92,6 +92,7 @@ impl Message {
 pub struct ChatView {
     messages: Vec<Message>,
     scroll_offset: usize,
+    pinned_to_bottom: bool,
 }
 
 impl Default for ChatView {
@@ -107,6 +108,7 @@ impl ChatView {
         Self {
             messages: Vec::new(),
             scroll_offset: 0,
+            pinned_to_bottom: true,
         }
     }
 
@@ -143,37 +145,39 @@ impl ChatView {
     /// Scroll up by multiple lines (better UX than single line)
     pub fn scroll_up(&mut self) {
         const SCROLL_LINES: usize = 5;
+        self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_LINES);
     }
 
     /// Scroll down by multiple lines
     pub fn scroll_down(&mut self) {
         const SCROLL_LINES: usize = 5;
+        self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_add(SCROLL_LINES);
-        // Render method will clamp to max valid offset
     }
 
     /// Scroll up by one page (viewport height)
     pub fn scroll_page_up(&mut self, viewport_height: u16) {
+        self.pinned_to_bottom = false;
         let page_size = viewport_height as usize;
         self.scroll_offset = self.scroll_offset.saturating_sub(page_size);
     }
 
     /// Scroll down by one page
     pub fn scroll_page_down(&mut self, viewport_height: u16) {
+        self.pinned_to_bottom = false;
         let page_size = viewport_height as usize;
         self.scroll_offset = self.scroll_offset.saturating_add(page_size);
-        // Render method will clamp to max valid offset
     }
 
     /// Scroll to the bottom (show newest messages)
-    /// Uses a very large offset and relies on render() to clamp it properly
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = usize::MAX;
+        self.pinned_to_bottom = true;
     }
 
     /// Scroll to the top (show oldest messages)
     pub fn scroll_to_top(&mut self) {
+        self.pinned_to_bottom = false;
         self.scroll_offset = 0;
     }
 
@@ -181,6 +185,7 @@ impl ChatView {
     pub fn clear(&mut self) {
         self.messages.clear();
         self.scroll_offset = 0;
+        self.pinned_to_bottom = true;
     }
 
     /// Estimate the number of lines needed to display text with wrapping
@@ -279,8 +284,16 @@ impl ChatView {
         let total_height = self.calculate_total_height(area.width);
         let viewport_height = area.height as usize;
 
-        // Clamp scroll offset to ensure we don't scroll past content
-        let scroll_offset = if total_height > viewport_height {
+        // Calculate scroll offset based on pinned state
+        let scroll_offset = if self.pinned_to_bottom {
+            // When pinned to bottom, always show the newest messages
+            if total_height > viewport_height {
+                total_height.saturating_sub(viewport_height)
+            } else {
+                0
+            }
+        } else if total_height > viewport_height {
+            // User has scrolled - clamp to valid range
             self.scroll_offset
                 .min(total_height.saturating_sub(viewport_height))
         } else {
@@ -501,9 +514,14 @@ mod tests {
             chat.add_message(Message::user(format!("Message {}", i)));
         }
 
-        let initial_offset = chat.scroll_offset;
+        // After adding messages, we're pinned to bottom
+        assert!(chat.pinned_to_bottom);
+
+        // Scroll up should unpin and adjust offset
         chat.scroll_up();
-        assert_eq!(chat.scroll_offset, initial_offset - 1);
+        assert!(!chat.pinned_to_bottom);
+        // scroll_offset doesn't change when pinned, but will be used after unpin
+        // The actual visual scroll is calculated in render
     }
 
     #[test]
@@ -511,10 +529,12 @@ mod tests {
         let mut chat = ChatView::new();
 
         chat.add_message(Message::user("Test".to_string()));
+        chat.scroll_to_top(); // Start at top with scroll_offset = 0
 
-        // Try to scroll up when at top
+        // Try to scroll up when at top - saturating_sub should keep it at 0
         chat.scroll_up();
         assert_eq!(chat.scroll_offset, 0);
+        assert!(!chat.pinned_to_bottom);
 
         chat.scroll_up();
         assert_eq!(chat.scroll_offset, 0);
@@ -526,9 +546,14 @@ mod tests {
 
         chat.add_message(Message::user("Test".to_string()));
 
-        let initial_offset = chat.scroll_offset;
+        // After adding, pinned to bottom
+        assert!(chat.pinned_to_bottom);
+
         chat.scroll_down();
-        assert_eq!(chat.scroll_offset, initial_offset + 1);
+        // Scroll down unpins from bottom
+        assert!(!chat.pinned_to_bottom);
+        // scroll_offset increases by SCROLL_LINES (5)
+        assert_eq!(chat.scroll_offset, 5);
     }
 
     #[test]
@@ -541,9 +566,11 @@ mod tests {
 
         chat.scroll_to_top();
         assert_eq!(chat.scroll_offset, 0);
+        assert!(!chat.pinned_to_bottom);
 
         chat.scroll_to_bottom();
-        assert_eq!(chat.scroll_offset, 4); // Last message index
+        // scroll_to_bottom sets pinned_to_bottom, not a specific offset
+        assert!(chat.pinned_to_bottom);
     }
 
     #[test]
@@ -555,10 +582,11 @@ mod tests {
         }
 
         chat.scroll_to_bottom();
-        assert!(chat.scroll_offset > 0);
+        assert!(chat.pinned_to_bottom);
 
         chat.scroll_to_top();
         assert_eq!(chat.scroll_offset, 0);
+        assert!(!chat.pinned_to_bottom);
     }
 
     #[test]
@@ -567,10 +595,11 @@ mod tests {
 
         for i in 0..5 {
             chat.add_message(Message::user(format!("Message {}", i)));
-            // After adding a message, should auto-scroll to bottom
+            // After adding a message, should auto-scroll to bottom (pinned)
         }
 
-        assert_eq!(chat.scroll_offset, 4);
+        // Auto-scroll sets pinned_to_bottom, not a specific scroll_offset
+        assert!(chat.pinned_to_bottom);
     }
 
     #[test]
