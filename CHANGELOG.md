@@ -21,5 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Grep search functionality
 - Workspace support for multi-crate Rust projects
 
-[Unreleased]: https://github.com/yourusername/limit/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/yourusername/limit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/marioidival/limit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/marioidival/limit/releases/tag/v0.1.0
