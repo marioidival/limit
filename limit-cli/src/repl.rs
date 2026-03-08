@@ -167,10 +167,8 @@ impl Repl {
                             };
                             println!("\x1B[90mResult: {} (truncated if needed)\x1B[0m", name);
                         }
-                        AgentEvent::ContentChunk(chunk) => {
-                            // Stream content in real-time
-                            print!("{}", chunk);
-                            std::io::stdout().flush()?;
+                        AgentEvent::ContentChunk(_chunk) => {
+                            // Don't stream content - will be shown in final response
                         }
                         AgentEvent::Done => {
                             println!();

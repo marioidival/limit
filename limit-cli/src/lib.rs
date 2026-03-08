@@ -1,4 +1,6 @@
 pub mod agent_bridge;
+pub mod system_prompt;
+
 pub mod error;
 pub mod logging;
 pub mod render;

@@ -1,4 +1,5 @@
 use crate::error::CliError;
+use crate::system_prompt::SYSTEM_PROMPT;
 use crate::tools::{
     AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool, GitCloneTool,
     GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool, GrepTool,
@@ -168,18 +169,22 @@ impl AgentBridge {
         user_input: &str,
         messages: &mut Vec<Message>,
     ) -> Result<String, CliError> {
-        // System instructions prepended to first user message (z.ai doesn't support system role)
-        let system_instructions = "[Instructions: Limit tool calls to 3-4 iterations. After gathering sufficient information, provide a clear response. Do not explore indefinitely.]\n\n";
+        // Add system message if this is the first message in the conversation
+        // Note: Some providers (z.ai) don't support system role, but OpenAI-compatible APIs generally do
+        if messages.is_empty() {
+            let system_message = Message {
+                role: Role::System,
+                content: Some(SYSTEM_PROMPT.to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            };
+            messages.push(system_message);
+        }
 
         // Add user message to history
-        let content = if messages.is_empty() {
-            format!("{}{}", system_instructions, user_input)
-        } else {
-            user_input.to_string()
-        };
         let user_message = Message {
             role: Role::User,
-            content: Some(content),
+            content: Some(user_input.to_string()),
             tool_calls: None,
             tool_call_id: None,
         };
@@ -224,8 +229,8 @@ impl AgentBridge {
                         self.send_event(AgentEvent::ContentChunk(text));
                     }
                     Ok(ProviderResponseChunk::ReasoningDelta(reasoning)) => {
-                        current_content.push_str(&reasoning);
-                        self.send_event(AgentEvent::ContentChunk(reasoning));
+                        debug!("Model reasoning: {}", reasoning);
+                        // Don't add to current_content or send as ContentChunk
                     }
                     Ok(ProviderResponseChunk::ToolCallDelta {
                         id,

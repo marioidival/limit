@@ -1,4 +1,6 @@
 mod agent_bridge;
+mod system_prompt;
+
 mod error;
 mod logging;
 mod render;
