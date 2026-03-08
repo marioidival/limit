@@ -55,8 +55,8 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          mv limit ../limit-${{ matrix.name }}
-          tar czf ../../${{ matrix.name }}.tar.gz limit-${{ matrix.name }}
+          mv limit ${{ matrix.name }}
+          tar czf ../../${{ matrix.name }}.tar.gz ${{ matrix.name }}
           cd ../../..
 
       - name: Release
