@@ -7,8 +7,10 @@ use crate::tools::{
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
-use limit_llm::client::{AnthropicClient, ResponseChunk};
+use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
+use limit_llm::ProviderFactory;
+use limit_llm::ProviderResponseChunk;
 use serde_json::json;
 use tokio::sync::mpsc;
 use tracing::{debug, instrument};
@@ -33,8 +35,8 @@ pub enum AgentEvent {
 
 /// Bridge connecting limit-cli REPL to limit-agent executor and limit-llm client
 pub struct AgentBridge {
-    /// LLM client for communicating with Anthropic API
-    llm_client: AnthropicClient,
+    /// LLM client for communicating with LLM providers
+    llm_client: Box<dyn LlmProvider>,
     /// Tool executor for running tool calls
     executor: ToolExecutor,
     /// List of registered tool names
@@ -54,18 +56,8 @@ impl AgentBridge {
     /// # Returns
     /// A new AgentBridge instance or an error if initialization fails
     pub fn new(config: limit_llm::Config) -> Result<Self, CliError> {
-        let api_key = config
-            .api_key
-            .as_ref()
-            .ok_or_else(|| CliError::ConfigError("API key not found in config".to_string()))?;
-
-        let llm_client = AnthropicClient::new(
-            api_key.clone(),
-            config.base_url.as_deref(),
-            config.timeout,
-            &config.model,
-            config.max_tokens,
-        );
+        let llm_client = ProviderFactory::create_provider(&config)
+            .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
         let mut tool_registry = ToolRegistry::new();
         Self::register_tools(&mut tool_registry);
@@ -171,7 +163,6 @@ impl AgentBridge {
     /// # Returns
     /// The final response from the LLM or an error
     #[instrument(skip(self, messages))]
-    /// The final response from the LLM or an error
     pub async fn process_message(
         &mut self,
         user_input: &str,
@@ -188,10 +179,11 @@ impl AgentBridge {
         };
         let user_message = Message {
             role: Role::User,
-            content,
+            content: Some(content),
             tool_calls: None,
+            tool_call_id: None,
         };
-        messages.push(user_message.clone());
+        messages.push(user_message);
 
         // Get tool definitions
         let tool_definitions = self.get_tool_definitions();
@@ -213,7 +205,8 @@ impl AgentBridge {
             let mut stream = self
                 .llm_client
                 .send(messages.clone(), tool_definitions.clone())
-                .await;
+                .await
+                .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
             tool_calls.clear();
             let mut current_content = String::new();
@@ -226,11 +219,15 @@ impl AgentBridge {
             // Process stream chunks
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
-                    Ok(ResponseChunk::ContentDelta(text)) => {
+                    Ok(ProviderResponseChunk::ContentDelta(text)) => {
                         current_content.push_str(&text);
                         self.send_event(AgentEvent::ContentChunk(text));
                     }
-                    Ok(ResponseChunk::ToolCallDelta {
+                    Ok(ProviderResponseChunk::ReasoningDelta(reasoning)) => {
+                        current_content.push_str(&reasoning);
+                        self.send_event(AgentEvent::ContentChunk(reasoning));
+                    }
+                    Ok(ProviderResponseChunk::ToolCallDelta {
                         id,
                         name,
                         arguments,
@@ -239,7 +236,7 @@ impl AgentBridge {
                         // Store/merge tool call arguments
                         accumulated_calls.insert(id.clone(), (name.clone(), arguments.clone()));
                     }
-                    Ok(ResponseChunk::Done(_)) => {
+                    Ok(ProviderResponseChunk::Done(_)) => {
                         break;
                     }
                     Err(e) => {
@@ -264,27 +261,26 @@ impl AgentBridge {
                 .collect();
             full_response.push_str(&current_content);
 
-            debug!("After iter {}: content.len()={}, tool_calls={}, response.len()={}", 
-                iteration, current_content.len(), tool_calls.len(), full_response.len());
+            debug!(
+                "After iter {}: content.len()={}, tool_calls={}, response.len()={}",
+                iteration,
+                current_content.len(),
+                tool_calls.len(),
+                full_response.len()
+            );
 
             // If no tool calls, we're done
             if tool_calls.is_empty() {
                 break;
             }
 
-            // Execute tool calls
-            let assistant_message = if current_content.is_empty() {
-                Message {
-                    role: Role::Assistant,
-                    content: String::new(),
-                    tool_calls: Some(tool_calls.clone()),
-                }
-            } else {
-                Message {
-                    role: Role::Assistant,
-                    content: current_content.clone(),
-                    tool_calls: Some(tool_calls.clone()),
-                }
+            // Execute tool calls - add assistant message with tool_calls
+            // Note: Per OpenAI API spec, when tool_calls are present, content should be null
+            let assistant_message = Message {
+                role: Role::Assistant,
+                content: None, // Don't include content when tool_calls are present
+                tool_calls: Some(tool_calls.clone()),
+                tool_call_id: None,
             };
             messages.push(assistant_message);
 
@@ -297,14 +293,14 @@ impl AgentBridge {
             // Execute tools
             let results = self.executor.execute_tools(executor_calls).await;
 
-            // Add tool results to messages
+            // Add tool results to messages (OpenAI format: role=tool, tool_call_id, content)
             for result in results {
                 let tool_call = tool_calls.iter().find(|tc| tc.id == result.call_id);
                 if let Some(tool_call) = tool_call {
                     let output_json = match &result.output {
-                        Ok(value) => serde_json::to_string_pretty(value).unwrap_or_else(|_| {
+                        Ok(value) => {
                             serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string())
-                        }),
+                        }
                         Err(e) => json!({ "error": e.to_string() }).to_string(),
                     };
 
@@ -313,14 +309,12 @@ impl AgentBridge {
                         result: output_json.clone(),
                     });
 
+                    // OpenAI tool result format
                     let tool_result_message = Message {
-                        role: Role::User,
-                        content: serde_json::json!({
-                            "tool_use_id": result.call_id,
-                            "output": output_json
-                        })
-                        .to_string(),
+                        role: Role::Tool,
+                        content: Some(output_json),
                         tool_calls: None,
+                        tool_call_id: Some(result.call_id),
                     };
                     messages.push(tool_result_message);
                 }
@@ -617,38 +611,63 @@ impl AgentBridge {
     /// Check if the bridge is ready to process messages
     #[allow(dead_code)]
     pub fn is_ready(&self) -> bool {
-        self.config.api_key.is_some()
+        self.config
+            .providers
+            .get(&self.config.provider)
+            .map(|p| p.api_key_or_env(&self.config.provider).is_some())
+            .unwrap_or(false)
     }
 
     /// Get the current model name
     pub fn model(&self) -> &str {
-        &self.config.model
+        self.config
+            .providers
+            .get(&self.config.provider)
+            .map(|p| p.model.as_str())
+            .unwrap_or("")
     }
 
     /// Get the max tokens setting
     pub fn max_tokens(&self) -> u32 {
-        self.config.max_tokens
+        self.config
+            .providers
+            .get(&self.config.provider)
+            .map(|p| p.max_tokens)
+            .unwrap_or(4096)
     }
 
     /// Get the timeout setting
     pub fn timeout(&self) -> u64 {
-        self.config.timeout
+        self.config
+            .providers
+            .get(&self.config.provider)
+            .map(|p| p.timeout)
+            .unwrap_or(60)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limit_llm::Config as LlmConfig;
+    use limit_llm::{Config as LlmConfig, ProviderConfig};
+    use std::collections::HashMap;
 
     #[tokio::test]
     async fn test_agent_bridge_new() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -657,12 +676,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_bridge_new_no_api_key() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: None,
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: None,
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let result = AgentBridge::new(config);
@@ -671,12 +698,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tool_definitions() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -725,15 +760,23 @@ mod tests {
 
     #[test]
     fn test_is_ready() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+            },
+        );
         let config_with_key = LlmConfig {
-            api_key: Some("test-key".to_string()),
-            model: "claude-3-5-sonnet-20241022".to_string(),
-            max_tokens: 4096,
-            timeout: 60,
-            base_url: None,
+            provider: "anthropic".to_string(),
+            providers,
         };
 
-        let bridge = AgentBridge::new(config_with_key.clone()).unwrap();
+        let bridge = AgentBridge::new(config_with_key).unwrap();
         assert!(bridge.is_ready());
     }
 }
