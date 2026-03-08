@@ -793,7 +793,7 @@ impl TuiApp {
                 [
                     Constraint::Min(5),    // Chat view
                     Constraint::Length(1), // Status bar
-                    Constraint::Length(3), // Input area
+                    Constraint::Length(6), // Input area (increased for wrapped text)
                 ]
                 .as_ref(),
             )
