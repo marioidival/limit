@@ -31,6 +31,10 @@ pub enum AgentEvent {
         result: String,
     },
     ContentChunk(String),
+    TokenUsage {
+        input_tokens: u64,
+        output_tokens: u64,
+    },
     Done,
     Error(String),
 }
@@ -260,6 +264,11 @@ impl AgentBridge {
                             cost,
                             duration_ms,
                         );
+                        // Send token usage event to TUI
+                        self.send_event(AgentEvent::TokenUsage {
+                            input_tokens: usage.input_tokens,
+                            output_tokens: usage.output_tokens,
+                        });
                         break;
                     }
                     Err(e) => {
