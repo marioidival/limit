@@ -62,6 +62,10 @@ pub struct TuiBridge {
     spinner: Arc<Mutex<Spinner>>,
     /// Conversation history
     messages: Arc<Mutex<Vec<limit_llm::Message>>>,
+    /// Total input tokens for the session
+    total_input_tokens: Arc<Mutex<u64>>,
+    /// Total output tokens for the session
+    total_output_tokens: Arc<Mutex<u64>>,
 }
 
 impl TuiBridge {
@@ -75,6 +79,8 @@ impl TuiBridge {
             progress_bar: Arc::new(Mutex::new(ProgressBar::new("Tool execution"))),
             spinner: Arc::new(Mutex::new(Spinner::new("Thinking..."))),
             messages: Arc::new(Mutex::new(Vec::new())),
+            total_input_tokens: Arc::new(Mutex::new(0)),
+            total_output_tokens: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -135,6 +141,14 @@ impl TuiBridge {
                         .unwrap()
                         .append_to_last_assistant(&chunk);
                 }
+                AgentEvent::TokenUsage {
+                    input_tokens,
+                    output_tokens,
+                } => {
+                    // Accumulate token counts
+                    *self.total_input_tokens.lock().unwrap() += input_tokens;
+                    *self.total_output_tokens.lock().unwrap() += output_tokens;
+                }
                 AgentEvent::Done => {
                     *self.state.lock().unwrap() = TuiState::Idle;
                 }
@@ -163,6 +177,16 @@ impl TuiBridge {
     /// Check if agent is busy
     pub fn is_busy(&self) -> bool {
         !matches!(self.state(), TuiState::Idle)
+    }
+
+    /// Get total input tokens for the session
+    pub fn total_input_tokens(&self) -> u64 {
+        *self.total_input_tokens.lock().unwrap()
+    }
+
+    /// Get total output tokens for the session
+    pub fn total_output_tokens(&self) -> u64 {
+        *self.total_output_tokens.lock().unwrap()
     }
 }
 
@@ -573,6 +597,7 @@ impl TuiApp {
         let status_message = self.status_message.clone();
         let status_is_error = self.status_is_error;
         let cursor_blink_state = self.cursor_blink_state;
+        let tui_bridge = &self.tui_bridge;
 
         self.terminal
             .draw(|f| {
@@ -585,6 +610,7 @@ impl TuiApp {
                     &status_message,
                     status_is_error,
                     cursor_blink_state,
+                    tui_bridge,
                 );
             })
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
@@ -603,6 +629,7 @@ impl TuiApp {
         status_message: &str,
         status_is_error: bool,
         cursor_blink_state: bool,
+        tui_bridge: &TuiBridge,
     ) {
         let size = f.area();
 
@@ -622,9 +649,12 @@ impl TuiApp {
         // Draw chat view with border
         {
             let chat = chat_view.lock().unwrap();
+            let total_input = tui_bridge.total_input_tokens();
+            let total_output = tui_bridge.total_output_tokens();
+            let title = format!(" Chat (In: {} | Out: {}) ", total_input, total_output);
             let chat_block = Block::default()
                 .borders(Borders::ALL)
-                .title(" Chat ")
+                .title(title)
                 .title_style(
                     Style::default()
                         .fg(Color::Cyan)
