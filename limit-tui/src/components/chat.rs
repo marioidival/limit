@@ -1,5 +1,7 @@
 // Chat view component for displaying conversation messages
 
+use std::cell::Cell;
+
 use tracing::debug;
 
 use ratatui::{
@@ -74,16 +76,9 @@ impl Message {
         Self::new(Role::System, content, timestamp)
     }
 
-    /// Get current timestamp in simple format
+    /// Get current timestamp in local timezone
     fn current_timestamp() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let duration = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        let secs = duration.as_secs() % 86400; // Time since midnight
-        let hours = secs / 3600;
-        let minutes = (secs % 3600) / 60;
-        format!("{:02}:{:02}", hours, minutes)
+        chrono::Local::now().format("%H:%M").to_string()
     }
 }
 
@@ -93,6 +88,8 @@ pub struct ChatView {
     messages: Vec<Message>,
     scroll_offset: usize,
     pinned_to_bottom: bool,
+    /// Cached max scroll offset from last render (used when leaving pinned state)
+    last_max_scroll_offset: Cell<usize>,
 }
 
 impl Default for ChatView {
@@ -102,13 +99,13 @@ impl Default for ChatView {
 }
 
 impl ChatView {
-    /// Create a new empty chat view
     pub fn new() -> Self {
         debug!(component = %"ChatView", "Component created");
         Self {
             messages: Vec::new(),
             scroll_offset: 0,
             pinned_to_bottom: true,
+            last_max_scroll_offset: Cell::new(0),
         }
     }
 
@@ -145,6 +142,10 @@ impl ChatView {
     /// Scroll up by multiple lines (better UX than single line)
     pub fn scroll_up(&mut self) {
         const SCROLL_LINES: usize = 5;
+        // When leaving pinned state, sync scroll_offset to actual position
+        if self.pinned_to_bottom {
+            self.scroll_offset = self.last_max_scroll_offset.get();
+        }
         self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_LINES);
     }
@@ -152,12 +153,20 @@ impl ChatView {
     /// Scroll down by multiple lines
     pub fn scroll_down(&mut self) {
         const SCROLL_LINES: usize = 5;
+        // When leaving pinned state, sync scroll_offset to actual position
+        if self.pinned_to_bottom {
+            self.scroll_offset = self.last_max_scroll_offset.get();
+        }
         self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_add(SCROLL_LINES);
     }
 
     /// Scroll up by one page (viewport height)
     pub fn scroll_page_up(&mut self, viewport_height: u16) {
+        // When leaving pinned state, sync scroll_offset to actual position
+        if self.pinned_to_bottom {
+            self.scroll_offset = self.last_max_scroll_offset.get();
+        }
         self.pinned_to_bottom = false;
         let page_size = viewport_height as usize;
         self.scroll_offset = self.scroll_offset.saturating_sub(page_size);
@@ -165,6 +174,10 @@ impl ChatView {
 
     /// Scroll down by one page
     pub fn scroll_page_down(&mut self, viewport_height: u16) {
+        // When leaving pinned state, sync scroll_offset to actual position
+        if self.pinned_to_bottom {
+            self.scroll_offset = self.last_max_scroll_offset.get();
+        }
         self.pinned_to_bottom = false;
         let page_size = viewport_height as usize;
         self.scroll_offset = self.scroll_offset.saturating_add(page_size);
@@ -285,19 +298,21 @@ impl ChatView {
         let viewport_height = area.height as usize;
 
         // Calculate scroll offset based on pinned state
-        let scroll_offset = if self.pinned_to_bottom {
-            // When pinned to bottom, always show the newest messages
-            if total_height > viewport_height {
-                total_height.saturating_sub(viewport_height)
-            } else {
-                0
-            }
-        } else if total_height > viewport_height {
-            // User has scrolled - clamp to valid range
-            self.scroll_offset
-                .min(total_height.saturating_sub(viewport_height))
+        let max_scroll_offset = if total_height > viewport_height {
+            total_height.saturating_sub(viewport_height)
         } else {
             0
+        };
+
+        // Cache the max offset for scroll functions to use
+        self.last_max_scroll_offset.set(max_scroll_offset);
+
+        let scroll_offset = if self.pinned_to_bottom {
+            // When pinned to bottom, always show the newest messages
+            max_scroll_offset
+        } else {
+            // User has scrolled - clamp to valid range
+            self.scroll_offset.min(max_scroll_offset)
         };
 
         let mut y_offset: u16 = area.y;
