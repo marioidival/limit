@@ -3,7 +3,7 @@ use crate::error::CliError;
 use crate::render::MarkdownRenderer;
 use crate::session::SessionManager;
 use rustyline::history::DefaultHistory;
-use rustyline::Editor;
+use rustyline::{Config, Editor};
 use std::io::Write;
 use tokio::sync::mpsc;
 use tracing::instrument;
@@ -19,7 +19,8 @@ pub struct Repl {
 
 impl Repl {
     pub fn new() -> Result<Self, CliError> {
-        let reader = Editor::<(), DefaultHistory>::new()?;
+        let config = Config::builder().build();
+        let reader = Editor::<(), DefaultHistory>::with_config(config)?;
         let session_manager = SessionManager::new()?;
 
         let session_id = match session_manager.get_last_session()? {
