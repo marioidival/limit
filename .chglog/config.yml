@@ -1,0 +1,74 @@
+style: github
+template: |
+  ## {{ .Version }} - {{ .Time.Format "2006-01-02" }}
+
+  {{ range .CommitGroups -}}
+  ### {{ .Title }}
+
+  {{ range .Commits -}}
+  - {{ .Subject }}
+  {{ end }}
+
+  {{ end -}}
+
+  {{- if .NoteGroups -}}
+  {{ range .NoteGroups -}}
+  ### {{ .Title }}
+
+  {{ range .Notes -}}
+  {{ .Body }}
+  {{ end }}
+
+  {{ end -}}
+  {{ end -}}
+  {{- if .MergeCommits -}}
+  ### Merged PRs
+
+  {{ range .MergeCommits -}}
+  - {{ .Subject }}
+  {{ end }}
+  {{ end }}
+options:
+  commits:
+    # Filters commits for the changelog
+    filters:
+      # Include commits with these types
+      Type:
+        - feat
+        - fix
+        - perf
+        - refactor
+        - docs
+        - style
+        - test
+        - build
+        - ci
+        - chore
+        - revert
+
+  # Groups commits by their type
+  commit_groups:
+    title_maps:
+      feat: Added
+      fix: Fixed
+      perf: Performance
+      refactor: Refactored
+      docs: Documentation
+      style: Style
+      test: Testing
+      build: Build
+      ci: CI
+      chore: Chores
+      revert: Reverted
+
+  # Change log title
+  header:
+    pattern: "^(.*)$"
+    pattern_maps:
+      - Subject
+
+  # Notes to include in the changelog
+  notes:
+    keywords:
+      - BREAKING CHANGE
+      - BREAKING CHANGES
