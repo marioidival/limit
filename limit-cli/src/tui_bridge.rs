@@ -1,6 +1,9 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use limit_tui::components::{ChatView, Message, ProgressBar, Spinner};
@@ -201,6 +204,10 @@ impl TuiApp {
         execute!(std::io::stdout(), EnterAlternateScreen)
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
+        // Enable mouse capture for scroll support
+        execute!(std::io::stdout(), EnableMouseCapture)
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+
         crossterm::terminal::enable_raw_mode()
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
@@ -209,6 +216,7 @@ impl TuiApp {
         impl Drop for AlternateScreenGuard {
             fn drop(&mut self) {
                 let _ = crossterm::terminal::disable_raw_mode();
+                let _ = execute!(std::io::stdout(), DisableMouseCapture);
                 let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
             }
         }
@@ -234,13 +242,22 @@ impl TuiApp {
             if crossterm::event::poll(std::time::Duration::from_millis(50))
                 .map_err(|e| CliError::IoError(io::Error::other(e)))?
             {
-                if let Event::Key(key) =
-                    event::read().map_err(|e| CliError::IoError(io::Error::other(e)))?
-                {
-                    // Only handle key press events (not release/repeat)
-                    if key.kind == KeyEventKind::Press {
+                match event::read().map_err(|e| CliError::IoError(io::Error::other(e)))? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
                         self.handle_key_event(key)?;
                     }
+                    Event::Mouse(mouse) => match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                            chat.scroll_up();
+                        }
+                        MouseEventKind::ScrollDown => {
+                            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                            chat.scroll_down();
+                        }
+                        _ => {}
+                    },
+                    _ => {}
                 }
             } else {
                 // No key event - tick cursor blink
