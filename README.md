@@ -119,6 +119,12 @@ cargo build --workspace --release
 
 ## Configuration
 
+📚 **Quick Setup Guides:**
+- [Anthropic Claude](docs/CLAUDE_SETUP.md) - Recommended for code analysis
+- [OpenAI GPT](docs/OPENAI_SETUP.md) - Fast and reliable
+- [z.ai](docs/ZAI_SETUP.md) - Cost-effective alternative
+- [Full Configuration Guide](docs/CONFIGURATION.md) - All options in one place
+
 Create a configuration file at `~/.limit/config.toml`:
 
 ### Anthropic Claude (Default)
@@ -269,6 +275,16 @@ See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
 - Adding new tools/providers
 - Code style guidelines
 - Debugging tips
+
+---
+
+## Documentation
+
+### Configuration Guides
+- [Configuration Overview](docs/CONFIGURATION.md) - All configuration options in one place
+- [Anthropic Claude Setup](docs/CLAUDE_SETUP.md) - Detailed guide for Claude setup
+- [OpenAI Setup](docs/OPENAI_SETUP.md) - Detailed guide for GPT-4/GPT-3.5 setup
+- [z.ai Setup](docs/ZAI_SETUP.md) - Detailed guide for z.ai (GLM-4) setup
 
 ---
 
