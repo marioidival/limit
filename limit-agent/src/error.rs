@@ -10,14 +10,6 @@ pub enum AgentError {
     IoError(String),
     #[error("Bincode error: {0}")]
     BincodeError(String),
-    #[error("Max iterations ({0}) reached")]
-    MaxIterationsReached(u32),
-    #[error("Loop detected: {tool_name} with args {args} called {count} times")]
-    LoopDetected {
-        tool_name: String,
-        args: String,
-        count: usize,
-    },
 }
 
 impl Clone for AgentError {
@@ -28,16 +20,6 @@ impl Clone for AgentError {
             AgentError::SandboxError(s) => AgentError::SandboxError(s.clone()),
             AgentError::IoError(s) => AgentError::IoError(s.clone()),
             AgentError::BincodeError(s) => AgentError::BincodeError(s.clone()),
-            AgentError::MaxIterationsReached(n) => AgentError::MaxIterationsReached(*n),
-            AgentError::LoopDetected {
-                tool_name,
-                args,
-                count,
-            } => AgentError::LoopDetected {
-                tool_name: tool_name.clone(),
-                args: args.clone(),
-                count: *count,
-            },
         }
     }
 }

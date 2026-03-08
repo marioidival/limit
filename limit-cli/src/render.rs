@@ -76,7 +76,6 @@ impl MarkdownRenderer {
 
         result
     }
-
 }
 
 #[cfg(test)]

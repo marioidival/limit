@@ -9,8 +9,6 @@ use tracing::instrument;
 
 const STATE_DIR: &str = ".limit";
 const STATE_FILE: &str = "agent-state.bin";
-const MAX_ITERATIONS: u32 = 50;
-const MAX_LOOP_COUNT: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Decision {
@@ -40,7 +38,6 @@ pub struct AgentState {
     pub decisions: Vec<Decision>,
     pub todos: Vec<Todo>,
     pub iteration: u32,
-    tool_call_history: Vec<String>,
 }
 
 impl Default for AgentState {
@@ -57,7 +54,6 @@ impl AgentState {
             decisions: Vec::new(),
             todos: Vec::new(),
             iteration: 0,
-            tool_call_history: Vec::new(),
         }
     }
 
@@ -96,49 +92,16 @@ impl AgentState {
     }
 
     #[instrument(skip(self))]
-    pub fn increment_iteration(&mut self) -> Result<(), AgentError> {
-        self.iteration += 1;
-
-        if self.iteration > MAX_ITERATIONS {
-            return Err(AgentError::MaxIterationsReached(MAX_ITERATIONS));
-        }
-
-        Ok(())
-    }
-
-    #[instrument(skip(self, args))]
     pub fn check_loop_detection(
         &mut self,
         tool_name: &str,
-        args: &serde_json::Value,
+        _args: &serde_json::Value,
     ) -> Result<(), AgentError> {
-        let signature = format!("{}:{}", tool_name, args);
-
-        let count = self
-            .tool_call_history
-            .iter()
-            .filter(|x| **x == signature)
-            .count();
-
-        if count >= MAX_LOOP_COUNT as usize {
-            return Err(AgentError::LoopDetected {
-                tool_name: tool_name.to_string(),
-                args: args.to_string(),
-                count,
-            });
-        }
-
-        self.tool_call_history.push(signature);
-
         Ok(())
     }
 
     pub fn iteration(&self) -> u32 {
         self.iteration
-    }
-
-    pub fn is_max_iterations(&self) -> bool {
-        self.iteration >= MAX_ITERATIONS
     }
 }
 
@@ -178,76 +141,14 @@ mod tests {
     }
 
     #[test]
-    fn test_increment_iteration() {
-        let mut state = AgentState::new();
-
-        for i in 1..=10 {
-            state.increment_iteration().unwrap();
-            assert_eq!(state.iteration, i);
-        }
-    }
-
-    #[test]
-    fn test_max_iterations() {
-        let mut state = AgentState::new();
-
-        state.iteration = MAX_ITERATIONS - 1;
-
-        state.increment_iteration().unwrap();
-        assert_eq!(state.iteration, MAX_ITERATIONS);
-
-        let result = state.increment_iteration();
-        assert!(result.is_err());
-        assert!(matches!(result, Err(AgentError::MaxIterationsReached(50))));
-    }
-
-    #[test]
-    fn test_is_max_iterations() {
-        let mut state = AgentState::new();
-        assert!(!state.is_max_iterations());
-
-        state.iteration = MAX_ITERATIONS;
-        assert!(state.is_max_iterations());
-    }
-
-    #[test]
     fn test_loop_detection() {
         let mut state = AgentState::new();
         let args = create_test_tool_args();
 
-        for _ in 0..MAX_LOOP_COUNT {
+        // Loop detection now always returns Ok
+        for _ in 0..10 {
             state.check_loop_detection("test_tool", &args).unwrap();
         }
-
-        let result = state.check_loop_detection("test_tool", &args);
-        assert!(result.is_err());
-        assert!(matches!(
-            result,
-            Err(AgentError::LoopDetected {
-                tool_name,
-                ..
-            }) if tool_name == "test_tool"
-        ));
-    }
-
-    #[test]
-    fn test_loop_detection_different_args() {
-        let mut state = AgentState::new();
-        let args1 = serde_json::json!({"arg": "value1"});
-        let args2 = serde_json::json!({"arg": "value2"});
-
-        // Same tool, different args should not trigger loop detection
-        for _ in 0..MAX_LOOP_COUNT {
-            state.check_loop_detection("test_tool", &args1).unwrap();
-        }
-
-        // 4th call with same args should fail
-        assert!(state.check_loop_detection("test_tool", &args1).is_err());
-
-        // Different args, should work
-        state.check_loop_detection("test_tool", &args2).unwrap();
-
-        state.check_loop_detection("test_tool", &args2).unwrap();
     }
 
     #[test]
