@@ -1,277 +1,242 @@
-# Multi-Provider Support (base_url)
+# Multi-Provider LLM Support (Revised)
 
 ## TL;DR
 
-> **Quick Summary**: Add `base_url` config option to allow custom Anthropic-compatible API endpoints
-> 
+> **Summary**: Complete multi-provider support (Claude, OpenAI, z.ai) by finishing partial impl in providers.rs, adding OpenAI provider, replacing config, and wiring factory.
+>
 > **Deliverables**:
-> - Config field `base_url: Option<String>`
-> - Client uses config values instead of hardcoded
-> - Tests for custom URL behavior
-> 
-> **Estimated Effort**: Quick
-> **Parallel Execution**: YES - 2 waves
-> **Critical Path**: Task 1 → Task 2/3 → Task 4 → Task 5
+> - Exported `providers` module with trait
+> - `impl LlmProvider for AnthropicClient`
+> - `OpenAiProvider` (OpenAI + z.ai via base_url)
+> - New config schema with `provider` field
+> - `ProviderFactory` → `Box<dyn LlmProvider>`
+> - Updated `AgentBridge`
+>
+> **Effort**: Medium (1 day)
+> **Parallel**: YES - 4 waves, 8 tasks
+> **Critical Path**: Config → AnthropicImpl → OpenAI → Factory → Bridge
 
 ---
 
 ## Context
 
-### Original Request
-Allow limit to accept custom base URLs for Anthropic-like API providers.
+### Current State
+- **providers.rs**: Trait + enums + configs exist (not exported)
+- **client.rs**: AnthropicClient ready (missing trait methods)
+- **config.rs**: Single-provider (needs replacement)
+- **agent_bridge.rs**: Uses AnthropicClient directly
 
-### Interview Summary
-- **Config format**: Single provider with `base_url` field
-- **Providers**: User specifies full URL (e.g., `https://api.z.ai/api/anthropic`)
-- **Headers**: Standard Anthropic headers (no customization)
-- **Tests**: After implementation
+### Key Decisions
+| Decision | Choice |
+|----------|--------|
+| ResponseChunk | Consolidate → ProviderResponseChunk |
+| Anthropic impl | Direct on AnthropicClient |
+| Config | Breaking change, `provider` field |
+| Env priority | Config wins (env is fallback) |
+| z.ai URL | Full URL required |
+| Tests | After implementation |
 
-### Metis Review
-**Identified Gaps** (addressed):
-- URL format: Full URL including path (user example: `/api/anthropic`)
-- Timeout from config: Currently ignored — including in scope
-- Validation: Simple `url::Url::parse()` check
+### Metis Findings
+- OpenAI SSE format differs (separate parser)
+- Two config systems (Config vs ProviderConfig)
+- Tool call formats differ between providers
 
 ---
 
 ## Work Objectives
 
-### Core Objective
-Enable users to configure custom API endpoints while maintaining Anthropic API compatibility.
-
-### Concrete Deliverables
-- `base_url: Option<String>` field in Config
-- `AnthropicClient` uses config.base_url, config.model, config.max_tokens
-- Agent bridge passes all config values to client
-
-### Definition of Done
-- [ ] `cargo test --workspace` passes
-- [ ] Custom base_url works in config.toml
-- [ ] Default (no base_url) still uses Anthropic API
-
 ### Must Have
-- base_url config field with serde default
-- Client uses all config values
-- Backward compatible (existing configs work)
+- `provider = "anthropic"|"openai"` in config
+- Env fallback: ANTHROPIC_API_KEY, OPENAI_API_KEY, ZAI_API_KEY
+- Factory returns `Box<dyn LlmProvider>`
+- z.ai via `base_url` (full URL)
 
-### Must NOT Have (Guardrails)
-- Custom header support
-- Multi-provider list
-- Provider detection logic
-- Over-engineered URL validation
-
----
-
-## Verification Strategy
-
-### Test Decision
-- **Infrastructure exists**: YES (49 tests, mockito)
-- **Automated tests**: Tests after
-- **Framework**: cargo test
-
-### QA Policy
-Each task includes agent-executed QA via cargo test and curl verification.
+### Must NOT
+- CLI --provider flag
+- Config backward compat
+- Common SSE abstraction
+- BaseProvider trait
+- SDKs
 
 ---
 
 ## Execution Strategy
 
-### Parallel Execution Waves
-
 ```
-Wave 1 (Start Immediately — config + client changes):
-├── Task 1: Add base_url to Config [quick]
-├── Task 2: Update AnthropicClient for base_url [quick]
-└── Task 3: Fix build_request_body to use config values [quick]
+Wave 1 (3 tasks, PARALLEL):
+├── T1: Export providers + consolidate types [quick]
+├── T2: Replace config schema [quick]
+└── T3: Impl LlmProvider for AnthropicClient [quick]
 
-Wave 2 (After Wave 1 — integration):
-├── Task 4: Update agent_bridge to pass config [quick]
-└── Task 5: Add tests for base_url support [quick]
+Wave 2 (1 task):
+└── T4: Create OpenAiProvider [deep]
 
-Critical Path: T1 → T2/T3 → T4 → T5
+Wave 3 (2 tasks, SEQUENTIAL):
+├── T5: Create ProviderFactory [quick]
+└── T6: Update AgentBridge [unspecified-high]
+
+Wave 4 (2 tasks, PARALLEL):
+├── T7: Config validation + errors [quick]
+└── T8: Integration tests [unspecified-high]
 ```
 
 ---
 
-## TODOs
+- [x] 1. **Export providers module + consolidate types**
 
-- [x] 1. Add base_url to Config struct
+  **What**: 
+  - Add `pub mod providers;` to lib.rs
+  - Remove `ResponseChunk` enum from client.rs
+  - Replace ResponseChunk → ProviderResponseChunk
+  - Add `pub use providers::ProviderResponseChunk;` to lib.rs
+  - Update imports in agent_bridge.rs
 
-  **What to do**:
-  - Add `base_url: Option<String>` field with `#[serde(default)]`
-  - Add `fn default_base_url() -> Option<String> { None }`
-  - Update `Config::default()` to include `base_url: None`
-
-  **Must NOT do**: env var support, over-validation
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-
-  **Parallelization**:
-  - **Parallel Group**: Wave 1 (with T2, T3)
-  - **Blocks**: T4
+  **Must NOT**: Rename ProviderResponseChunk, create aliases
 
   **References**:
-  - `limit-llm/src/config.rs:6-15` - Config struct
-  - `limit-llm/src/config.rs:45-54` - Default impl
+  - `limit-llm/src/lib.rs` - Add module export
+  - `limit-llm/src/client.rs:19-27` - ResponseChunk to remove
+  - `limit-llm/src/providers.rs:12-20` - Target type
+  - `limit-cli/src/agent_bridge.rs:10` - Import to update
 
-  **QA Scenarios**:
-  ```
-  Scenario: Config parses base_url
-    Tool: Bash (cargo test)
-    Steps: `cargo test --package limit-llm --lib config`
-    Expected: All tests pass
-  ```
+  **QA**: `cargo check --workspace && cargo test --workspace` → PASS
+- [x] 2. **Replace config.rs schema**
 
-  **Commit**: NO
+  **What**:
+  - New schema:
+    ```toml
+    provider = "anthropic"
+    [providers.anthropic]
+    api_key = "..."  # optional, falls back to ANTHROPIC_API_KEY
+    model = "claude-3-5-sonnet-20241022"
+    [providers.openai]
+    api_key = "..."  # optional, falls back to OPENAI_API_KEY
+    model = "gpt-4"
+    base_url = "https://api.z.ai/api/paas/v4/chat/completions"
+    ```
+  - Add `api_key_or_env()` (config wins, env fallback)
+  - Error on old format
 
-- [x] 2. Update AnthropicClient for base_url
-
-  **What to do**:
-  - Modify `new()` to accept `Option<&str>` for base_url + timeout
-  - Default: `https://api.anthropic.com/v1/messages`
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-
-  **Parallelization**:
-  - **Parallel Group**: Wave 1 (with T1, T3)
-  - **Blocks**: T4
-
-  **References**:
-  - `limit-llm/src/client.rs:10-14` - struct
-  - `limit-llm/src/client.rs:41-54` - new()
-
-  **QA Scenarios**:
-  ```
-  Scenario: Client accepts base_url
-    Tool: Bash
-    Steps: `cargo test --package limit-llm --lib client`
-    Expected: All tests pass
-  ```
-
-  **Commit**: NO
-
-- [x] 3. Fix build_request_body to use config values
-
-  **What to do**:
-  - Add `model: &str`, `max_tokens: u32` params
-  - Replace hardcoded values at lines 139-140
-  - Update call site
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-
-  **Parallelization**:
-  - **Parallel Group**: Wave 1 (with T1, T2)
-  - **Blocks**: T4
+  **Must NOT**: Keep old Config, dual format support
 
   **References**:
-  - `limit-llm/src/client.rs:137-151` - function
-  - `limit-llm/src/client.rs:68` - call site
+  - `limit-llm/src/config.rs:6-61` - Replace
+  - `limit-llm/src/providers.rs:60-85` - Config patterns
 
-  **QA Scenarios**:
-  ```
-  Scenario: Request uses config values
-    Tool: Bash
-    Steps: Add unit test, verify JSON
-    Expected: Pass
-  ```
+  **QA**: New config parses, env fallback works, old format errors
+- [x] 3. **Impl LlmProvider for AnthropicClient**
 
-  **Commit**: NO
+  **What**:
+  - Add trait methods:
+    - `provider_name() -> &str` → "anthropic"
+    - `model_name() -> &str` → `&self.model`
+    - `clone_box() -> Box<dyn LlmProvider>`
+  - send() already matches trait
 
-- [x] 4. Update agent_bridge to pass config
-
-  **What to do**:
-  - Pass base_url, timeout, model, max_tokens from config
-  - Run `lsp_find_references` on `AnthropicClient::new` first
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-
-  **Parallelization**:
-  - **Blocked By**: T1, T2, T3
-  - **Blocks**: T5
+  **Must NOT**: Modify send() logic
 
   **References**:
-  - `limit-cli/src/agent_bridge.rs:61` - client instantiation
+  - `limit-llm/src/providers.rs:24-40` - Trait
+  - `limit-llm/src/client.rs:72-76` - send()
 
-  **QA Scenarios**:
-  ```
-  Scenario: CLI uses config
-    Tool: Bash
-    Steps: `cargo test --package limit-cli`
-    Expected: All tests pass
-  ```
+  **QA**: `cargo test -p limit-llm` → PASS
+- [x] 4. **Create OpenAiProvider**
 
-  **Commit**: NO
+  **What**:
+  - Create `limit-llm/src/openai_provider.rs`
+  - Impl LlmProvider trait
+  - OpenAI SSE format: `data: {"choices":[{"delta":{"content":"..."}}]}`
+  - Tool calls: `choices[0].delta.tool_calls`
+  - Terminator: `data: [DONE]`
+  - z.ai via base_url
 
-- [x] 5. Add tests + update README
-
-  **What to do**:
-  - Test config with/without base_url
-  - Update README with base_url example
-
-  **Recommended Agent Profile**:
-  - **Category**: `quick`
-  - **Skills**: [`effective-software-testing`]
-
-  **Parallelization**:
-  - **Blocked By**: T4
+  **Must NOT**: Abstract SSE, reuse Anthropic parser, add retry
 
   **References**:
-  - `limit-llm/src/config.rs:61-119` - test patterns
-  - `README.md:36-43` - config section
+  - `limit-llm/src/client.rs:100-200` - HTTP pattern
+  - `limit-llm/src/providers.rs:24-40` - Trait
+  - OpenAI API docs
 
-  **QA Scenarios**:
-  ```
-  Scenario: All tests pass
-    Tool: Bash
-    Steps: `cargo test --workspace`
-    Expected: 0 failures
-    Evidence: .sisyphus/evidence/task-5-all-tests.txt
-  ```
+  **QA**: OpenAI streaming, z.ai, tool calls (mock tests)
+- [x] 5. **Create ProviderFactory**
+
+  **What**:
+  - Create `limit-llm/src/provider_factory.rs`
+  - `create_provider(config) -> Result<Box<dyn LlmProvider>, LlmError>`
+  - Match on `config.provider`:
+    - "anthropic" → AnthropicClient
+    - "openai" → OpenAiProvider
+  - Error on unknown
+
+  **Must NOT**: Auto-detect, lazy loading
+
+  **References**:
+  - `limit-llm/src/config.rs` - Config
+  - `limit-llm/src/client.rs` - AnthropicClient
+  - `limit-llm/src/openai_provider.rs` - OpenAiProvider
+
+  **QA**: Correct types returned, unknown errors
+- [x] 6. **Update AgentBridge**
+
+  **What**:
+  - Replace `llm_client: AnthropicClient` → `Box<dyn LlmProvider>`
+  - Use `ProviderFactory::create_provider(&config)`
+  - Update ResponseChunk → ProviderResponseChunk
+
+  **Must NOT**: Change behavior
+
+  **References**:
+  - `limit-cli/src/agent_bridge.rs:37` - Field type
+  - `limit-cli/src/agent_bridge.rs:56-68` - Instantiation
+
+  **QA**: `cargo test --workspace` → PASS
+- [x] 7. **Config validation + errors**
+
+  **What**:
+  - `Config::validate() -> Result<(), ConfigError>`
+  - Errors: missing provider, unknown provider, missing api_key, old format
+  - Call in `Config::load()`
+
+  **Must NOT**: Auto-fix, silent fallback
+
+  **References**:
+  - `limit-llm/src/config.rs`
+
+  **QA**: All error cases
+- [x] 8. **Integration tests**
+
+  **What**:
+  - Tests in `limit-llm/tests/`:
+    - provider_switching.rs
+    - env_var_fallback.rs
+    - config_validation.rs
+  - Update README
+
+  **Must NOT**: E2E tests
+
+  **QA**: `cargo test --workspace` → all pass
 
   **Commit**: YES
-  - Message: `feat(llm): add base_url config for custom API endpoints`
+  - Message: `feat(llm): add multi-provider support`
   - Pre-commit: `cargo test --workspace && cargo clippy --workspace`
-
 ---
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
-  Verify: base_url field exists, client uses it, tests pass. Check .sisyphus/evidence/.
+## Final Verification
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
-  Run `cargo test --workspace` + `cargo clippy`. Check for hardcoded URLs.
-
-- [ ] F3. **Real Manual QA** — `unspecified-high`
-  Test with custom base_url in config.toml, verify request goes to correct URL.
-
-- [ ] F4. **Scope Fidelity Check** — `deep`
-  Verify no scope creep: no custom headers, no multi-provider.
-
----
-
-## Commit Strategy
-
-- **Single commit**: `feat(llm): add base_url config for custom API endpoints`
+- [ ] F1. Plan Compliance — oracle
+- [x] F2. Code Quality — unspecified-high
+- [x] F3. Manual QA — unspecified-high
+- [ ] F4. Scope Fidelity — deep
 
 ---
 
 ## Success Criteria
 
-### Verification Commands
 ```bash
-cargo test --workspace           # All tests pass
-cargo clippy --workspace         # No warnings
+cargo run -- chat "hello"  # uses provider from config
+cargo test --workspace && echo "PASS"
 ```
 
-### Final Checklist
-- [x] Config has base_url field
-- [x] Client uses config values (no hardcoded model/max_tokens)
-- [x] Backward compatible (configs without base_url work)
-- [x] All tests pass
-- [ ] Config has base_url field
-- [ ] Client uses config values (no hardcoded model/max_tokens)
-- [ ] Backward compatible (configs without base_url work)
-- [ ] All tests pass
+## Unresolved Questions
+
+None.
