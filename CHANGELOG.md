@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.14] - 2026-03-08
+
+### 🐛 Bug Fixes
+
+- *(ci)* Keep binary named 'limit' inside tar for install script
+
 ## [0.0.13] - 2026-03-08
 
 ### 🚜 Refactor
 
 - *(ci)* Split build and release jobs, add checksums and caching
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump version to 0.0.13
 
 ## [0.0.12] - 2026-03-08
 
