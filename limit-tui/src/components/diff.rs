@@ -1,5 +1,6 @@
 // Diff View component for displaying unified diffs
 
+use crate::syntax::SyntaxHighlighter;
 use tracing::debug;
 
 use ratatui::{
@@ -7,7 +8,7 @@ use ratatui::{
     layout::Rect,
     prelude::Widget,
     style::{Color, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
 };
 /// Type of diff line
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,15 +67,79 @@ pub struct DiffView {
     lines: Vec<DiffLine>,
     /// Current scroll offset (line number)
     scroll_offset: usize,
+    /// Syntax highlighter for code content
+    highlighter: SyntaxHighlighter,
 }
 
 impl DiffView {
+    /// Extract language from diff headers
+    fn detect_language_from_diff(&self) -> &str {
+        // Look for file extensions in the diff headers
+        for line in &self.lines {
+            if line.content.ends_with(".rs") || line.content.contains(".rs ") {
+                return "rust";
+            }
+            if line.content.ends_with(".py") || line.content.contains(".py ") {
+                return "python";
+            }
+            if line.content.ends_with(".js") || line.content.contains(".js ") {
+                return "javascript";
+            }
+            if line.content.ends_with(".ts") || line.content.contains(".ts ") {
+                return "typescript";
+            }
+            if line.content.ends_with(".go") || line.content.contains(".go ") {
+                return "go";
+            }
+            if line.content.ends_with(".java") || line.content.contains(".java ") {
+                return "java";
+            }
+            if line.content.ends_with(".cpp")
+                || line.content.contains(".cpp ")
+                || line.content.ends_with(".cc")
+                || line.content.contains(".cc ")
+                || line.content.ends_with(".cxx")
+                || line.content.contains(".cxx ")
+            {
+                return "cpp";
+            }
+            if line.content.ends_with(".c")
+                && !line.content.ends_with(".cpp")
+                && !line.content.ends_with(".cxx")
+            {
+                return "c";
+            }
+            if line.content.ends_with(".json") || line.content.contains(".json ") {
+                return "json";
+            }
+            if line.content.ends_with(".yaml")
+                || line.content.contains(".yaml ")
+                || line.content.ends_with(".yml")
+                || line.content.contains(".yml ")
+            {
+                return "yaml";
+            }
+            if line.content.ends_with(".toml") || line.content.contains(".toml ") {
+                return "toml";
+            }
+            if line.content.ends_with(".sh")
+                || line.content.contains(".sh ")
+                || line.content.ends_with(".bash")
+                || line.content.contains(".bash ")
+            {
+                return "bash";
+            }
+        }
+        // Default to plain text
+        ""
+    }
     /// Create a new empty diff view
     pub fn new() -> Self {
         debug!(component = %"DiffView", "Component created");
         Self {
             lines: Vec::new(),
             scroll_offset: 0,
+            highlighter: SyntaxHighlighter::new().expect("Failed to initialize syntax highlighter"),
         }
     }
 
@@ -84,6 +149,7 @@ impl DiffView {
         Self {
             lines: parse_diff(diff_text),
             scroll_offset: 0,
+            highlighter: SyntaxHighlighter::new().expect("Failed to initialize syntax highlighter"),
         }
     }
 
@@ -166,6 +232,9 @@ impl Widget for DiffView {
         let start_idx = self.scroll_offset;
         let end_idx = (start_idx + visible_count).min(self.lines.len());
 
+        // Detect language from diff for syntax highlighting
+        let lang = self.detect_language_from_diff();
+
         for (i, line) in self.lines[start_idx..end_idx].iter().enumerate() {
             let y = area.y + i as u16;
             if y >= area.bottom() {
@@ -212,9 +281,26 @@ impl Widget for DiffView {
             let line_num_line = Line::from(line_num_spans);
             buf.set_line(area.x, y, &line_num_line, line_num_width as u16);
 
-            // Render diff line
+            // Render diff line with optional syntax highlighting
             let content_start_x = area.x + line_num_width as u16;
-            let text_spans = vec![Span::styled(content, style)];
+
+            // Apply syntax highlighting for code lines (non-header, non-context lines with code)
+            let text_spans = if matches!(line.line_type, DiffType::Addition | DiffType::Deletion)
+                && !lang.is_empty()
+                && !line.content.is_empty()
+            {
+                // Try syntax highlighting for this line
+                let line_content = format!("{}\n", line.content);
+                match self.highlighter.highlight_to_spans(&line_content, lang) {
+                    Ok(highlighted_lines) if !highlighted_lines.is_empty() => {
+                        highlighted_lines[0].clone()
+                    }
+                    _ => vec![Span::styled(content, style)],
+                }
+            } else {
+                vec![Span::styled(content, style)]
+            };
+
             let text_line = Line::from(text_spans);
             buf.set_line(
                 content_start_x,
