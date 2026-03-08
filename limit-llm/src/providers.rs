@@ -3,7 +3,6 @@
 use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
-use std::time::Duration;
 
 use crate::error::LlmError;
 use crate::types::{Message, Tool, Usage};
@@ -11,6 +10,7 @@ use crate::types::{Message, Tool, Usage};
 /// Response chunk from streaming LLM providers
 pub enum ProviderResponseChunk {
     ContentDelta(String),
+    ReasoningDelta(String),
     ToolCallDelta {
         id: String,
         name: String,
@@ -27,14 +27,17 @@ pub trait LlmProvider: Send + Sync {
         &self,
         messages: Vec<Message>,
         tools: Vec<Tool>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + '_>>, LlmError>;
-    
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + '_>>,
+        LlmError,
+    >;
+
     /// Get provider name
     fn provider_name(&self) -> &str;
-    
+
     /// Get model name
     fn model_name(&self) -> &str;
-    
+
     /// Clone the provider
     fn clone_box(&self) -> Box<dyn LlmProvider>;
 }
