@@ -1,6 +1,8 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::execute;
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use limit_tui::components::{ChatView, Message, ProgressBar, Spinner};
 use ratatui::{
     backend::CrosstermBackend,
@@ -195,24 +197,24 @@ impl TuiApp {
 
     /// Run the TUI event loop
     pub fn run(&mut self) -> Result<(), CliError> {
-        // Clear terminal before starting TUI to remove any build output
-        print!("\x1b[2J\x1b[H");
-        // Flush to ensure clear happens before raw mode
-        let _ = std::io::Write::flush(&mut std::io::stdout());
+        // Enter alternate screen - creates a clean buffer for TUI
+        execute!(std::io::stdout(), EnterAlternateScreen)
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         crossterm::terminal::enable_raw_mode()
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
-        let result = self.run_inner();
+        // Guard to ensure cleanup on panic
+        struct AlternateScreenGuard;
+        impl Drop for AlternateScreenGuard {
+            fn drop(&mut self) {
+                let _ = crossterm::terminal::disable_raw_mode();
+                let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+            }
+        }
+        let _guard = AlternateScreenGuard;
 
-        // Always restore terminal state
-        let _ = crossterm::terminal::disable_raw_mode();
-
-        // Clear again on exit for clean terminal state
-        print!("\x1b[2J\x1b[H");
-        let _ = std::io::Write::flush(&mut std::io::stdout());
-
-        result
+        self.run_inner()
     }
 
     fn run_inner(&mut self) -> Result<(), CliError> {
