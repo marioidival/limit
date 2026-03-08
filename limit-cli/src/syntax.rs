@@ -37,6 +37,7 @@ impl SyntaxHighlighter {
     }
 
     /// Load with a custom theme from the built-in theme set
+    #[allow(dead_code)]
     pub fn with_theme(theme_name: &str) -> Result<Self, HighlightError> {
         let syntax_set = SyntaxSet::load_defaults_newlines();
         let theme_set = ThemeSet::load_defaults();
@@ -51,6 +52,7 @@ impl SyntaxHighlighter {
     }
 
     /// List available built-in themes
+    #[allow(dead_code)]
     pub fn list_builtin_themes() -> Vec<&'static str> {
         vec![
             "base16-ocean.dark",
@@ -175,6 +177,7 @@ impl SyntaxHighlighter {
     }
 
     /// Get theme name (for debugging/display)
+    #[allow(dead_code)]
     pub fn theme_name(&self) -> &str {
         // Theme doesn't store the name, so we return a default
         "base16-ocean.dark"

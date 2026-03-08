@@ -1,5 +1,4 @@
 use crate::syntax::SyntaxHighlighter;
-use std::io::Write;
 use termimad::MadSkin;
 
 pub struct MarkdownRenderer {
@@ -78,12 +77,6 @@ impl MarkdownRenderer {
         result
     }
 
-    /// Render and print markdown directly to stdout
-    pub fn render_and_print(&self, markdown: &str) -> Result<(), std::io::Error> {
-        let text = self.render(markdown);
-        println!("{}", text);
-        std::io::stdout().flush()
-    }
 }
 
 #[cfg(test)]
