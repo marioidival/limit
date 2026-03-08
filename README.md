@@ -17,7 +17,7 @@ Edit files, run commands, analyze code, manage git — all through natural langu
 ### One-line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marioidival/limit/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/marioidival/limit/trunk/install.sh | bash
 ```
 
 ### Manual Install
@@ -91,7 +91,7 @@ That's it! Start chatting with your AI coding assistant.
 ### One-line Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/marioidival/limit/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/marioidival/limit/trunk/install.sh | bash
 ```
 
 This will install Limit to `~/.local/bin/lim`.
