@@ -1,6 +1,7 @@
-use limit_llm::{Config, LlmProvider, ProviderConfig, ProviderFactory, ThinkingConfig, ZaiProvider};
+use limit_llm::{
+    Config, LlmProvider, ProviderConfig, ProviderFactory, ThinkingConfig, ZaiProvider,
+};
 use std::env;
-
 
 #[test]
 fn test_zai_provider_creation() {
@@ -36,15 +37,15 @@ fn test_zai_provider_with_custom_url() {
 #[test]
 fn test_thinking_config() {
     let config = ThinkingConfig::default();
-    assert_eq!(config.thinking_enabled, false);
-    assert_eq!(config.clear_thinking, true);
+    assert!(!config.thinking_enabled);
+    assert!(config.clear_thinking);
 
     let custom = ThinkingConfig {
         thinking_enabled: true,
         clear_thinking: false,
     };
-    assert_eq!(custom.thinking_enabled, true);
-    assert_eq!(custom.clear_thinking, false);
+    assert!(custom.thinking_enabled);
+    assert!(!custom.clear_thinking);
 }
 
 #[test]
