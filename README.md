@@ -1,10 +1,10 @@
 # limit
 
-A Rust-based code agent with Anthropic Claude support. Features a REPL interface with file operations, bash execution, git operations, code analysis tools, and a terminal UI.
+A Rust-based code agent with multi-provider LLM support (Anthropic Claude, OpenAI, z.ai). Features a REPL interface with file operations, bash execution, git operations, code analysis tools, and a terminal UI.
 
 ## Features
 
-- **Anthropic Claude Integration** - Streaming API support with tool calling
+- **Multi-Provider LLM Support** - Anthropic Claude, OpenAI, and z.ai with streaming API
 - **15 Built-in Tools** - File I/O, Bash, Git, and code analysis
 - **Session Persistence** - Auto-save/restore conversation history
 - **Token Tracking** - SQLite-based usage tracking
@@ -15,7 +15,7 @@ A Rust-based code agent with Anthropic Claude support. Features a REPL interface
 
 | Crate | Description |
 |-------|-------------|
-| `limit-llm` | Anthropic API client with streaming, SQLite tracking, binary persistence |
+| `limit-llm` | Multi-provider LLM client (Anthropic, OpenAI) with streaming, SQLite tracking, binary persistence |
 | `limit-agent` | Agent runtime with tool registry, conditional execution, Docker sandbox |
 | `limit-cli` | REPL interface with 15 tools, markdown rendering, session management |
 | `limit-tui` | Terminal UI with Virtual DOM, flexbox layout, chat/diff views |
@@ -24,7 +24,7 @@ A Rust-based code agent with Anthropic Claude support. Features a REPL interface
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/limit.git
+git clone https://github.com/marioidival/limit.git
 cd limit
 
 # Build all crates
@@ -35,14 +35,59 @@ cargo build --workspace --release
 
 Create a configuration file at `~/.limit/config.toml`:
 
+### Anthropic Claude (Default)
+
 ```toml
+provider = "anthropic"
+
+[providers.anthropic]
+# api_key is optional - falls back to ANTHROPIC_API_KEY env var
 api_key = "sk-ant-api03-..."
 model = "claude-3-5-sonnet-20241022"
 max_tokens = 4096
 timeout = 60
-# Optional: Custom API endpoint for Anthropic-compatible providers
+# Optional: Custom API endpoint
 # base_url = "https://api.custom-provider.com/v1/messages"
 ```
+
+### OpenAI
+
+```toml
+provider = "openai"
+
+[providers.openai]
+# api_key is optional - falls back to OPENAI_API_KEY or ZAI_API_KEY env var
+api_key = "sk-..."
+model = "gpt-4"
+max_tokens = 4096
+timeout = 300000
+```
+
+### z.ai (ZAI Provider)
+
+```toml
+provider = "zai"
+
+[providers.zai]
+# api_key is optional - falls back to ZAI_API_KEY env var
+api_key = "..."
+model = "glm-4.7"
+# Optional: Custom endpoint (defaults to ZAI coding path)
+# base_url = "https://api.z.ai/api/coding/paas/v4/chat/completions"
+max_tokens = 4096
+timeout = 300000
+# Optional: Enable thinking mode (default: false)
+# thinking_enabled = true
+# Optional: Preserve thinking across turns (default: true)
+# clear_thinking = false
+```
+### Environment Variables
+
+Provider API keys can be set via environment variables as fallback:
+
+- `ANTHROPIC_API_KEY` - For Anthropic Claude
+- `OPENAI_API_KEY` - For OpenAI
+- `ZAI_API_KEY` - For z.ai provider
 
 ## Usage
 
@@ -98,6 +143,9 @@ limit> /exit
 limit/
 ├── limit-llm/           # LLM API layer
 │   ├── client.rs        # Anthropic streaming client
+│   ├── openai_provider.rs  # OpenAI/z.ai streaming client
+│   ├── provider_factory.rs # Provider factory
+│   ├── providers.rs     # LlmProvider trait
 │   ├── config.rs        # Configuration loading
 │   ├── tracking.rs      # Token usage tracking
 │   ├── persistence.rs   # Binary state persistence
@@ -135,7 +183,7 @@ limit/
 cargo build --workspace
 
 # Run all tests
-cargo test --workspace
+cargo test --workspace -- --test-threads=1
 
 # Run specific package tests
 cargo test --package limit-cli
@@ -199,7 +247,6 @@ Sandbox features:
 ## Constraints
 
 The MVP has these intentional limitations:
-- Anthropic only (no OpenAI/Gemini)
 - Unix-only TUI (no Windows support)
 - No syntax highlighting
 - No mouse support
