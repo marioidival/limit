@@ -18,10 +18,13 @@ pub fn init_logging() {
 
     match file {
         Ok(f) => {
-            let filter = EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| {
-                    EnvFilter::new("debug,limit_llm=debug,limit_agent=debug,limit_cli=debug,reqwest=warn,hyper=warn")
-                });
+            let default_level = if cfg!(debug_assertions) {
+                "debug,limit_llm=debug,limit_agent=debug,limit_cli=debug,reqwest=warn,hyper=warn"
+            } else {
+                "warn,limit_llm=warn,limit_agent=warn,limit_cli=warn,reqwest=warn,hyper=warn"
+            };
+            let filter =
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
             fmt()
                 .with_writer(f)
@@ -35,8 +38,13 @@ pub fn init_logging() {
         Err(e) => {
             eprintln!("Warning: Could not open log file {:?}: {}", log_path, e);
             // Fallback to stderr
+            let default_level = if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "warn"
+            };
             let filter =
-                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
             fmt().with_env_filter(filter).init();
         }
