@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 
+use crate::syntax::SyntaxHighlighter;
 use tracing::debug;
 
 use ratatui::{
@@ -9,9 +10,156 @@ use ratatui::{
     layout::Rect,
     prelude::Widget,
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Paragraph, Wrap},
 };
+/// Line type for markdown rendering
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineType {
+    Normal,
+    Header1,
+    Header2,
+    Header3,
+    ListItem,
+    CodeBlock,
+}
+
+impl LineType {
+    fn style(&self) -> Style {
+        match self {
+            LineType::Header1 => Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+            LineType::Header2 => Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            LineType::Header3 => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            LineType::ListItem => Style::default().fg(Color::White),
+            LineType::CodeBlock => Style::default().fg(Color::Gray),
+            LineType::Normal => Style::default(),
+        }
+    }
+}
+
+/// Parse inline markdown elements and return styled spans
+fn parse_inline_markdown(text: &str, base_style: Style) -> Vec<Span<'_>> {
+    let mut spans = Vec::new();
+    let mut chars = text.chars().peekable();
+    let mut current = String::new();
+    let mut in_bold = false;
+    let mut in_italic = false;
+    let mut in_code = false;
+
+    while let Some(c) = chars.next() {
+        // Handle code inline: `code`
+        if c == '`' && !in_bold && !in_italic {
+            if in_code {
+                // End of code
+                let style = Style::default().fg(Color::Yellow);
+                spans.push(Span::styled(current.clone(), style));
+                current.clear();
+                in_code = false;
+            } else {
+                // Start of code
+                if !current.is_empty() {
+                    spans.push(Span::styled(current.clone(), base_style));
+                    current.clear();
+                }
+                in_code = true;
+            }
+            continue;
+        }
+
+        // Handle bold: **text**
+        if c == '*' && chars.peek() == Some(&'*') && !in_code {
+            chars.next(); // consume second *
+            if in_bold {
+                // End of bold
+                let style = base_style.add_modifier(Modifier::BOLD);
+                spans.push(Span::styled(current.clone(), style));
+                current.clear();
+                in_bold = false;
+            } else {
+                // Start of bold
+                if !current.is_empty() {
+                    spans.push(Span::styled(current.clone(), base_style));
+                    current.clear();
+                }
+                in_bold = true;
+            }
+            continue;
+        }
+
+        // Handle italic: *text* (single asterisk, not at start/end of word boundary with bold)
+        if c == '*' && !in_code && !in_bold {
+            if in_italic {
+                // End of italic
+                let style = base_style.add_modifier(Modifier::ITALIC);
+                spans.push(Span::styled(current.clone(), style));
+                current.clear();
+                in_italic = false;
+            } else {
+                // Start of italic
+                if !current.is_empty() {
+                    spans.push(Span::styled(current.clone(), base_style));
+                    current.clear();
+                }
+                in_italic = true;
+            }
+            continue;
+        }
+
+        current.push(c);
+    }
+
+    // Handle remaining text
+    if !current.is_empty() {
+        let style = if in_code {
+            Style::default().fg(Color::Yellow)
+        } else if in_bold {
+            base_style.add_modifier(Modifier::BOLD)
+        } else if in_italic {
+            base_style.add_modifier(Modifier::ITALIC)
+        } else {
+            base_style
+        };
+        spans.push(Span::styled(current, style));
+    }
+
+    if spans.is_empty() {
+        spans.push(Span::styled(text, base_style));
+    }
+
+    spans
+}
+
+/// Detect line type from content
+fn detect_line_type(line: &str) -> (LineType, &str) {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("### ") {
+        (
+            LineType::Header3,
+            trimmed.strip_prefix("### ").unwrap_or(trimmed),
+        )
+    } else if trimmed.starts_with("## ") {
+        (
+            LineType::Header2,
+            trimmed.strip_prefix("## ").unwrap_or(trimmed),
+        )
+    } else if trimmed.starts_with("# ") {
+        (
+            LineType::Header1,
+            trimmed.strip_prefix("# ").unwrap_or(trimmed),
+        )
+    } else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+        (LineType::ListItem, line)
+    } else {
+        (LineType::Normal, line)
+    }
+}
+
 /// Role of a message sender
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -90,6 +238,8 @@ pub struct ChatView {
     pinned_to_bottom: bool,
     /// Cached max scroll offset from last render (used when leaving pinned state)
     last_max_scroll_offset: Cell<usize>,
+    /// Syntax highlighter for code blocks
+    highlighter: SyntaxHighlighter,
 }
 
 impl Default for ChatView {
@@ -106,6 +256,7 @@ impl ChatView {
             scroll_offset: 0,
             pinned_to_bottom: true,
             last_max_scroll_offset: Cell::new(0),
+            highlighter: SyntaxHighlighter::new().expect("Failed to initialize syntax highlighter"),
         }
     }
 
@@ -273,6 +424,44 @@ impl ChatView {
         lines.max(1)
     }
 
+    /// Process code blocks with syntax highlighting
+    /// Returns a vector of (line, line_type, is_code_block, lang)
+    fn process_code_blocks(&self, content: &str) -> Vec<(String, LineType, bool, Option<String>)> {
+        let mut result = Vec::new();
+        let mut lines = content.lines().peekable();
+        let mut in_code_block = false;
+        let mut current_lang: Option<String> = None;
+
+        while let Some(line) = lines.next() {
+            if line.starts_with("```") {
+                if in_code_block {
+                    // End of code block
+                    in_code_block = false;
+                    current_lang = None;
+                } else {
+                    // Start of code block
+                    in_code_block = true;
+                    current_lang = line
+                        .strip_prefix("```")
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty());
+                }
+            } else if in_code_block {
+                result.push((
+                    line.to_string(),
+                    LineType::CodeBlock,
+                    true,
+                    current_lang.clone(),
+                ));
+            } else {
+                let (line_type, _) = detect_line_type(line);
+                result.push((line.to_string(), line_type, false, None));
+            }
+        }
+
+        result
+    }
+
     /// Calculate total height needed to display all messages
     fn calculate_total_height(&self, width: u16) -> usize {
         let mut total_height = 0;
@@ -282,8 +471,12 @@ impl ChatView {
             total_height += 1;
 
             // Message content lines (with wrapping)
-            let content_height = Self::estimate_line_count(&message.content, width as usize);
-            total_height += content_height;
+            let processed = self.process_code_blocks(&message.content);
+
+            for (line, _line_type, _is_code, _lang) in processed {
+                let line_height = Self::estimate_line_count(&line, width as usize);
+                total_height += line_height;
+            }
 
             // Empty line between messages
             total_height += 1;
@@ -315,14 +508,26 @@ impl ChatView {
             self.scroll_offset.min(max_scroll_offset)
         };
 
-        let mut y_offset: u16 = area.y;
+        // When content is shorter than viewport and pinned to bottom, anchor content at bottom
+        let (initial_y_offset, skip_until, max_y) =
+            if self.pinned_to_bottom && total_height <= viewport_height {
+                let bottom_padding = viewport_height.saturating_sub(total_height) as u16;
+                (area.y + bottom_padding, 0, total_height)
+            } else {
+                (area.y, scroll_offset, scroll_offset + viewport_height)
+            };
+
+        let mut y_offset = initial_y_offset;
         let mut global_y: usize = 0;
-        let skip_until = scroll_offset;
-        let max_y = scroll_offset + viewport_height;
+
         for message in &self.messages {
             // Skip if this message is above the viewport
             let role_height = 1;
-            let content_height = Self::estimate_line_count(&message.content, area.width as usize);
+            let processed = self.process_code_blocks(&message.content);
+            let content_height: usize = processed
+                .iter()
+                .map(|(line, _, _, _)| Self::estimate_line_count(line, area.width as usize))
+                .sum();
             let separator_height = 1;
             let message_height = role_height + content_height + separator_height;
 
@@ -352,51 +557,41 @@ impl ChatView {
             }
             global_y += 1;
 
-            // Render message content
-            let lines: Vec<String> = message
-                .content
-                .lines()
-                .flat_map(|line| {
-                    // Simple word wrapping
-                    let mut result = Vec::new();
-                    let mut current = String::new();
-                    let max_width = area.width as usize;
+            // Render message content with markdown and code highlighting
+            for (line, line_type, is_code_block, lang) in processed {
+                let line_height = Self::estimate_line_count(&line, area.width as usize);
 
-                    for word in line.split_whitespace() {
-                        let test = if current.is_empty() {
-                            word.to_string()
-                        } else {
-                            format!("{} {}", current, word)
-                        };
-
-                        if test.len() <= max_width || current.is_empty() {
-                            current = test;
-                        } else {
-                            if !current.is_empty() {
-                                result.push(current);
-                            }
-                            current = word.to_string();
-                            if word.len() > max_width {
-                                // Very long word - split it
-                                while current.len() > max_width {
-                                    result.push(current[..max_width].to_string());
-                                    current = current[max_width..].to_string();
+                if is_code_block && global_y >= skip_until {
+                    // Code block with syntax highlighting
+                    if let Some(ref lang_str) = lang {
+                        if let Ok(highlighted_spans) = self
+                            .highlighter
+                            .highlight_to_spans(&format!("{}\n", line), lang_str)
+                        {
+                            // Render highlighted lines
+                            for highlighted_line in highlighted_spans {
+                                if y_offset < area.y + area.height && global_y < max_y {
+                                    let text = Text::from(Line::from(highlighted_line));
+                                    Paragraph::new(text)
+                                        .wrap(Wrap { trim: false })
+                                        .render(Rect::new(area.x, y_offset, area.width, 1), buf);
+                                    y_offset += 1;
+                                    global_y += 1;
                                 }
                             }
+                            continue;
                         }
                     }
+                }
 
-                    if !current.is_empty() {
-                        result.push(current);
-                    }
+                // Regular text with markdown styling
+                let base_style = line_type.style();
+                let spans = parse_inline_markdown(&line, base_style);
+                let text_line = Line::from(spans);
 
-                    result
-                })
-                .collect();
-
-            for line in lines {
+                // Render the line
                 if global_y >= skip_until && y_offset < area.y + area.height {
-                    Paragraph::new(line.as_str())
+                    Paragraph::new(text_line)
                         .wrap(Wrap { trim: false })
                         .render(Rect::new(area.x, y_offset, area.width, 1), buf);
                     y_offset += 1;
