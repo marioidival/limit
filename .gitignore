@@ -5,3 +5,6 @@ target/
 
 # Temporary study folder
 tmp-study/
+
+# macOS
+.DS_Store
