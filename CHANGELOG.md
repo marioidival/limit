@@ -56,6 +56,8 @@ All notable changes to this project will be documented in this file.
 - Improve agent iteration limit handling
 - Update rustyline Editor initialization
 - Resolver warnings do clippy
+- *(ci)* Remove non-existent git-chglog-release-action
+- *(ci)* Switch reqwest to rustls-tls for cross-compilation
 
 ### 🚜 Refactor
 
