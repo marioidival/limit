@@ -153,6 +153,9 @@ api_key = "sk-..."
 model = "gpt-4"
 max_tokens = 4096
 timeout = 300000
+# Optional: Custom API endpoint (for OpenAI-compatible servers)
+# base_url = "http://localhost:8080/v1"
+# Note: Some servers require full path (e.g., /v1/api/completions)
 ```
 
 ### z.ai (ZAI Provider)

@@ -27,6 +27,9 @@ api_key = "sk-ant-api03-..."
 
 [providers.openai]
 api_key = "sk-..."
+# Optional: Custom API endpoint (for OpenAI-compatible servers)
+# base_url = "http://localhost:8080/v1"
+# Note: Some servers require the full path (e.g., /v1/api/completions)
 
 [providers.zai]
 api_key = "..."

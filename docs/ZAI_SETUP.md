@@ -33,6 +33,22 @@ model = "glm-4.7"
 thinking_enabled = true
 ```
 
+### Using Self-Hosted GLM Models
+
+If you're running a self-hosted GLM-4 compatible server, use OpenAI provider with `base_url`:
+
+```toml
+provider = "openai"
+
+[providers.openai]
+api_key = ""  # Leave empty if no auth required
+model = "glm-4.7"
+base_url = "http://localhost:8082/v1/api/completions"
+timeout = 3000000
+```
+
+**Important**: Include the full API path in `base_url` if your server requires it (e.g., `/v1/api/completions`).
+
 Or use environment variable:
 
 ```bash
