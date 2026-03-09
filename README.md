@@ -20,6 +20,12 @@ Edit files, run commands, analyze code, manage git — all through natural langu
 curl -fsSL https://raw.githubusercontent.com/marioidival/limit/trunk/install.sh | bash
 ```
 
+### Install via Cargo
+
+```bash
+cargo install limit-cli
+```
+
 ### Manual Install
 
 ```bash
@@ -32,12 +38,12 @@ echo 'provider = "anthropic"' > ~/.limit/config.toml
 export ANTHROPIC_API_KEY="your-key-here"
 
 # 3. Run
-cargo run --release --package limit-cli
+./target/release/lim
 ```
 
 That's it! Start chatting with your AI coding assistant.
 
-> Use `--no-tui` flag for text-based REPL: `cargo run --package limit-cli -- --no-tui`
+> Use `--no-tui` flag for text-based REPL: `lim --no-tui`
 ## Screenshots
 
 ### TUI Chat View
