@@ -1,0 +1,40 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_REGISTRY_TOKEN: ${{ secrets.MYCARGOKEY }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish limit-llm
+        run: cargo publish -p limit-llm
+        continue-on-error: true
+
+      - name: Wait for index update
+        run: sleep 10
+
+      - name: Publish limit-tui
+        run: cargo publish -p limit-tui
+        continue-on-error: true
+
+      - name: Wait for index update
+        run: sleep 10
+
+      - name: Publish limit-agent
+        run: cargo publish -p limit-agent
+
+      - name: Wait for index update
+        run: sleep 10
+
+      - name: Publish limit-cli
+        run: cargo publish -p limit-cli
