@@ -2,6 +2,13 @@
 name = "limit-cli"
 version = "0.0.18"
 edition = "2021"
+description = "AI-powered terminal coding assistant with REPL and TUI. Multi-provider LLM support, session persistence, and built-in tools."
+authors = ["Mário Idival <marioidival@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/marioidival/limit"
+keywords = ["cli", "ai", "assistant", "coding", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
 
 [lib]
 name = "limit_cli"
@@ -14,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 thiserror = "1.0"
 futures = "0.3"
-limit-agent = { path = "../limit-agent" }
+limit-agent = { path = "../limit-agent", version = "0.0.18" }
 rustyline = "14.0"
 crossterm = "0.29"
 ratatui = "0.29"
@@ -39,8 +46,8 @@ bincode = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
-limit-llm = { path = "../limit-llm" }
-limit-tui = { path = "../limit-tui" }
+limit-llm = { path = "../limit-llm", version = "0.0.18" }
+limit-tui = { path = "../limit-tui", version = "0.0.18" }
 tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_warn"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }

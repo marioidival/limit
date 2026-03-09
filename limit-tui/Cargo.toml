@@ -2,6 +2,13 @@
 name = "limit-tui"
 version = "0.0.18"
 edition = "2021"
+description = "Terminal UI components with Virtual DOM rendering for Rust applications. Built with Ratatui."
+authors = ["Mário Idival <marioidival@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/marioidival/limit"
+keywords = ["tui", "terminal", "ui", "ratatui", "vdom"]
+categories = ["command-line-interface", "gui"]
+readme = "README.md"
 
 [dependencies]
 ratatui = "0.29"
