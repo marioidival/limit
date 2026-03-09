@@ -2,11 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.16] - 2026-03-09
+
+### 🐛 Bug Fixes
+
+- Add text wrapping to input fields
+- Increase input area height to accommodate wrapped text
+- Chat area uses remaining screen space instead of fixed size
+- Chat view text wrapping to display long messages properly
+- Resolve duplicate message display in chat view
+- Remove duplicate response display in TUI
+
+### 📚 Documentation
+
+- Fix url to download
+- Add comprehensive LLM provider configuration guides
+- Add concise LLM provider configuration guides
+- Add plan for text wrapping fix
+
+## [0.0.15] - 2026-03-08
+
+### 🐛 Bug Fixes
+
+- Use warn level in release builds to match tracing feature
+
+### 🚜 Refactor
+
+- Rename binary from limit to lim
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump version to 0.0.15
+
 ## [0.0.14] - 2026-03-08
 
 ### 🐛 Bug Fixes
 
 - *(ci)* Keep binary named 'limit' inside tar for install script
+
+### ⚙️ Miscellaneous Tasks
+
+- Bump version to 0.0.14
 
 ## [0.0.13] - 2026-03-08
 
