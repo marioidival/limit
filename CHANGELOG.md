@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.18] - 2026-03-09
+
+### 🐛 Bug Fixes
+
+- *(llm)* [**breaking**] Change FunctionCall.arguments to String for bincode compatibility
+- *(release)* Sync versions to 0.0.17 and fix sed bug
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to v0.0.17
+- Add git-cliff configuration for changelog generation
+
+## [0.0.18] - 2026-03-09
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.17] - 2026-03-09
 
 ### 🚀 Features
