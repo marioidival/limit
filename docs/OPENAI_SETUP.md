@@ -29,6 +29,28 @@ Or use environment variable:
 export OPENAI_API_KEY="sk-..."
 ```
 
+### Using Custom OpenAI-Compatible Servers
+
+Limit supports custom OpenAI-compatible API servers (local LLMs, proxy services, etc.). Add the `base_url` parameter:
+
+```toml
+[providers.openai]
+api_key = ""  # Leave empty if server doesn't require auth
+model = "glm-4.7"
+base_url = "http://localhost:8080/v1/chat/completions"
+timeout = 3000000
+```
+
+**Important**: The `base_url` should include the **full API endpoint path**. Limit does not automatically append `/chat/completions`. Check your server's documentation for the correct endpoint:
+
+- Standard OpenAI: `https://api.openai.com/v1/chat/completions`
+- z.ai: `https://api.z.ai/api/coding/paas/v4/chat/completions`
+- Ollama: `http://localhost:11434/v1/chat/completions`
+- LM Studio: `http://localhost:1234/v1/chat/completions`
+- Custom servers (e.g., vLLM): May use different paths like `http://localhost:8082/v1/api/completions`
+
+If you get HTTP 404 errors, verify your `base_url` matches your server's exact endpoint path.
+
 ## Test
 
 ```bash

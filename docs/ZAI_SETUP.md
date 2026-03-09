@@ -33,6 +33,27 @@ model = "glm-4.7"
 thinking_enabled = true
 ```
 
+### Using Self-Hosted GLM Models
+
+If you're running a self-hosted GLM-4 compatible server, use the zai provider with a custom `base_url`:
+
+```toml
+provider = "zai"
+
+[providers.zai]
+api_key = ""  # Leave empty if no auth required
+model = "glm-4.7"
+base_url = "http://localhost:8082/v1/api/completions"
+timeout = 3000000
+```
+
+**Important**: The `base_url` should always include the **full API endpoint path**. For example, the official z.ai API uses:
+```
+https://api.z.ai/api/coding/paas/v4/chat/completions
+```
+
+Check your self-hosted server's documentation for its exact endpoint path.
+
 Or use environment variable:
 
 ```bash
