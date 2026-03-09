@@ -225,7 +225,7 @@ impl InputPrompt {
                 error_msg,
                 Style::default().fg(Color::Red),
             )])]))
-                .wrap(Wrap { trim: false });
+            .wrap(Wrap { trim: false });
             error_text.render(error_area, buf);
         }
     }

@@ -461,7 +461,8 @@ impl TuiApp {
         // Allow scrolling even when agent is busy
         // Calculate actual viewport height dynamically
         let term_height = self.terminal.size().map(|s| s.height).unwrap_or(24);
-        let viewport_height = term_height.saturating_sub(1) // status bar - input area (6 lines) - borders (~2)
+        let viewport_height = term_height
+            .saturating_sub(1) // status bar - input area (6 lines) - borders (~2)
             .saturating_sub(7); // status (1) + input (6) + top/bottom borders (2) = 9
         match key.code {
             KeyCode::PageUp => {
@@ -651,7 +652,6 @@ impl TuiApp {
 
         // Clone Arcs for the spawned thread
         let messages = self.tui_bridge.messages.clone();
-        let chat_view = self.tui_bridge.chat_view().clone();
         let agent_bridge = self.tui_bridge.agent_bridge_arc();
         let session_manager = self.tui_bridge.session_manager.clone();
         let session_id = self.tui_bridge.session_id();
@@ -672,13 +672,9 @@ impl TuiApp {
                 let mut bridge = agent_bridge.lock().unwrap();
 
                 match bridge.process_message(&text, &mut messages_guard).await {
-                    Ok(response) => {
-                        // Add assistant response to chat view for display
-                        chat_view
-                            .lock()
-                            .unwrap()
-                            .add_message(Message::assistant(response));
-
+                    Ok(_response) => {
+                        // Response already displayed via streaming (ContentChunk events)
+                        // No need to add_message again - would cause duplication
                         // Auto-save session after successful response
                         let msgs = messages_guard.clone();
                         let input_tokens = *total_input_tokens.lock().unwrap();
@@ -784,9 +780,9 @@ impl TuiApp {
             .direction(Direction::Vertical)
             .constraints(
                 [
-                    Constraint::Percentage(60), // Chat view (60% of height)
-                    Constraint::Length(1), // Status bar
-                    Constraint::Length(6), // Input area (increased for wrapped text)
+                    Constraint::Percentage(90), // Chat view (60% of height)
+                    Constraint::Length(1),      // Status bar
+                    Constraint::Length(6),      // Input area (increased for wrapped text)
                 ]
                 .as_ref(),
             )
