@@ -72,7 +72,7 @@ impl SyntaxHighlighter {
         let token = match lang_lower.as_str() {
             "rust" | "rs" => "Rust",
             "python" | "py" => "Python",
-            "typescript" | "ts" => "TypeScript",
+            "typescript" | "ts" => "js",
             "tsx" => "TypeScript JSX",
             "javascript" | "js" => "JavaScript",
             "javascript react" | "jsx" => "JavaScript (Babel)",
