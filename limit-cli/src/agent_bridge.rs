@@ -33,6 +33,10 @@ pub enum AgentEvent {
     ContentChunk(String),
     Done,
     Error(String),
+    TokenUsage {
+        input_tokens: u64,
+        output_tokens: u64,
+    },
 }
 
 /// Bridge connecting limit-cli REPL to limit-agent executor and limit-llm client
@@ -259,6 +263,11 @@ impl AgentBridge {
                             cost,
                             duration_ms,
                         );
+                        // Emit token usage event for TUI display
+                        self.send_event(AgentEvent::TokenUsage {
+                            input_tokens: usage.input_tokens,
+                            output_tokens: usage.output_tokens,
+                        });
                         break;
                     }
                     Err(e) => {
