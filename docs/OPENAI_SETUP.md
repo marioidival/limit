@@ -41,14 +41,15 @@ base_url = "http://localhost:8080/v1/chat/completions"
 timeout = 3000000
 ```
 
-**Important**: Some OpenAI-compatible servers require the **full API path** in `base_url`. Check your server's documentation for the correct endpoint:
+**Important**: The `base_url` should include the **full API endpoint path**. Limit does not automatically append `/chat/completions`. Check your server's documentation for the correct endpoint:
 
-- Standard OpenAI: `https://api.openai.com/v1` (Limit appends `/chat/completions`)
-- Ollama: `http://localhost:11434/v1`
-- LM Studio: `http://localhost:1234/v1`
-- Custom servers (e.g., vLLM): May require full path like `http://localhost:8082/v1/api/completions`
+- Standard OpenAI: `https://api.openai.com/v1/chat/completions`
+- z.ai: `https://api.z.ai/api/coding/paas/v4/chat/completions`
+- Ollama: `http://localhost:11434/v1/chat/completions`
+- LM Studio: `http://localhost:1234/v1/chat/completions`
+- Custom servers (e.g., vLLM): May use different paths like `http://localhost:8082/v1/api/completions`
 
-If you get HTTP 404 errors, try adding the full endpoint path to `base_url`.
+If you get HTTP 404 errors, verify your `base_url` matches your server's exact endpoint path.
 
 ## Test
 

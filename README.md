@@ -154,8 +154,8 @@ model = "gpt-4"
 max_tokens = 4096
 timeout = 300000
 # Optional: Custom API endpoint (for OpenAI-compatible servers)
-# base_url = "http://localhost:8080/v1"
-# Note: Some servers require full path (e.g., /v1/api/completions)
+# base_url = "http://localhost:8080/v1/chat/completions"
+# Note: Must include full endpoint path (e.g., /v1/chat/completions)
 ```
 
 ### z.ai (ZAI Provider)

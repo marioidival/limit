@@ -47,7 +47,12 @@ base_url = "http://localhost:8082/v1/api/completions"
 timeout = 3000000
 ```
 
-**Important**: Include the full API path in `base_url` if your server requires it (e.g., `/v1/api/completions`).
+**Important**: The `base_url` should always include the **full API endpoint path**. For example, the official z.ai API uses:
+```
+https://api.z.ai/api/coding/paas/v4/chat/completions
+```
+
+Check your self-hosted server's documentation for its exact endpoint path.
 
 Or use environment variable:
 
