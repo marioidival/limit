@@ -286,7 +286,7 @@ impl AgentBridge {
                     tool_type: "function".to_string(),
                     function: limit_llm::types::FunctionCall {
                         name,
-                        arguments: args,
+                        arguments: args.to_string(),
                     },
                 })
                 .collect();
@@ -318,17 +318,22 @@ impl AgentBridge {
             // Convert LLM tool calls to executor tool calls
             let executor_calls: Vec<ToolCall> = tool_calls
                 .iter()
-                .map(|tc| ToolCall::new(&tc.id, &tc.function.name, tc.function.arguments.clone()))
+                .map(|tc| {
+                    let args: serde_json::Value =
+                        serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+                    ToolCall::new(&tc.id, &tc.function.name, args)
+                })
                 .collect();
 
             // Send ToolStart event for each tool BEFORE execution
             for tc in &tool_calls {
+                let args: serde_json::Value =
+                    serde_json::from_str(&tc.function.arguments).unwrap_or_default();
                 self.send_event(AgentEvent::ToolStart {
                     name: tc.function.name.clone(),
-                    args: tc.function.arguments.clone(),
+                    args,
                 });
             }
-
             // Execute tools
             let results = self.executor.execute_tools(executor_calls).await;
 

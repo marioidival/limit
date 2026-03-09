@@ -38,9 +38,7 @@ impl ModelHandoff {
             for call in tool_calls {
                 total += self.count_tokens(&call.id);
                 total += self.count_tokens(&call.function.name);
-                if let Ok(args_str) = serde_json::to_string(&call.function.arguments) {
-                    total += self.count_tokens(&args_str);
-                }
+                total += self.count_tokens(&call.function.arguments);
             }
         }
 
@@ -166,7 +164,7 @@ mod tests {
                 tool_type: "function".to_string(),
                 function: FunctionCall {
                     name: "test_tool".to_string(),
-                    arguments: serde_json::json!({"arg": "value"}),
+                    arguments: serde_json::json!({"arg": "value"}).to_string(),
                 },
             }]),
             tool_call_id: None,

@@ -31,16 +31,8 @@ pub struct ToolCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionCall {
     pub name: String,
-    #[serde(serialize_with = "serialize_arguments")]
-    pub arguments: serde_json::Value,
-}
-
-fn serialize_arguments<S>(value: &serde_json::Value, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    // Serialize arguments as a JSON string, not as a JSON object
-    serializer.serialize_str(&value.to_string())
+    /// JSON string representation of the function arguments
+    pub arguments: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,7 +90,7 @@ mod tests {
                 tool_type: "function".to_string(),
                 function: FunctionCall {
                     name: "test_tool".to_string(),
-                    arguments: serde_json::json!({"arg": "value"}),
+                    arguments: serde_json::json!({"arg": "value"}).to_string(),
                 },
             }]),
             tool_call_id: None,
@@ -133,7 +125,7 @@ mod tests {
                 tool_type: "function".to_string(),
                 function: FunctionCall {
                     name: "test_tool".to_string(),
-                    arguments: serde_json::json!({}),
+                    arguments: serde_json::json!({}).to_string(),
                 },
             }]),
             tool_call_id: None,
