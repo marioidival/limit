@@ -22,10 +22,6 @@ use tracing::{debug, instrument};
 #[allow(dead_code)]
 pub enum AgentEvent {
     Thinking,
-    RequestStarted {
-        turn: usize,
-        model: String,
-    },
     ToolStart {
         name: String,
         args: serde_json::Value,
@@ -35,11 +31,6 @@ pub enum AgentEvent {
         result: String,
     },
     ContentChunk(String),
-    ReasoningChunk(String),
-    TokenUsage {
-        input_tokens: u64,
-        output_tokens: u64,
-    },
     Done,
     Error(String),
 }
@@ -176,22 +167,22 @@ impl AgentBridge {
     ///
     /// # Returns
     /// The final response from the LLM or an error
-    #[instrument(skip(self, messages))]
+    #[instrument(skip(self, _messages))]
     pub async fn process_message(
         &mut self,
         user_input: &str,
-        messages: &mut Vec<Message>,
+        _messages: &mut Vec<Message>,
     ) -> Result<String, CliError> {
         // Add system message if this is the first message in the conversation
         // Note: Some providers (z.ai) don't support system role, but OpenAI-compatible APIs generally do
-        if messages.is_empty() {
+        if _messages.is_empty() {
             let system_message = Message {
                 role: Role::System,
                 content: Some(SYSTEM_PROMPT.to_string()),
                 tool_calls: None,
                 tool_call_id: None,
             };
-            messages.push(system_message);
+            _messages.push(system_message);
         }
 
         // Add user message to history
@@ -201,7 +192,7 @@ impl AgentBridge {
             tool_calls: None,
             tool_call_id: None,
         };
-        messages.push(user_message);
+        _messages.push(user_message);
 
         // Get tool definitions
         let tool_definitions = self.get_tool_definitions();
@@ -219,19 +210,13 @@ impl AgentBridge {
             // Send thinking event
             self.send_event(AgentEvent::Thinking);
 
-            // Send request started event
-            self.send_event(AgentEvent::RequestStarted {
-                turn: iteration,
-                model: self.model().to_string(),
-            });
-
             // Track timing for token usage
             let request_start = std::time::Instant::now();
 
             // Call LLM
             let mut stream = self
                 .llm_client
-                .send(messages.clone(), tool_definitions.clone())
+                .send(_messages.clone(), tool_definitions.clone())
                 .await
                 .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
@@ -250,9 +235,8 @@ impl AgentBridge {
                         current_content.push_str(&text);
                         self.send_event(AgentEvent::ContentChunk(text));
                     }
-                    Ok(ProviderResponseChunk::ReasoningDelta(reasoning)) => {
-                        debug!("Model reasoning: {}", reasoning);
-                        self.send_event(AgentEvent::ReasoningChunk(reasoning));
+                    Ok(ProviderResponseChunk::ReasoningDelta(_)) => {
+                        // Ignore reasoning chunks for now
                     }
                     Ok(ProviderResponseChunk::ToolCallDelta {
                         id,
@@ -275,11 +259,6 @@ impl AgentBridge {
                             cost,
                             duration_ms,
                         );
-                        // Send token usage event to TUI
-                        self.send_event(AgentEvent::TokenUsage {
-                            input_tokens: usage.input_tokens,
-                            output_tokens: usage.output_tokens,
-                        });
                         break;
                     }
                     Err(e) => {
@@ -325,13 +304,21 @@ impl AgentBridge {
                 tool_calls: Some(tool_calls.clone()),
                 tool_call_id: None,
             };
-            messages.push(assistant_message);
+            _messages.push(assistant_message);
 
             // Convert LLM tool calls to executor tool calls
             let executor_calls: Vec<ToolCall> = tool_calls
                 .iter()
                 .map(|tc| ToolCall::new(&tc.id, &tc.function.name, tc.function.arguments.clone()))
                 .collect();
+
+            // Send ToolStart event for each tool BEFORE execution
+            for tc in &tool_calls {
+                self.send_event(AgentEvent::ToolStart {
+                    name: tc.function.name.clone(),
+                    args: tc.function.arguments.clone(),
+                });
+            }
 
             // Execute tools
             let results = self.executor.execute_tools(executor_calls).await;
@@ -359,13 +346,13 @@ impl AgentBridge {
                         tool_calls: None,
                         tool_call_id: Some(result.call_id),
                     };
-                    messages.push(tool_result_message);
+                    _messages.push(tool_result_message);
                 }
             }
         }
 
         // If we hit max iterations, make one final request to get a response (no tools = forced text)
-        if iteration >= max_iterations && !messages.is_empty() {
+        if iteration >= max_iterations && !_messages.is_empty() {
             debug!("Making final LLM call after hitting max iterations (forcing text response)");
 
             // Add constraint message to force text response
@@ -381,13 +368,13 @@ impl AgentBridge {
                 tool_calls: None,
                 tool_call_id: None,
             };
-            messages.push(constraint_message);
+            _messages.push(constraint_message);
 
             // Send with NO tools to force text response
             let no_tools: Vec<LlmTool> = vec![];
             let mut stream = self
                 .llm_client
-                .send(messages.clone(), no_tools)
+                .send(_messages.clone(), no_tools)
                 .await
                 .map_err(|e| CliError::ConfigError(e.to_string()))?;
 

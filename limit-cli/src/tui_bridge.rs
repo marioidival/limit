@@ -38,11 +38,7 @@ fn debug_log(msg: &str) {
 pub enum TuiState {
     #[default]
     Idle,
-    Thinking {
-        turn: usize,
-        model: String,
-        reasoning_buffer: String,
-    },
+    Thinking,
     ToolExecuting {
         name: String,
         progress: f32,
@@ -133,6 +129,13 @@ impl TuiBridge {
             Message::system(format!("🆕 New TUI session started: {}", session_short_id));
         chat_view.lock().unwrap().add_message(welcome_msg);
 
+        // Add model info as system message
+        let model_name = agent_bridge.model().to_string();
+        if !model_name.is_empty() {
+            let model_msg = Message::system(format!("Using model: {}", model_name));
+            chat_view.lock().unwrap().add_message(model_msg);
+        }
+
         Ok(Self {
             agent_bridge: Arc::new(Mutex::new(agent_bridge)),
             event_rx,
@@ -185,59 +188,23 @@ impl TuiBridge {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 AgentEvent::Thinking => {
-                    // ReasoningChunk will populate the full Thinking state
-                    *self.state.lock().unwrap() = TuiState::Thinking {
-                        turn: 0,
-                        model: String::new(),
-                        reasoning_buffer: String::new(),
-                    };
+                    *self.state.lock().unwrap() = TuiState::Thinking;
                 }
-                AgentEvent::RequestStarted { turn, model } => {
-                    *self.state.lock().unwrap() = TuiState::Thinking {
-                        turn,
-                        model,
-                        reasoning_buffer: String::new(),
-                    };
-                }
-                AgentEvent::ReasoningChunk(reasoning) => {
-                    if let TuiState::Thinking {
-                        turn,
-                        model,
-                        reasoning_buffer,
-                    } = self.state.lock().unwrap().clone()
-                    {
-                        *self.state.lock().unwrap() = TuiState::Thinking {
-                            turn,
-                            model,
-                            reasoning_buffer: format!("{}{}", reasoning_buffer, reasoning),
-                        };
-                    }
-                }
-                AgentEvent::ToolStart { name, args: _ } => {
+                AgentEvent::ToolStart { name, args } => {
+                    let activity_msg = Self::format_activity_message(&name, &args);
                     *self.state.lock().unwrap() = TuiState::ToolExecuting {
-                        name: name.clone(),
+                        name: activity_msg,
                         progress: 0.0,
                     };
-                    self.progress_bar.lock().unwrap().set_value(0.0);
                 }
                 AgentEvent::ToolComplete { name: _, result: _ } => {
                     *self.state.lock().unwrap() = TuiState::Idle;
-                    self.progress_bar.lock().unwrap().set_value(1.0);
                 }
                 AgentEvent::ContentChunk(chunk) => {
-                    // Append to last assistant message instead of creating new ones
                     self.chat_view
                         .lock()
                         .unwrap()
                         .append_to_last_assistant(&chunk);
-                }
-                AgentEvent::TokenUsage {
-                    input_tokens,
-                    output_tokens,
-                } => {
-                    // Accumulate token counts
-                    *self.total_input_tokens.lock().unwrap() += input_tokens;
-                    *self.total_output_tokens.lock().unwrap() += output_tokens;
                 }
                 AgentEvent::Done => {
                     *self.state.lock().unwrap() = TuiState::Idle;
@@ -245,12 +212,81 @@ impl TuiBridge {
                 AgentEvent::Error(err) => {
                     // Reset state to Idle so user can continue
                     *self.state.lock().unwrap() = TuiState::Idle;
-                    let chat_msg = Message::system(format!("❌ Error: {}", err));
+                    let chat_msg = Message::system(format!("Error: {}", err));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
             }
         }
         Ok(())
+    }
+
+    fn format_activity_message(tool_name: &str, args: &serde_json::Value) -> String {
+        match tool_name {
+            "file_read" => args
+                .get("path")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("Reading {}...", Self::truncate_path(p, 40)))
+                .unwrap_or_else(|| "Reading file...".to_string()),
+            "file_write" => args
+                .get("path")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("Writing {}...", Self::truncate_path(p, 40)))
+                .unwrap_or_else(|| "Writing file...".to_string()),
+            "file_edit" => args
+                .get("path")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("Editing {}...", Self::truncate_path(p, 40)))
+                .unwrap_or_else(|| "Editing file...".to_string()),
+            "bash" => args
+                .get("command")
+                .and_then(|c| c.as_str())
+                .map(|c| format!("Running: {}...", Self::truncate_command(c, 30)))
+                .unwrap_or_else(|| "Executing command...".to_string()),
+            "git_status" => "Checking git status...".to_string(),
+            "git_diff" => "Checking git diff...".to_string(),
+            "git_log" => "Reading git log...".to_string(),
+            "git_add" => "Staging files...".to_string(),
+            "git_commit" => "Creating commit...".to_string(),
+            "git_push" => "Pushing to remote...".to_string(),
+            "git_pull" => "Pulling from remote...".to_string(),
+            "git_clone" => args
+                .get("url")
+                .and_then(|u| u.as_str())
+                .map(|u| format!("Cloning {}...", Self::truncate_path(u, 40)))
+                .unwrap_or_else(|| "Cloning repository...".to_string()),
+            "grep" => args
+                .get("pattern")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("Searching for '{}'...", Self::truncate_command(p, 30)))
+                .unwrap_or_else(|| "Searching...".to_string()),
+            "ast_grep" => args
+                .get("pattern")
+                .and_then(|p| p.as_str())
+                .map(|p| format!("AST searching '{}'...", Self::truncate_command(p, 25)))
+                .unwrap_or_else(|| "AST searching...".to_string()),
+            "lsp" => args
+                .get("command")
+                .and_then(|c| c.as_str())
+                .map(|c| format!("LSP: {}...", c))
+                .unwrap_or_else(|| "Running LSP...".to_string()),
+            _ => format!("Executing {}...", tool_name),
+        }
+    }
+
+    fn truncate_path(s: &str, max_len: usize) -> String {
+        if s.len() <= max_len {
+            s.to_string()
+        } else {
+            format!("...{}", &s[s.len().saturating_sub(max_len - 3)..])
+        }
+    }
+
+    fn truncate_command(s: &str, max_len: usize) -> String {
+        if s.len() <= max_len {
+            s.to_string()
+        } else {
+            format!("{}...", &s[..max_len.saturating_sub(3)])
+        }
     }
 
     /// Add a user message to the chat
@@ -412,7 +448,7 @@ impl TuiApp {
             self.tui_bridge.process_events()?;
 
             // Update spinner if in thinking state
-            if matches!(self.tui_bridge.state(), TuiState::Thinking { .. }) {
+            if matches!(self.tui_bridge.state(), TuiState::Thinking) {
                 self.tui_bridge.tick_spinner();
             }
 
@@ -462,55 +498,28 @@ impl TuiApp {
         match self.tui_bridge.state() {
             TuiState::Idle => {
                 self.status_message = format!(
-                    "Ready - Type a message and press Enter | Session: {}",
+                    "Ready | Session: {}",
                     session_id.chars().take(8).collect::<String>()
                 );
                 self.status_is_error = false;
             }
-            TuiState::Thinking {
-                turn,
-                model,
-                reasoning_buffer,
-            } => {
+            TuiState::Thinking => {
                 let spinner = self.tui_bridge.spinner().lock().unwrap();
-                let input_tokens = self.tui_bridge.total_input_tokens();
-                let output_tokens = self.tui_bridge.total_output_tokens();
-
-                // Get first 50 chars of reasoning, or use placeholder if empty
-                let reasoning_preview = if reasoning_buffer.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        " | Reasoning: {}",
-                        reasoning_buffer.chars().take(50).collect::<String>()
-                    )
-                };
-
-                self.status_message = format!(
-                    "{} Thinking | Turn: {} | Model: {}{} | In: {} | Out: {} | Session: {}",
-                    spinner.current_frame(),
-                    turn,
-                    model,
-                    reasoning_preview,
-                    input_tokens,
-                    output_tokens,
-                    session_id.chars().take(8).collect::<String>()
-                );
+                self.status_message = format!("{} Thinking...", spinner.current_frame());
                 self.status_is_error = false;
             }
             TuiState::ToolExecuting { name, progress } => {
                 let pct = (progress * 100.0) as u32;
-                self.status_message = format!(
-                    "⏳ Executing: {} ({}%) | Session: {}",
-                    name,
-                    pct,
-                    session_id.chars().take(8).collect::<String>()
-                );
+                if pct > 0 {
+                    self.status_message = format!("{} ({}%)", name, pct);
+                } else {
+                    self.status_message = name.clone();
+                }
                 self.status_is_error = false;
             }
             TuiState::Error(msg) => {
                 self.status_message = format!(
-                    "❌ Error: {} | Session: {}",
+                    "Error: {} | Session: {}",
                     msg,
                     session_id.chars().take(8).collect::<String>()
                 );
@@ -1258,7 +1267,7 @@ mod tests {
 
         tx.send(AgentEvent::Thinking).unwrap();
         tui_bridge.process_events().unwrap();
-        assert!(matches!(tui_bridge.state(), TuiState::Thinking { .. }));
+        assert!(matches!(tui_bridge.state(), TuiState::Thinking));
 
         tx.send(AgentEvent::Done).unwrap();
         tui_bridge.process_events().unwrap();

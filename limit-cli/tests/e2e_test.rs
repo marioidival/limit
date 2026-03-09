@@ -204,7 +204,7 @@ fn test_e2e_tui_rendering_components() {
     // Test thinking state
     tx.send(limit_cli::AgentEvent::Thinking).unwrap();
     tui_bridge.process_events().unwrap();
-    assert!(matches!(tui_bridge.state(), TuiState::Thinking { .. }));
+    assert!(matches!(tui_bridge.state(), TuiState::Thinking));
 
     // Test tool execution state
     tx.send(limit_cli::AgentEvent::ToolStart {
