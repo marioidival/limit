@@ -213,7 +213,9 @@ fn test_e2e_tui_rendering_components() {
     })
     .unwrap();
     tui_bridge.process_events().unwrap();
-    assert!(matches!(tui_bridge.state(), TuiState::ToolExecuting { .. }));
+    // Tool activities go to activity feed, state remains Idle
+    // Activity feed should have an in-progress activity
+    assert!(tui_bridge.activity_feed().lock().unwrap().has_in_progress());
 
     // Test completion
     tx.send(limit_cli::AgentEvent::ToolComplete {
@@ -224,11 +226,12 @@ fn test_e2e_tui_rendering_components() {
     tui_bridge.process_events().unwrap();
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
-    // Test error state
+    // Test error handling - errors reset state to Idle
     tx.send(limit_cli::AgentEvent::Error("Test error".to_string()))
         .unwrap();
     tui_bridge.process_events().unwrap();
-    assert!(matches!(tui_bridge.state(), TuiState::Error(_)));
+    // Error resets state to Idle so user can continue
+    assert_eq!(tui_bridge.state(), TuiState::Idle);
 
     // Verify chat view has messages
     let chat_view = tui_bridge.chat_view();
