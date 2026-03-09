@@ -38,7 +38,11 @@ fn debug_log(msg: &str) {
 pub enum TuiState {
     #[default]
     Idle,
-    Thinking,
+    Thinking {
+        turn: usize,
+        model: String,
+        reasoning_buffer: String,
+    },
     ToolExecuting {
         name: String,
         progress: f32,
@@ -181,7 +185,33 @@ impl TuiBridge {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
                 AgentEvent::Thinking => {
-                    *self.state.lock().unwrap() = TuiState::Thinking;
+                    // ReasoningChunk will populate the full Thinking state
+                    *self.state.lock().unwrap() = TuiState::Thinking {
+                        turn: 0,
+                        model: String::new(),
+                        reasoning_buffer: String::new(),
+                    };
+                }
+                AgentEvent::RequestStarted { turn, model } => {
+                    *self.state.lock().unwrap() = TuiState::Thinking {
+                        turn,
+                        model,
+                        reasoning_buffer: String::new(),
+                    };
+                }
+                AgentEvent::ReasoningChunk(reasoning) => {
+                    if let TuiState::Thinking {
+                        turn,
+                        model,
+                        reasoning_buffer,
+                    } = self.state.lock().unwrap().clone()
+                    {
+                        *self.state.lock().unwrap() = TuiState::Thinking {
+                            turn,
+                            model,
+                            reasoning_buffer: format!("{}{}", reasoning_buffer, reasoning),
+                        };
+                    }
                 }
                 AgentEvent::ToolStart { name, args: _ } => {
                     *self.state.lock().unwrap() = TuiState::ToolExecuting {
@@ -241,40 +271,51 @@ impl TuiBridge {
 
     /// Get total input tokens for the session
     pub fn total_input_tokens(&self) -> u64 {
-        self.total_input_tokens.lock()
+        self.total_input_tokens
+            .lock()
             .map(|guard| *guard)
             .unwrap_or(0)
     }
 
     /// Get total output tokens for the session
     pub fn total_output_tokens(&self) -> u64 {
-        self.total_output_tokens.lock()
+        self.total_output_tokens
+            .lock()
             .map(|guard| *guard)
             .unwrap_or(0)
     }
 
     /// Get the current session ID
     pub fn session_id(&self) -> String {
-        self.session_id.lock()
+        self.session_id
+            .lock()
             .map(|guard| guard.clone())
             .unwrap_or_else(|_| String::from("unknown"))
     }
 
     /// Save the current session
     pub fn save_session(&self) -> Result<(), CliError> {
-        let session_id = self.session_id.lock()
+        let session_id = self
+            .session_id
+            .lock()
             .map(|guard| guard.clone())
             .unwrap_or_else(|_| String::from("unknown"));
 
-        let messages = self.messages.lock()
+        let messages = self
+            .messages
+            .lock()
             .map(|guard| guard.clone())
             .unwrap_or_default();
 
-        let input_tokens = self.total_input_tokens.lock()
+        let input_tokens = self
+            .total_input_tokens
+            .lock()
             .map(|guard| *guard)
             .unwrap_or(0);
 
-        let output_tokens = self.total_output_tokens.lock()
+        let output_tokens = self
+            .total_output_tokens
+            .lock()
             .map(|guard| *guard)
             .unwrap_or(0);
 
@@ -286,8 +327,9 @@ impl TuiBridge {
             output_tokens
         );
 
-        let session_manager = self.session_manager.lock()
-            .map_err(|e| CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e)))?;
+        let session_manager = self.session_manager.lock().map_err(|e| {
+            CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e))
+        })?;
 
         session_manager.save_session(&session_id, &messages, input_tokens, output_tokens)?;
         tracing::info!(
@@ -370,7 +412,7 @@ impl TuiApp {
             self.tui_bridge.process_events()?;
 
             // Update spinner if in thinking state
-            if matches!(self.tui_bridge.state(), TuiState::Thinking) {
+            if matches!(self.tui_bridge.state(), TuiState::Thinking { .. }) {
                 self.tui_bridge.tick_spinner();
             }
 
@@ -425,11 +467,33 @@ impl TuiApp {
                 );
                 self.status_is_error = false;
             }
-            TuiState::Thinking => {
+            TuiState::Thinking {
+                turn,
+                model,
+                reasoning_buffer,
+            } => {
                 let spinner = self.tui_bridge.spinner().lock().unwrap();
+                let input_tokens = self.tui_bridge.total_input_tokens();
+                let output_tokens = self.tui_bridge.total_output_tokens();
+
+                // Get first 50 chars of reasoning, or use placeholder if empty
+                let reasoning_preview = if reasoning_buffer.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " | Reasoning: {}",
+                        reasoning_buffer.chars().take(50).collect::<String>()
+                    )
+                };
+
                 self.status_message = format!(
-                    "{} Thinking... | Session: {}",
+                    "{} Thinking | Turn: {} | Model: {}{} | In: {} | Out: {} | Session: {}",
                     spinner.current_frame(),
+                    turn,
+                    model,
+                    reasoning_preview,
+                    input_tokens,
+                    output_tokens,
                     session_id.chars().take(8).collect::<String>()
                 );
                 self.status_is_error = false;
@@ -765,11 +829,7 @@ impl TuiApp {
             Ok(sessions) => {
                 if sessions.is_empty() {
                     let msg = Message::system("No sessions found.".to_string());
-                    self.tui_bridge
-                        .chat_view()
-                        .lock()
-                        .unwrap()
-                        .add_message(msg);
+                    self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
                 } else {
                     let mut output = vec!["Sessions (most recent first):".to_string()];
                     for (i, session) in sessions.iter().enumerate() {
@@ -794,20 +854,12 @@ impl TuiApp {
                         ));
                     }
                     let msg = Message::system(output.join("\n"));
-                    self.tui_bridge
-                        .chat_view()
-                        .lock()
-                        .unwrap()
-                        .add_message(msg);
+                    self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
                 }
             }
             Err(e) => {
                 let msg = Message::system(format!("Error listing sessions: {}", e));
-                self.tui_bridge
-                    .chat_view()
-                    .lock()
-                    .unwrap()
-                    .add_message(msg);
+                self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
             }
         }
         Ok(())
@@ -829,10 +881,12 @@ impl TuiApp {
 
         // Create new session (separate lock scope)
         let new_session_id = {
-            let session_manager = self.tui_bridge.session_manager.lock()
-                .map_err(|e| CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e)))?;
+            let session_manager = self.tui_bridge.session_manager.lock().map_err(|e| {
+                CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e))
+            })?;
 
-            session_manager.create_new_session()
+            session_manager
+                .create_new_session()
                 .map_err(|e| CliError::ConfigError(format!("Failed to create session: {}", e)))?
         };
 
@@ -854,7 +908,11 @@ impl TuiApp {
             *output_guard = 0;
         }
 
-        tracing::info!("Created new session: {} (old: {})", new_session_id, old_session_id);
+        tracing::info!(
+            "Created new session: {} (old: {})",
+            new_session_id,
+            old_session_id
+        );
 
         // Add system message
         let session_short_id = if new_session_id.len() > 8 {
@@ -887,15 +945,19 @@ impl TuiApp {
 
         // Find session ID from partial match (acquire locks separately to avoid deadlock)
         let (full_session_id, session_info, messages) = {
-            let session_manager = self.tui_bridge.session_manager.lock()
-                .map_err(|e| CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e)))?;
+            let session_manager = self.tui_bridge.session_manager.lock().map_err(|e| {
+                CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e))
+            })?;
 
-            let sessions = session_manager.list_sessions()
+            let sessions = session_manager
+                .list_sessions()
                 .map_err(|e| CliError::ConfigError(format!("Failed to list sessions: {}", e)))?;
 
             let matched_session = if session_id.len() >= 8 {
                 // Try exact match first
-                sessions.iter().find(|s| s.id == session_id)
+                sessions
+                    .iter()
+                    .find(|s| s.id == session_id)
                     // Then try prefix match
                     .or_else(|| sessions.iter().find(|s| s.id.starts_with(session_id)))
             } else {
@@ -907,8 +969,9 @@ impl TuiApp {
                 Some(info) => {
                     let full_id = info.id.clone();
                     // Load messages within the same lock scope
-                    let msgs = session_manager.load_session(&full_id)
-                        .map_err(|e| CliError::ConfigError(format!("Failed to load session {}: {}", full_id, e)))?;
+                    let msgs = session_manager.load_session(&full_id).map_err(|e| {
+                        CliError::ConfigError(format!("Failed to load session {}: {}", full_id, e))
+                    })?;
                     (full_id, info.clone(), msgs)
                 }
                 None => {
@@ -958,7 +1021,11 @@ impl TuiApp {
                 }
             }
 
-            tracing::info!("Loaded session: {} ({} messages)", full_session_id, messages.len());
+            tracing::info!(
+                "Loaded session: {} ({} messages)",
+                full_session_id,
+                messages.len()
+            );
 
             // Add system message
             let session_short_id = if full_session_id.len() > 8 {
@@ -1191,7 +1258,7 @@ mod tests {
 
         tx.send(AgentEvent::Thinking).unwrap();
         tui_bridge.process_events().unwrap();
-        assert!(matches!(tui_bridge.state(), TuiState::Thinking));
+        assert!(matches!(tui_bridge.state(), TuiState::Thinking { .. }));
 
         tx.send(AgentEvent::Done).unwrap();
         tui_bridge.process_events().unwrap();

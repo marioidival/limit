@@ -161,6 +161,14 @@ impl Repl {
                             print!("\x1B[90mThinking...\x1B[0m");
                             std::io::stdout().flush()?;
                         }
+                        AgentEvent::RequestStarted { turn, model } => {
+                            print!("\x1B[90m\nTurn {}: {}\x1B[0m", turn, model);
+                            std::io::stdout().flush()?;
+                        }
+                        AgentEvent::ReasoningChunk(reasoning) => {
+                            // Reasoning is logged but not shown in REPL
+                            tracing::debug!("Reasoning: {}", reasoning);
+                        }
                         AgentEvent::ToolStart { name, args: _ } => {
                             println!("\x1B[90m\nTool: {}\x1B[0m", name);
                         }

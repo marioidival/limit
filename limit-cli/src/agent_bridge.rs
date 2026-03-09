@@ -22,6 +22,10 @@ use tracing::{debug, instrument};
 #[allow(dead_code)]
 pub enum AgentEvent {
     Thinking,
+    RequestStarted {
+        turn: usize,
+        model: String,
+    },
     ToolStart {
         name: String,
         args: serde_json::Value,
@@ -31,6 +35,7 @@ pub enum AgentEvent {
         result: String,
     },
     ContentChunk(String),
+    ReasoningChunk(String),
     TokenUsage {
         input_tokens: u64,
         output_tokens: u64,
@@ -214,6 +219,12 @@ impl AgentBridge {
             // Send thinking event
             self.send_event(AgentEvent::Thinking);
 
+            // Send request started event
+            self.send_event(AgentEvent::RequestStarted {
+                turn: iteration,
+                model: self.model().to_string(),
+            });
+
             // Track timing for token usage
             let request_start = std::time::Instant::now();
 
@@ -241,7 +252,7 @@ impl AgentBridge {
                     }
                     Ok(ProviderResponseChunk::ReasoningDelta(reasoning)) => {
                         debug!("Model reasoning: {}", reasoning);
-                        // Don't add to current_content or send as ContentChunk
+                        self.send_event(AgentEvent::ReasoningChunk(reasoning));
                     }
                     Ok(ProviderResponseChunk::ToolCallDelta {
                         id,

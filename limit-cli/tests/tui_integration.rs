@@ -216,7 +216,7 @@ fn test_tui_bridge_spinner_animation() {
     tui_bridge_mut.process_events().unwrap();
 
     // State should be Thinking
-    assert_eq!(tui_bridge_mut.state(), TuiState::Thinking);
+    assert!(matches!(tui_bridge_mut.state(), TuiState::Thinking { .. }));
 
     // Tick spinner multiple times and verify it changes
     let frames: Vec<String> = (0..5)
