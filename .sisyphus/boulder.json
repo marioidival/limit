@@ -1,10 +1,9 @@
 {
-  "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/logging-system.md",
-  "completed_at": "2026-03-07T18:35:00.000Z",
+  "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/zai-provider.md",
+  "started_at": "2026-03-08T00:50:01.243Z",
   "session_ids": [
-    "ses_33693dc39ffeOXWccMLmhdUOnH"
+    "ses_33513d46fffeGsMgxxtfwdcAF1"
   ],
-  "plan_name": "logging-system",
-  "agent": "atlas",
-  "status": "completed"
+  "plan_name": "zai-provider",
+  "agent": "atlas"
 }
