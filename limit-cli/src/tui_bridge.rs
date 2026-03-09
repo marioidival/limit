@@ -241,25 +241,42 @@ impl TuiBridge {
 
     /// Get total input tokens for the session
     pub fn total_input_tokens(&self) -> u64 {
-        *self.total_input_tokens.lock().unwrap()
+        self.total_input_tokens.lock()
+            .map(|guard| *guard)
+            .unwrap_or(0)
     }
 
     /// Get total output tokens for the session
     pub fn total_output_tokens(&self) -> u64 {
-        *self.total_output_tokens.lock().unwrap()
+        self.total_output_tokens.lock()
+            .map(|guard| *guard)
+            .unwrap_or(0)
     }
 
     /// Get the current session ID
     pub fn session_id(&self) -> String {
-        self.session_id.lock().unwrap().clone()
+        self.session_id.lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|_| String::from("unknown"))
     }
 
     /// Save the current session
     pub fn save_session(&self) -> Result<(), CliError> {
-        let session_id = self.session_id.lock().unwrap().clone();
-        let messages = self.messages.lock().unwrap().clone();
-        let input_tokens = self.total_input_tokens();
-        let output_tokens = self.total_output_tokens();
+        let session_id = self.session_id.lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|_| String::from("unknown"));
+
+        let messages = self.messages.lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+
+        let input_tokens = self.total_input_tokens.lock()
+            .map(|guard| *guard)
+            .unwrap_or(0);
+
+        let output_tokens = self.total_output_tokens.lock()
+            .map(|guard| *guard)
+            .unwrap_or(0);
 
         tracing::debug!(
             "Saving session {} with {} messages, {} in tokens, {} out tokens",
@@ -269,7 +286,9 @@ impl TuiBridge {
             output_tokens
         );
 
-        let session_manager = self.session_manager.lock().unwrap();
+        let session_manager = self.session_manager.lock()
+            .map_err(|e| CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e)))?;
+
         session_manager.save_session(&session_id, &messages, input_tokens, output_tokens)?;
         tracing::info!(
             "✓ Session {} saved successfully ({} messages, {} in tokens, {} out tokens)",
@@ -635,6 +654,9 @@ impl TuiApp {
                  /clear - Clear chat history\n\
                  /exit  - Exit the application\n\
                  /quit  - Exit the application\n\
+                 /session list  - List all sessions\n\
+                 /session new   - Create a new session\n\
+                 /session load  <id> - Load a session by ID\n\
                  \n\
                  Page Up/Down - Scroll chat history"
                     .to_string(),
@@ -645,6 +667,32 @@ impl TuiApp {
                 .unwrap()
                 .add_message(help_msg);
             return Ok(());
+        }
+
+        // Handle session commands
+        if text_lower.starts_with("/session ") {
+            let session_cmd = text.strip_prefix("/session ").unwrap();
+            if session_cmd.trim() == "list" {
+                self.handle_session_list()?;
+                return Ok(());
+            } else if session_cmd.trim() == "new" {
+                self.handle_session_new()?;
+                return Ok(());
+            } else if session_cmd.starts_with("load ") {
+                let session_id = session_cmd.strip_prefix("load ").unwrap().trim();
+                self.handle_session_load(session_id)?;
+                return Ok(());
+            } else {
+                let error_msg = Message::system(
+                    "Usage: /session list, /session new, /session load <id>".to_string(),
+                );
+                self.tui_bridge
+                    .chat_view()
+                    .lock()
+                    .unwrap()
+                    .add_message(error_msg);
+                return Ok(());
+            }
         }
 
         // Add user message to chat (for display)
@@ -703,6 +751,230 @@ impl TuiApp {
                 }
             });
         });
+
+        Ok(())
+    }
+
+    /// Handle /session list command
+    fn handle_session_list(&self) -> Result<(), CliError> {
+        tracing::info!("Session list command detected");
+        let session_manager = self.tui_bridge.session_manager.lock().unwrap();
+        let current_session_id = self.tui_bridge.session_id();
+
+        match session_manager.list_sessions() {
+            Ok(sessions) => {
+                if sessions.is_empty() {
+                    let msg = Message::system("No sessions found.".to_string());
+                    self.tui_bridge
+                        .chat_view()
+                        .lock()
+                        .unwrap()
+                        .add_message(msg);
+                } else {
+                    let mut output = vec!["Sessions (most recent first):".to_string()];
+                    for (i, session) in sessions.iter().enumerate() {
+                        let current = if session.id == current_session_id {
+                            " (current)"
+                        } else {
+                            ""
+                        };
+                        let short_id = if session.id.len() > 8 {
+                            &session.id[..8]
+                        } else {
+                            &session.id
+                        };
+                        output.push(format!(
+                            "  {}. {}{} - {} messages, {} in tokens, {} out tokens",
+                            i + 1,
+                            short_id,
+                            current,
+                            session.message_count,
+                            session.total_input_tokens,
+                            session.total_output_tokens
+                        ));
+                    }
+                    let msg = Message::system(output.join("\n"));
+                    self.tui_bridge
+                        .chat_view()
+                        .lock()
+                        .unwrap()
+                        .add_message(msg);
+                }
+            }
+            Err(e) => {
+                let msg = Message::system(format!("Error listing sessions: {}", e));
+                self.tui_bridge
+                    .chat_view()
+                    .lock()
+                    .unwrap()
+                    .add_message(msg);
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle /session new command
+    fn handle_session_new(&mut self) -> Result<(), CliError> {
+        tracing::info!("Session new command detected");
+
+        // Save current session (release lock before proceeding)
+        let save_result = self.tui_bridge.save_session();
+        if let Err(e) = &save_result {
+            tracing::error!("Failed to save current session: {}", e);
+            let msg = Message::system(format!("⚠ Warning: Failed to save current session: {}", e));
+            if let Ok(mut chat) = self.tui_bridge.chat_view.try_lock() {
+                chat.add_message(msg);
+            }
+        }
+
+        // Create new session (separate lock scope)
+        let new_session_id = {
+            let session_manager = self.tui_bridge.session_manager.lock()
+                .map_err(|e| CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e)))?;
+
+            session_manager.create_new_session()
+                .map_err(|e| CliError::ConfigError(format!("Failed to create session: {}", e)))?
+        };
+
+        let old_session_id = self.tui_bridge.session_id();
+
+        // Update session ID
+        if let Ok(mut id_guard) = self.tui_bridge.session_id.try_lock() {
+            *id_guard = new_session_id.clone();
+        }
+
+        // Clear messages and reset token counts (separate locks)
+        if let Ok(mut messages_guard) = self.tui_bridge.messages.try_lock() {
+            messages_guard.clear();
+        }
+        if let Ok(mut input_guard) = self.tui_bridge.total_input_tokens.try_lock() {
+            *input_guard = 0;
+        }
+        if let Ok(mut output_guard) = self.tui_bridge.total_output_tokens.try_lock() {
+            *output_guard = 0;
+        }
+
+        tracing::info!("Created new session: {} (old: {})", new_session_id, old_session_id);
+
+        // Add system message
+        let session_short_id = if new_session_id.len() > 8 {
+            &new_session_id[new_session_id.len().saturating_sub(8)..]
+        } else {
+            &new_session_id
+        };
+        let msg = Message::system(format!("🆕 New session created: {}", session_short_id));
+
+        if let Ok(mut chat) = self.tui_bridge.chat_view.try_lock() {
+            chat.add_message(msg);
+        }
+
+        Ok(())
+    }
+
+    /// Handle /session load <id> command
+    fn handle_session_load(&mut self, session_id: &str) -> Result<(), CliError> {
+        tracing::info!("Session load command detected for session: {}", session_id);
+
+        // Save current session first (release lock before proceeding)
+        let save_result = self.tui_bridge.save_session();
+        if let Err(e) = &save_result {
+            tracing::error!("Failed to save current session: {}", e);
+            let msg = Message::system(format!("⚠ Warning: Failed to save current session: {}", e));
+            if let Ok(mut chat) = self.tui_bridge.chat_view.try_lock() {
+                chat.add_message(msg);
+            }
+        }
+
+        // Find session ID from partial match (acquire locks separately to avoid deadlock)
+        let (full_session_id, session_info, messages) = {
+            let session_manager = self.tui_bridge.session_manager.lock()
+                .map_err(|e| CliError::ConfigError(format!("Failed to acquire session manager lock: {}", e)))?;
+
+            let sessions = session_manager.list_sessions()
+                .map_err(|e| CliError::ConfigError(format!("Failed to list sessions: {}", e)))?;
+
+            let matched_session = if session_id.len() >= 8 {
+                // Try exact match first
+                sessions.iter().find(|s| s.id == session_id)
+                    // Then try prefix match
+                    .or_else(|| sessions.iter().find(|s| s.id.starts_with(session_id)))
+            } else {
+                // Try prefix match for short IDs
+                sessions.iter().find(|s| s.id.starts_with(session_id))
+            };
+
+            match matched_session {
+                Some(info) => {
+                    let full_id = info.id.clone();
+                    // Load messages within the same lock scope
+                    let msgs = session_manager.load_session(&full_id)
+                        .map_err(|e| CliError::ConfigError(format!("Failed to load session {}: {}", full_id, e)))?;
+                    (full_id, info.clone(), msgs)
+                }
+                None => {
+                    let msg = Message::system(format!("❌ Session not found: {}", session_id));
+                    if let Ok(mut chat) = self.tui_bridge.chat_view.try_lock() {
+                        chat.add_message(msg);
+                    }
+                    return Ok(());
+                }
+            }
+        };
+
+        // Update session ID and token counts (separate locks)
+        if let Ok(mut id_guard) = self.tui_bridge.session_id.try_lock() {
+            *id_guard = full_session_id.clone();
+        }
+        if let Ok(mut input_guard) = self.tui_bridge.total_input_tokens.try_lock() {
+            *input_guard = session_info.total_input_tokens;
+        }
+        if let Ok(mut output_guard) = self.tui_bridge.total_output_tokens.try_lock() {
+            *output_guard = session_info.total_output_tokens;
+        }
+
+        // Update messages in TUI bridge
+        if let Ok(mut messages_guard) = self.tui_bridge.messages.try_lock() {
+            *messages_guard = messages.clone();
+        }
+
+        // Clear chat view and reload messages
+        if let Ok(mut chat) = self.tui_bridge.chat_view.try_lock() {
+            chat.clear();
+
+            // Reload messages into chat view (no additional locks needed)
+            for msg in &messages {
+                match msg.role {
+                    limit_llm::Role::User => {
+                        let content = msg.content.as_deref().unwrap_or("");
+                        let chat_msg = Message::user(content.to_string());
+                        chat.add_message(chat_msg);
+                    }
+                    limit_llm::Role::Assistant => {
+                        let content = msg.content.as_deref().unwrap_or("");
+                        let chat_msg = Message::assistant(content.to_string());
+                        chat.add_message(chat_msg);
+                    }
+                    _ => {}
+                }
+            }
+
+            tracing::info!("Loaded session: {} ({} messages)", full_session_id, messages.len());
+
+            // Add system message
+            let session_short_id = if full_session_id.len() > 8 {
+                &full_session_id[full_session_id.len().saturating_sub(8)..]
+            } else {
+                &full_session_id
+            };
+            let msg = Message::system(format!(
+                "📂 Loaded session: {} ({} messages, {} in tokens, {} out tokens)",
+                session_short_id,
+                messages.len(),
+                session_info.total_input_tokens,
+                session_info.total_output_tokens
+            ));
+            chat.add_message(msg);
+        }
 
         Ok(())
     }
