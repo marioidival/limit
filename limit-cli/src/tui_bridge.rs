@@ -456,7 +456,7 @@ impl TuiApp {
             self.update_status();
 
             // Handle user input with poll timeout
-            if crossterm::event::poll(std::time::Duration::from_millis(50))
+            if crossterm::event::poll(std::time::Duration::from_millis(500))
                 .map_err(|e| CliError::IoError(io::Error::other(e)))?
             {
                 match event::read().map_err(|e| CliError::IoError(io::Error::other(e)))? {
