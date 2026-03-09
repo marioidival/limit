@@ -554,7 +554,7 @@ impl ChatView {
 
             // Render message content with markdown and code highlighting
             for (line, line_type, is_code_block, lang) in processed {
-                let _line_height = Self::estimate_line_count(&line, area.width as usize);
+                let line_height = Self::estimate_line_count(&line, area.width as usize);
 
                 if is_code_block && global_y >= skip_until {
                     // Code block with syntax highlighting
@@ -565,13 +565,24 @@ impl ChatView {
                         {
                             // Render highlighted lines
                             for highlighted_line in highlighted_spans {
+                                // Estimate height for this code line
+                                // Extract text content from spans for height estimation
+                                let code_line_text: String =
+                                    highlighted_line.iter().map(|s| s.content.clone()).collect();
+                                let code_line_height =
+                                    Self::estimate_line_count(&code_line_text, area.width as usize);
                                 if y_offset < area.y + area.height && global_y < max_y {
+                                    // Clamp height to remaining viewport space
+                                    let render_height = code_line_height
+                                        .min((area.y + area.height - y_offset) as usize)
+                                        as u16;
                                     let text = Text::from(Line::from(highlighted_line));
-                                    Paragraph::new(text)
-                                        .wrap(Wrap { trim: false })
-                                        .render(Rect::new(area.x, y_offset, area.width, 1), buf);
-                                    y_offset += 1;
-                                    global_y += 1;
+                                    Paragraph::new(text).wrap(Wrap { trim: false }).render(
+                                        Rect::new(area.x, y_offset, area.width, render_height),
+                                        buf,
+                                    );
+                                    y_offset += code_line_height as u16;
+                                    global_y += code_line_height;
                                 }
                             }
                             continue;
@@ -586,12 +597,15 @@ impl ChatView {
 
                 // Render the line
                 if global_y >= skip_until && y_offset < area.y + area.height {
+                    // Clamp height to remaining viewport space
+                    let render_height =
+                        line_height.min((area.y + area.height - y_offset) as usize) as u16;
                     Paragraph::new(text_line)
                         .wrap(Wrap { trim: false })
-                        .render(Rect::new(area.x, y_offset, area.width, 1), buf);
-                    y_offset += 1;
+                        .render(Rect::new(area.x, y_offset, area.width, render_height), buf);
+                    y_offset += line_height as u16;
                 }
-                global_y += 1;
+                global_y += line_height;
 
                 if global_y >= max_y {
                     break;
