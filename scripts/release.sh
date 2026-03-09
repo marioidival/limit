@@ -184,8 +184,8 @@ update_cargo_toml_version() {
 
     log_info "Atualizando $file"
 
-    # Usa sed para substituir a linha version = "...", mas não version = "..." em dependencies
-    sed -i '' "s/^\(\[package\]\|^\[lib\]\|^version = \)\"[^\"]*\"/version = \"$new_version\"/2" "$file"
+    # Substitui a linha version = "..." no início da linha (não em dependencies)
+    sed -i '' "s/^version = \"[^\"]*\"$/version = \"$new_version\"/" "$file"
 
     log_success "  $file -> $new_version"
 }
