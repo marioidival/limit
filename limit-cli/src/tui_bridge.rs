@@ -7,7 +7,7 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use limit_tui::components::{ChatView, Message, ProgressBar, Spinner};
+use limit_tui::components::{ActivityFeed, ChatView, Message, Spinner};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -39,12 +39,6 @@ pub enum TuiState {
     #[default]
     Idle,
     Thinking,
-    ToolExecuting {
-        name: String,
-        progress: f32,
-    },
-    #[allow(dead_code)]
-    Error(String),
 }
 
 /// Bridge connecting limit-cli REPL to limit-tui components
@@ -57,8 +51,9 @@ pub struct TuiBridge {
     state: Arc<Mutex<TuiState>>,
     /// Chat view for displaying conversation
     chat_view: Arc<Mutex<ChatView>>,
-    /// Progress bar for tool execution
-    progress_bar: Arc<Mutex<ProgressBar>>,
+    /// Activity feed for showing tool activities
+    activity_feed: Arc<Mutex<ActivityFeed>>,
+    /// Spinner for thinking state
     /// Spinner for thinking state
     spinner: Arc<Mutex<Spinner>>,
     /// Conversation history
@@ -141,7 +136,7 @@ impl TuiBridge {
             event_rx,
             state: Arc::new(Mutex::new(TuiState::Idle)),
             chat_view,
-            progress_bar: Arc::new(Mutex::new(ProgressBar::new("Tool execution"))),
+            activity_feed: Arc::new(Mutex::new(ActivityFeed::new())),
             spinner: Arc::new(Mutex::new(Spinner::new("Thinking..."))),
             messages: Arc::new(Mutex::new(messages)),
             total_input_tokens: Arc::new(Mutex::new(initial_input)),
@@ -162,12 +157,6 @@ impl TuiBridge {
         self.agent_bridge.lock().unwrap()
     }
 
-    /// Get a reference to the progress bar
-    #[allow(dead_code)]
-    pub fn progress_bar(&self) -> &Arc<Mutex<ProgressBar>> {
-        &self.progress_bar
-    }
-
     /// Get the current TUI state
     pub fn state(&self) -> TuiState {
         self.state.lock().unwrap().clone()
@@ -183,6 +172,11 @@ impl TuiBridge {
         &self.spinner
     }
 
+    /// Get a reference to the activity feed
+    pub fn activity_feed(&self) -> &Arc<Mutex<ActivityFeed>> {
+        &self.activity_feed
+    }
+
     /// Process events from the agent and update TUI state
     pub fn process_events(&mut self) -> Result<(), CliError> {
         while let Ok(event) = self.event_rx.try_recv() {
@@ -192,13 +186,12 @@ impl TuiBridge {
                 }
                 AgentEvent::ToolStart { name, args } => {
                     let activity_msg = Self::format_activity_message(&name, &args);
-                    *self.state.lock().unwrap() = TuiState::ToolExecuting {
-                        name: activity_msg,
-                        progress: 0.0,
-                    };
+                    // Add to activity feed instead of changing state
+                    self.activity_feed.lock().unwrap().add(activity_msg, true);
                 }
                 AgentEvent::ToolComplete { name: _, result: _ } => {
-                    *self.state.lock().unwrap() = TuiState::Idle;
+                    // Mark current activity as complete
+                    self.activity_feed.lock().unwrap().complete_current();
                 }
                 AgentEvent::ContentChunk(chunk) => {
                     self.chat_view
@@ -208,12 +201,22 @@ impl TuiBridge {
                 }
                 AgentEvent::Done => {
                     *self.state.lock().unwrap() = TuiState::Idle;
+                    // Mark all activities as complete when LLM finishes
+                    self.activity_feed.lock().unwrap().complete_all();
                 }
                 AgentEvent::Error(err) => {
                     // Reset state to Idle so user can continue
                     *self.state.lock().unwrap() = TuiState::Idle;
                     let chat_msg = Message::system(format!("Error: {}", err));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
+                }
+                AgentEvent::TokenUsage {
+                    input_tokens,
+                    output_tokens,
+                } => {
+                    // Accumulate token counts for display
+                    *self.total_input_tokens.lock().unwrap() += input_tokens;
+                    *self.total_output_tokens.lock().unwrap() += output_tokens;
                 }
             }
         }
@@ -240,11 +243,11 @@ impl TuiBridge {
             "bash" => args
                 .get("command")
                 .and_then(|c| c.as_str())
-                .map(|c| format!("Running: {}...", Self::truncate_command(c, 30)))
+                .map(|c| format!("Running {}...", Self::truncate_command(c, 30)))
                 .unwrap_or_else(|| "Executing command...".to_string()),
             "git_status" => "Checking git status...".to_string(),
             "git_diff" => "Checking git diff...".to_string(),
-            "git_log" => "Reading git log...".to_string(),
+            "git_log" => "Checking git log...".to_string(),
             "git_add" => "Staging files...".to_string(),
             "git_commit" => "Creating commit...".to_string(),
             "git_push" => "Pushing to remote...".to_string(),
@@ -267,7 +270,7 @@ impl TuiBridge {
             "lsp" => args
                 .get("command")
                 .and_then(|c| c.as_str())
-                .map(|c| format!("LSP: {}...", c))
+                .map(|c| format!("Running LSP {}...", c))
                 .unwrap_or_else(|| "Running LSP...".to_string()),
             _ => format!("Executing {}...", tool_name),
         }
@@ -456,7 +459,7 @@ impl TuiApp {
             self.update_status();
 
             // Handle user input with poll timeout
-            if crossterm::event::poll(std::time::Duration::from_millis(500))
+            if crossterm::event::poll(std::time::Duration::from_millis(100))
                 .map_err(|e| CliError::IoError(io::Error::other(e)))?
             {
                 match event::read().map_err(|e| CliError::IoError(io::Error::other(e)))? {
@@ -495,35 +498,31 @@ impl TuiApp {
 
     fn update_status(&mut self) {
         let session_id = self.tui_bridge.session_id();
+        let has_activity = self
+            .tui_bridge
+            .activity_feed()
+            .lock()
+            .unwrap()
+            .has_in_progress();
+
         match self.tui_bridge.state() {
             TuiState::Idle => {
-                self.status_message = format!(
-                    "Ready | Session: {}",
-                    session_id.chars().take(8).collect::<String>()
-                );
+                if has_activity {
+                    // Show spinner when there are in-progress activities
+                    let spinner = self.tui_bridge.spinner().lock().unwrap();
+                    self.status_message = format!("{} Processing...", spinner.current_frame());
+                } else {
+                    self.status_message = format!(
+                        "Ready | Session: {}",
+                        session_id.chars().take(8).collect::<String>()
+                    );
+                }
                 self.status_is_error = false;
             }
             TuiState::Thinking => {
                 let spinner = self.tui_bridge.spinner().lock().unwrap();
                 self.status_message = format!("{} Thinking...", spinner.current_frame());
                 self.status_is_error = false;
-            }
-            TuiState::ToolExecuting { name, progress } => {
-                let pct = (progress * 100.0) as u32;
-                if pct > 0 {
-                    self.status_message = format!("{} ({}%)", name, pct);
-                } else {
-                    self.status_message = name.clone();
-                }
-                self.status_is_error = false;
-            }
-            TuiState::Error(msg) => {
-                self.status_message = format!(
-                    "Error: {} | Session: {}",
-                    msg,
-                    session_id.chars().take(8).collect::<String>()
-                );
-                self.status_is_error = true;
             }
         }
     }
@@ -1123,25 +1122,37 @@ impl TuiApp {
     ) {
         let size = f.area();
 
-        // Split the screen: chat, status, input
+        // Check if we have activities to show
+        let activity_count = tui_bridge.activity_feed().lock().unwrap().len();
+        let activity_height = if activity_count > 0 {
+            (activity_count as u16).min(3) // Max 3 lines for activity feed
+        } else {
+            0
+        };
+
+        // Build constraints based on whether we have activities
+        let constraints: Vec<Constraint> = vec![Constraint::Percentage(90)]; // Chat view
+        let mut constraints = constraints;
+        if activity_height > 0 {
+            constraints.push(Constraint::Length(activity_height)); // Activity feed
+        }
+        constraints.push(Constraint::Length(1)); // Status bar
+        constraints.push(Constraint::Length(6)); // Input area
+
+        // Split the screen
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(
-                [
-                    Constraint::Percentage(90), // Chat view (60% of height)
-                    Constraint::Length(1),      // Status bar
-                    Constraint::Length(6),      // Input area (increased for wrapped text)
-                ]
-                .as_ref(),
-            )
+            .constraints(constraints.as_slice())
             .split(size);
+
+        let mut chunk_idx = 0;
 
         // Draw chat view with border
         {
             let chat = chat_view.lock().unwrap();
             let total_input = tui_bridge.total_input_tokens();
             let total_output = tui_bridge.total_output_tokens();
-            let title = format!(" Chat (In: {} | Out: {}) ", total_input, total_output);
+            let title = format!(" Chat (↑{} ↓{}) ", total_input, total_output);
             let chat_block = Block::default()
                 .borders(Borders::ALL)
                 .title(title)
@@ -1150,8 +1161,21 @@ impl TuiApp {
                         .fg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 );
-            f.render_widget(&*chat, chat_block.inner(chunks[0]));
-            f.render_widget(chat_block, chunks[0]);
+            f.render_widget(&*chat, chat_block.inner(chunks[chunk_idx]));
+            f.render_widget(chat_block, chunks[chunk_idx]);
+            chunk_idx += 1;
+        }
+
+        // Draw activity feed if present
+        if activity_height > 0 {
+            let activity_feed = tui_bridge.activity_feed().lock().unwrap();
+            let activity_block = Block::default()
+                .borders(Borders::NONE)
+                .style(Style::default().bg(Color::Reset));
+            let activity_inner = activity_block.inner(chunks[chunk_idx]);
+            f.render_widget(activity_block, chunks[chunk_idx]);
+            activity_feed.render(activity_inner, f.buffer_mut());
+            chunk_idx += 1;
         }
 
         // Draw status bar
@@ -1166,7 +1190,8 @@ impl TuiApp {
                 Span::styled(" ● ", Style::default().fg(Color::Green)),
                 Span::styled(status_message, status_style),
             ]));
-            f.render_widget(status, chunks[1]);
+            f.render_widget(status, chunks[chunk_idx]);
+            chunk_idx += 1;
         }
 
         // Draw input area with border
@@ -1176,8 +1201,8 @@ impl TuiApp {
                 .title(" Input (Esc to quit) ")
                 .title_style(Style::default().fg(Color::Cyan));
 
-            let input_inner = input_block.inner(chunks[2]);
-            f.render_widget(input_block, chunks[2]);
+            let input_inner = input_block.inner(chunks[chunk_idx]);
+            f.render_widget(input_block, chunks[chunk_idx]);
 
             // Build input line with cursor
             let before_cursor = &input_text[..cursor_pos];
