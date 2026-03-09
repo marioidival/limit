@@ -474,7 +474,13 @@ impl ChatView {
             let processed = self.process_code_blocks(&message.content);
 
             for (line, _line_type, _is_code, _lang) in processed {
-                let line_height = Self::estimate_line_count(&line, width as usize);
+                // Code blocks render line-by-line with height 1
+                // Regular text wraps to estimated height
+                let line_height = if _is_code {
+                    1 // Code blocks: one row per line, no wrapping
+                } else {
+                    Self::estimate_line_count(&line, width as usize)
+                };
                 total_height += line_height;
             }
 
@@ -565,24 +571,17 @@ impl ChatView {
                         {
                             // Render highlighted lines
                             for highlighted_line in highlighted_spans {
-                                // Estimate height for this code line
-                                // Extract text content from spans for height estimation
-                                let code_line_text: String =
-                                    highlighted_line.iter().map(|s| s.content.clone()).collect();
-                                let code_line_height =
-                                    Self::estimate_line_count(&code_line_text, area.width as usize);
                                 if y_offset < area.y + area.height && global_y < max_y {
-                                    // Clamp height to remaining viewport space
-                                    let render_height = code_line_height
-                                        .min((area.y + area.height - y_offset) as usize)
-                                        as u16;
                                     let text = Text::from(Line::from(highlighted_line));
-                                    Paragraph::new(text).wrap(Wrap { trim: false }).render(
-                                        Rect::new(area.x, y_offset, area.width, render_height),
-                                        buf,
-                                    );
-                                    y_offset += code_line_height as u16;
-                                    global_y += code_line_height;
+                                    Paragraph::new(text)
+                                        .wrap(Wrap { trim: false })
+                                        .render(Rect::new(area.x, y_offset, area.width, 1), buf);
+                                    y_offset += 1;
+                                }
+                                global_y += 1;
+
+                                if global_y >= max_y {
+                                    break;
                                 }
                             }
                             continue;
