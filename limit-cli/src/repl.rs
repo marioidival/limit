@@ -181,37 +181,44 @@ impl Repl {
                         AgentEvent::Error(err) => {
                             println!("\x1B[31mError: {}\x1B[0m", err);
                         }
+                        AgentEvent::TokenUsage {
+                            input_tokens,
+                            output_tokens,
+                        } => {
+                            self.total_input_tokens += input_tokens;
+                            self.total_output_tokens += output_tokens;
+                        }
                     }
                 }
-            }
 
-            match result {
-                Ok(response) => {
-                    // Render the final response with markdown
-                    if !response.is_empty() {
-                        let renderer = MarkdownRenderer::new();
-                        let rendered = renderer.render(&response);
-                        println!("\n{}", rendered);
+                match result {
+                    Ok(response) => {
+                        // Render the final response with markdown
+                        if !response.is_empty() {
+                            let renderer = MarkdownRenderer::new();
+                            let rendered = renderer.render(&response);
+                            println!("\n{}", rendered);
+                        }
+                    }
+                    Err(e) => {
+                        println!("\x1B[31mError processing message: {}\x1B[0m", e);
+                        println!("Please check your API key and try again.");
                     }
                 }
-                Err(e) => {
-                    println!("\x1B[31mError processing message: {}\x1B[0m", e);
-                    println!("Please check your API key and try again.");
-                }
+            } else {
+                // Fallback: just echo the message
+                println!("You said: {}", line);
+                println!("(Agent not configured. Add API key to ~/.limit/config.toml)");
+
+                let user_message = limit_llm::Message {
+                    role: limit_llm::Role::User,
+                    content: Some(line.to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                };
+
+                self.messages.push(user_message);
             }
-        } else {
-            // Fallback: just echo the message
-            println!("You said: {}", line);
-            println!("(Agent not configured. Add API key to ~/.limit/config.toml)");
-
-            let user_message = limit_llm::Message {
-                role: limit_llm::Role::User,
-                content: Some(line.to_string()),
-                tool_calls: None,
-                tool_call_id: None,
-            };
-
-            self.messages.push(user_message);
         }
 
         Ok(())
@@ -315,7 +322,7 @@ impl Repl {
         println!("Loaded session: {}", self.session_id);
         println!("Loaded {} messages.", self.messages.len());
         println!(
-            "Total tokens: In: {} | Out: {}",
+            "Total tokens: ↑{} ↓{}",
             self.total_input_tokens, self.total_output_tokens
         );
         Ok(())
