@@ -2,6 +2,13 @@
 name = "limit-llm"
 version = "0.0.18"
 edition = "2021"
+description = "Multi-provider LLM client for Rust with streaming support. Supports Anthropic Claude, OpenAI, and z.ai."
+authors = ["Mário Idival <marioidival@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/marioidival/limit"
+keywords = ["ai", "llm", "openai", "anthropic", "claude"]
+categories = ["api-bindings", "development-tools"]
+readme = "README.md"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

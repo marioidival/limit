@@ -72,8 +72,7 @@ impl SyntaxHighlighter {
         let token = match lang_lower.as_str() {
             "rust" | "rs" => "Rust",
             "python" | "py" => "Python",
-            "typescript" | "ts" => "TypeScript",
-            "tsx" => "TypeScript JSX",
+            "typescript" | "ts" => "JavaScript", // TS highlighted as JS (syntect default)
             "javascript" | "js" => "JavaScript",
             "javascript react" | "jsx" => "JavaScript (Babel)",
             "go" | "golang" => "Go",
@@ -257,8 +256,9 @@ mod tests {
         let py_syntax = highlighter.detect_language("python");
         assert_eq!(py_syntax.name, "Python");
 
+        // TypeScript uses JavaScript syntax (syntect default doesn't have separate TS)
         let ts_syntax = highlighter.detect_language("typescript");
-        assert_eq!(ts_syntax.name, "TypeScript");
+        assert_eq!(ts_syntax.name, "JavaScript");
 
         let js_syntax = highlighter.detect_language("javascript");
         assert_eq!(js_syntax.name, "JavaScript");
@@ -314,9 +314,12 @@ mod tests {
         assert_eq!(highlighter.detect_language("rs").name, "Rust");
         assert_eq!(highlighter.detect_language("py").name, "Python");
         assert_eq!(highlighter.detect_language("js").name, "JavaScript");
-        assert_eq!(highlighter.detect_language("ts").name, "TypeScript");
+        assert_eq!(highlighter.detect_language("ts").name, "JavaScript"); // TS -> JS
         assert_eq!(highlighter.detect_language("yml").name, "YAML");
-        assert_eq!(highlighter.detect_language("sh").name, "Bash");
+        assert_eq!(
+            highlighter.detect_language("sh").name,
+            "Bourne Again Shell (bash)"
+        );
     }
 
     #[test]

@@ -1308,7 +1308,7 @@ mod tests {
         let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
         tui_bridge.add_user_message("Hello".to_string());
-        assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 1);
+        assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 3); // 1 user + 2 system (welcome + model)
     }
 
     #[test]

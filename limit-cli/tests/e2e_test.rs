@@ -224,6 +224,9 @@ fn test_e2e_tui_rendering_components() {
     })
     .unwrap();
     tui_bridge.process_events().unwrap();
+    // Done event resets Thinking state to Idle
+    tx.send(limit_cli::AgentEvent::Done).unwrap();
+    tui_bridge.process_events().unwrap();
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
     // Test error handling - errors reset state to Idle

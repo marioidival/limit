@@ -264,7 +264,10 @@ fn test_tui_bridge_content_streaming() {
         tui_bridge.process_events().unwrap();
     }
 
-    // Chat should have messages for each chunk
+    // Chat should have initial system messages from TuiBridge::new()
+    // ContentChunk accumulates content but doesn't add separate messages per chunk
+    let chat = tui_bridge.chat_view().lock().unwrap();
+    assert!(chat.message_count() >= 2); // At least 2 system messages
     let chat = tui_bridge.chat_view().lock().unwrap();
     assert!(chat.message_count() >= chunks.len());
 }
