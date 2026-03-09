@@ -35,12 +35,12 @@ thinking_enabled = true
 
 ### Using Self-Hosted GLM Models
 
-If you're running a self-hosted GLM-4 compatible server, use OpenAI provider with `base_url`:
+If you're running a self-hosted GLM-4 compatible server, use the zai provider with a custom `base_url`:
 
 ```toml
-provider = "openai"
+provider = "zai"
 
-[providers.openai]
+[providers.zai]
 api_key = ""  # Leave empty if no auth required
 model = "glm-4.7"
 base_url = "http://localhost:8082/v1/api/completions"
