@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.17] - 2026-03-09
+
+### 🚀 Features
+
+- Add real-time streaming text feedback in TUI status bar
+- *(tui)* Add ActivityFeed component for tool execution status
+- *(cli)* Add TokenUsage event for LLM token tracking
+- *(cli)* Add token usage display in REPL mode
+
+### 🐛 Bug Fixes
+
+- *(tui)* Resolve deadlock issues and add session management commands
+- Increase TUI poll timeout to 500ms for better readability
+
+### 🚜 Refactor
+
+- Simplify TUI status bar to show activity only
+- *(cli)* Integrate ActivityFeed and remove dead TUI code
+
+### 🧪 Testing
+
+- Update TUI tests for ActivityFeed behavior
+
+### ⚙️ Miscellaneous Tasks
+
+- Update sisyphus boulder state for zai-provider plan
+- Add scripts release
+
+## [0.0.17] - 2026-03-09
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.16] - 2026-03-09
 
 ### 🐛 Bug Fixes
