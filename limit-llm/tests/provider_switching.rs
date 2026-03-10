@@ -12,6 +12,7 @@ fn test_anthropic_provider_creation() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = Config {
@@ -34,6 +35,7 @@ fn test_openai_provider_creation() {
             base_url: Some("https://api.z.ai/api/paas/v4/chat/completions".to_string()),
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = Config {

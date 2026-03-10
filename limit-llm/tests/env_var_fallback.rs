@@ -20,6 +20,7 @@ fn test_anthropic_env_fallback() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = Config {
@@ -55,6 +56,7 @@ fn test_openai_env_fallback() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = Config {
@@ -90,6 +92,7 @@ fn test_openai_zai_api_key_fallback() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = Config {

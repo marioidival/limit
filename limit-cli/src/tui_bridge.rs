@@ -1264,6 +1264,7 @@ mod tests {
                 base_url: None,
                 max_tokens: 4096,
                 timeout: 60,
+                max_iterations: 100,
             },
         );
         limit_llm::Config {

@@ -19,6 +19,9 @@ pub struct ProviderConfig {
     pub max_tokens: u32,
     #[serde(default = "default_timeout")]
     pub timeout: u64,
+    /// Maximum iterations for agent loop (0 = unlimited, default: 100)
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: usize,
 }
 
 fn default_model() -> String {
@@ -31,6 +34,10 @@ fn default_max_tokens() -> u32 {
 
 fn default_timeout() -> u64 {
     60
+}
+
+fn default_max_iterations() -> usize {
+    100
 }
 
 impl ProviderConfig {
@@ -130,6 +137,7 @@ impl Default for Config {
                 base_url: None,
                 max_tokens: default_max_tokens(),
                 timeout: default_timeout(),
+                max_iterations: default_max_iterations(),
             },
         );
         Config {
@@ -279,6 +287,7 @@ model = "claude-3-5-sonnet-20241022"
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         };
 
         let key = provider_config.api_key_or_env("anthropic");
@@ -294,6 +303,7 @@ model = "claude-3-5-sonnet-20241022"
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         };
 
         let key = provider_config.api_key_or_env("anthropic");
@@ -310,6 +320,7 @@ model = "claude-3-5-sonnet-20241022"
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         };
 
         let key = provider_config.api_key_or_env("openai");
@@ -325,6 +336,7 @@ model = "claude-3-5-sonnet-20241022"
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         };
 
         let key = provider_config.api_key_or_env("unknown");
@@ -353,6 +365,7 @@ model = "glm-4.7"
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         };
         let key = provider_config.api_key_or_env("zai");
         assert_eq!(key, Some("test-zai-key".to_string()));

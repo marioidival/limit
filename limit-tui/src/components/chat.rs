@@ -13,6 +13,9 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Paragraph, Wrap},
 };
+
+/// Maximum number of messages to render at once (sliding window)
+const RENDER_WINDOW_SIZE: usize = 50;
 /// Line type for markdown rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LineType {
@@ -240,6 +243,12 @@ pub struct ChatView {
     last_max_scroll_offset: Cell<usize>,
     /// Syntax highlighter for code blocks
     highlighter: SyntaxHighlighter,
+    /// Cached height for render performance
+    cached_height: Cell<usize>,
+    /// Cache dirty flag - set to true when content changes
+    cache_dirty: Cell<bool>,
+    /// Number of hidden messages when using sliding window
+    hidden_message_count: Cell<usize>,
 }
 
 impl Default for ChatView {
@@ -257,6 +266,9 @@ impl ChatView {
             pinned_to_bottom: true,
             last_max_scroll_offset: Cell::new(0),
             highlighter: SyntaxHighlighter::new().expect("Failed to initialize syntax highlighter"),
+            cache_dirty: Cell::new(true),
+            cached_height: Cell::new(0),
+            hidden_message_count: Cell::new(0),
         }
     }
 
@@ -299,6 +311,8 @@ impl ChatView {
         }
         self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_LINES);
+        // Invalidate cache since window size changed
+        self.cache_dirty.set(true);
     }
 
     /// Scroll down by multiple lines
@@ -350,6 +364,25 @@ impl ChatView {
         self.messages.clear();
         self.scroll_offset = 0;
         self.pinned_to_bottom = true;
+        self.cache_dirty.set(true);
+        self.hidden_message_count.set(0);
+    }
+
+    /// Get the render window (sliding window for large sessions)
+    /// Returns a slice of messages to render and the count of hidden messages
+    fn get_render_window(&self) -> (&[Message], usize) {
+        let total_count = self.messages.len();
+
+        // Use sliding window only when pinned to bottom and there are more than RENDER_WINDOW_SIZE messages
+        if self.pinned_to_bottom && total_count > RENDER_WINDOW_SIZE {
+            let hidden_count = total_count.saturating_sub(RENDER_WINDOW_SIZE);
+            let window = &self.messages[hidden_count..];
+            self.hidden_message_count.set(hidden_count);
+            (window, hidden_count)
+        } else {
+            self.hidden_message_count.set(0);
+            (&self.messages, 0)
+        }
     }
 
     /// Estimate the number of lines needed to display text with wrapping
@@ -464,9 +497,17 @@ impl ChatView {
 
     /// Calculate total height needed to display all messages
     fn calculate_total_height(&self, width: u16) -> usize {
+        // Check cache first - return cached value if not dirty
+        if !self.cache_dirty.get() {
+            return self.cached_height.get();
+        }
+
         let mut total_height = 0;
 
-        for message in &self.messages {
+        // Use sliding window for large sessions when pinned to bottom
+        let (messages_to_render, _) = self.get_render_window();
+
+        for message in messages_to_render {
             // Role badge line: "[USER] HH:MM"
             total_height += 1;
 
@@ -487,6 +528,10 @@ impl ChatView {
             // Empty line between messages
             total_height += 1;
         }
+
+        // Cache result and mark as clean
+        self.cached_height.set(total_height);
+        self.cache_dirty.set(false);
 
         total_height
     }
@@ -521,7 +566,10 @@ impl ChatView {
         let mut y_offset = initial_y_offset;
         let mut global_y: usize = 0;
 
-        for message in &self.messages {
+        // Use sliding window for large sessions when pinned to bottom
+        let (messages_to_render, _hidden_count) = self.get_render_window();
+
+        for message in messages_to_render {
             // Skip if this message is above the viewport
             let role_height = 1;
             let processed = self.process_code_blocks(&message.content);

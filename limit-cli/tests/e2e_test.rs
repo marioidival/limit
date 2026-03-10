@@ -26,6 +26,7 @@ fn create_test_config() -> LlmConfig {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     LlmConfig {

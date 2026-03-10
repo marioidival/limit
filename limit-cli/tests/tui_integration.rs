@@ -21,6 +21,7 @@ fn test_tui_integration_full_conversation() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -51,6 +52,7 @@ fn test_tui_bridge_event_ordering() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -101,6 +103,7 @@ fn test_tui_bridge_tool_execution_display() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -157,6 +160,7 @@ fn test_tui_bridge_error_handling() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -193,6 +197,7 @@ fn test_tui_bridge_spinner_animation() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -244,6 +249,7 @@ fn test_tui_bridge_content_streaming() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -283,6 +289,7 @@ fn test_tui_bridge_is_ready() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -310,6 +317,7 @@ fn test_tui_bridge_get_tool_definitions() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -338,6 +346,7 @@ fn test_tui_bridge_tool_schema() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -373,6 +382,7 @@ fn test_tui_bridge_with_good_config() {
             base_url: None,
             max_tokens: 8192,
             timeout: 120,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {
@@ -409,6 +419,7 @@ fn test_tui_bridge_from_string_config() {
             base_url: None,
             max_tokens: 4096,
             timeout: 60,
+            max_iterations: 100,
         },
     );
     let config = LlmConfig {

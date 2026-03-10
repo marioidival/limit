@@ -204,10 +204,15 @@ impl AgentBridge {
         // Main processing loop
         let mut full_response = String::new();
         let mut tool_calls: Vec<LlmToolCall> = Vec::new();
-        let max_iterations = 30; // Allow enough iterations for complex tasks
+        let max_iterations = self
+            .config
+            .providers
+            .get(&self.config.provider)
+            .map(|p| p.max_iterations)
+            .unwrap_or(100); // Allow enough iterations for complex tasks
         let mut iteration = 0;
 
-        while iteration < max_iterations {
+        while max_iterations == 0 || iteration < max_iterations {
             iteration += 1;
             debug!("Agent loop iteration {}", iteration);
 
@@ -767,6 +772,7 @@ mod tests {
                 base_url: None,
                 max_tokens: 4096,
                 timeout: 60,
+                max_iterations: 100,
             },
         );
         let config = LlmConfig {
@@ -789,6 +795,7 @@ mod tests {
                 base_url: None,
                 max_tokens: 4096,
                 timeout: 60,
+                max_iterations: 100,
             },
         );
         let config = LlmConfig {
@@ -811,6 +818,7 @@ mod tests {
                 base_url: None,
                 max_tokens: 4096,
                 timeout: 60,
+                max_iterations: 100,
             },
         );
         let config = LlmConfig {
@@ -873,6 +881,7 @@ mod tests {
                 base_url: None,
                 max_tokens: 4096,
                 timeout: 60,
+                max_iterations: 100,
             },
         );
         let config_with_key = LlmConfig {
