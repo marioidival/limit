@@ -504,10 +504,9 @@ impl ChatView {
 
         let mut total_height = 0;
 
-        // Use sliding window for large sessions when pinned to bottom
-        let (messages_to_render, _) = self.get_render_window();
-
-        for message in messages_to_render {
+        // IMPORTANT: Calculate height for ALL messages, not just render window
+        // This is needed for correct scroll offset calculation
+        for message in &self.messages {
             // Role badge line: "[USER] HH:MM"
             total_height += 1;
 
@@ -536,6 +535,7 @@ impl ChatView {
         total_height
     }
 
+    /// Render visible messages based on scroll offset
     /// Render visible messages based on scroll offset
     fn render_to_buffer(&self, area: Rect, buf: &mut Buffer) {
         let total_height = self.calculate_total_height(area.width);
@@ -567,8 +567,24 @@ impl ChatView {
         let mut global_y: usize = 0;
 
         // Use sliding window for large sessions when pinned to bottom
-        let (messages_to_render, _hidden_count) = self.get_render_window();
+        let (messages_to_render, hidden_count) = self.get_render_window();
 
+        // When using sliding window, we need to account for hidden messages in global_y
+        // This ensures scroll offset calculations work correctly
+        if hidden_count > 0 {
+            // Calculate approximate height of hidden messages
+            // This allows scroll to work correctly even with sliding window
+            for message in &self.messages[..hidden_count] {
+                let role_height = 1;
+                let processed = self.process_code_blocks(&message.content);
+                let content_height: usize = processed
+                    .iter()
+                    .map(|(line, _, _, _)| Self::estimate_line_count(line, area.width as usize))
+                    .sum();
+                let separator_height = 1;
+                global_y += role_height + content_height + separator_height;
+            }
+        }
         for message in messages_to_render {
             // Skip if this message is above the viewport
             let role_height = 1;
