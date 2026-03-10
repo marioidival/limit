@@ -1,9 +1,12 @@
 {
-  "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/zai-provider.md",
-  "started_at": "2026-03-08T00:50:01.243Z",
+  "active_plan": "/Users/kakarotto/codes/personal/limit/.sisyphus/plans/crates-io-publishing.md",
+  "started_at": "2026-03-09T18:05:44.169Z",
   "session_ids": [
-    "ses_33513d46fffeGsMgxxtfwdcAF1"
+    "ses_32c393ec5ffeo3tPWwnPRM62z4",
+    "ses_32bdd703bffeNiPfVMIVy1ctOb"
   ],
-  "plan_name": "zai-provider",
-  "agent": "atlas"
+  "plan_name": "crates-io-publishing",
+  "agent": "atlas",
+  "status": "completed",
+  "completed_at": "2026-03-09T20:30:00Z"
 }
