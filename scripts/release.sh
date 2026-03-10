@@ -190,6 +190,28 @@ update_cargo_toml_version() {
     log_success "  $file -> $new_version"
 }
 
+# Atualiza dependências internas do workspace
+update_workspace_dependencies() {
+    local new_version=$1
+
+    log_info "Atualizando dependências do workspace para $new_version..."
+
+    # Atualiza dependências limit-* nos Cargo.toml
+    for file in limit-cli/Cargo.toml limit-agent/Cargo.toml limit-tui/Cargo.toml; do
+        if [ -f "$file" ]; then
+            # Atualiza limit-llm dependency
+            sed -i '' "s/limit-llm = { path = \"\.\.\/limit-llm\", version = \"[^\"]*\" }/limit-llm = { path = \"\.\.\/limit-llm\", version = \"$new_version\" }/g" "$file"
+            # Atualiza limit-agent dependency
+            sed -i '' "s/limit-agent = { path = \"\.\.\/limit-agent\", version = \"[^\"]*\" }/limit-agent = { path = \"\.\.\/limit-agent\", version = \"$new_version\" }/g" "$file"
+            # Atualiza limit-tui dependency
+            sed -i '' "s/limit-tui = { path = \"\.\.\/limit-tui\", version = \"[^\"]*\" }/limit-tui = { path = \"\.\.\/limit-tui\", version = \"$new_version\" }/g" "$file"
+            log_success "  Dependências atualizadas em $file"
+        fi
+    done
+
+    log_success "Dependências do workspace atualizadas"
+}
+
 # Atualiza todas as versões no workspace
 update_all_versions() {
     local new_version=$1
@@ -200,6 +222,9 @@ update_all_versions() {
     update_cargo_toml_version "limit-agent/Cargo.toml" "$new_version"
     update_cargo_toml_version "limit-llm/Cargo.toml" "$new_version"
     update_cargo_toml_version "limit-tui/Cargo.toml" "$new_version"
+
+    # Atualiza dependências internas do workspace
+    update_workspace_dependencies "$new_version"
 
     log_success "Todas as versões atualizadas"
 }
