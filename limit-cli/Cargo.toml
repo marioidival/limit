@@ -51,3 +51,4 @@ limit-tui = { path = "../limit-tui", version = "0.0.18" }
 tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_warn"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
+dirs = "5.0"

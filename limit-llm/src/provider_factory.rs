@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::error::LlmError;
 use crate::openai_provider::OpenAiProvider;
 use crate::providers::LlmProvider;
+use crate::zai_provider::{ThinkingConfig, ZaiProvider};
 use std::boxed::Box;
 
 pub struct ProviderFactory;
@@ -35,16 +36,20 @@ impl ProviderFactory {
                 provider_config.max_tokens,
                 provider_config.timeout,
             ))),
-            "zai" => Ok(Box::new(OpenAiProvider::new(
-                api_key,
-                provider_config
-                    .base_url
-                    .as_deref()
-                    .or(Some("https://api.z.ai/api/coding/paas/v4/chat/completions")),
-                &provider_config.model,
-                provider_config.max_tokens,
-                provider_config.timeout,
-            ))),
+            "zai" => {
+                let thinking_config = ThinkingConfig {
+                    thinking_enabled: provider_config.thinking_enabled,
+                    clear_thinking: provider_config.clear_thinking,
+                };
+                Ok(Box::new(ZaiProvider::new(
+                    api_key,
+                    provider_config.base_url.as_deref(),
+                    &provider_config.model,
+                    provider_config.max_tokens,
+                    provider_config.timeout,
+                    thinking_config,
+                )))
+            }
             _ => Err(LlmError::ConfigError(format!(
                 "Unknown provider: {}",
                 config.provider
@@ -68,7 +73,7 @@ model = "glm-4.7"
 "#;
         let config: Config = toml::from_str(config_content).unwrap();
         let provider = ProviderFactory::create_provider(&config).unwrap();
-        assert_eq!(provider.provider_name(), "openai"); // Uses OpenAiProvider for now
-        assert_eq!(provider.model_name(), "glm-4.7");
+        assert_eq!(provider.provider_name(), "zai");
+        // Now uses ZaiProvider
     }
 }

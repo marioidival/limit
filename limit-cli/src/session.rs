@@ -96,7 +96,10 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub fn new() -> Result<Self, CliError> {
-        let limit_dir = PathBuf::from(".limit");
+        // Centralize all session data in ~/.limit/
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| CliError::ConfigError("Failed to get home directory".to_string()))?;
+        let limit_dir = home_dir.join(".limit");
         fs::create_dir_all(&limit_dir).map_err(|e| {
             CliError::ConfigError(format!("Failed to create .limit directory: {}", e))
         })?;

@@ -27,6 +27,8 @@ fn create_test_config() -> LlmConfig {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     LlmConfig {

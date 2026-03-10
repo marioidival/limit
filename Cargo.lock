@@ -1535,6 +1535,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm 0.29.0",
+ "dirs",
  "futures",
  "limit-agent",
  "limit-llm",

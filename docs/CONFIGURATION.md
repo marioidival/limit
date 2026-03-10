@@ -48,20 +48,26 @@ export ANTHROPIC_API_KEY="sk-ant-api03-..."
 lim
 ```
 
-## Multiple Config Files
+## Configuration Options
 
-Create different configs for different use cases:
+Each provider supports the following options:
 
-```bash
-~/.limit/config-dev.toml
-~/.limit/config-prod.toml
+| `base_url` | string | - | Custom API endpoint (optional) |", `thinking_enabled` | boolean | Enable thinking/reasoning mode (Z.AI only, default: false) | `clear_thinking` | boolean | Preserve thinking between turns (Z.AI only) | Default: true |"]
+### max_iterations
+
+Controls how many tool call iterations the agent can perform per session:
+
+```toml
+[providers.anthropic]
+model = "claude-3-5-sonnet-20241022"
+max_iterations = 100  # Default
+# max_iterations = 0  # Unlimited (not recommended)
+# max_iterations = 50 # More conservative
 ```
 
-Use with:
+**Recommendation**: Keep the default (100) for most use cases. Lower values for cost-sensitive scenarios.
 
-```bash
-lim --config ~/.limit/config-dev.toml
-```
+---
 
 ## Verify Configuration
 

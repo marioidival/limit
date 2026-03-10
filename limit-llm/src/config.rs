@@ -22,6 +22,13 @@ pub struct ProviderConfig {
     /// Maximum iterations for agent loop (0 = unlimited, default: 100)
     #[serde(default = "default_max_iterations")]
     pub max_iterations: usize,
+    /// Enable thinking/reasoning mode (Z.AI only, default: false)
+    #[serde(default)]
+    pub thinking_enabled: bool,
+    /// Preserve thinking between turns (Z.AI only, default: true)
+    /// Set to false for Preserved Thinking in multi-turn conversations
+    #[serde(default = "default_clear_thinking")]
+    pub clear_thinking: bool,
 }
 
 fn default_model() -> String {
@@ -38,6 +45,10 @@ fn default_timeout() -> u64 {
 
 fn default_max_iterations() -> usize {
     100
+}
+
+fn default_clear_thinking() -> bool {
+    true
 }
 
 impl ProviderConfig {
@@ -138,6 +149,8 @@ impl Default for Config {
                 max_tokens: default_max_tokens(),
                 timeout: default_timeout(),
                 max_iterations: default_max_iterations(),
+                thinking_enabled: false,
+                clear_thinking: true,
             },
         );
         Config {
@@ -288,6 +301,8 @@ model = "claude-3-5-sonnet-20241022"
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         };
 
         let key = provider_config.api_key_or_env("anthropic");
@@ -304,6 +319,8 @@ model = "claude-3-5-sonnet-20241022"
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         };
 
         let key = provider_config.api_key_or_env("anthropic");
@@ -321,6 +338,8 @@ model = "claude-3-5-sonnet-20241022"
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         };
 
         let key = provider_config.api_key_or_env("openai");
@@ -337,6 +356,8 @@ model = "claude-3-5-sonnet-20241022"
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         };
 
         let key = provider_config.api_key_or_env("unknown");
@@ -366,6 +387,8 @@ model = "glm-4.7"
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         };
         let key = provider_config.api_key_or_env("zai");
         assert_eq!(key, Some("test-zai-key".to_string()));

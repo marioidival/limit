@@ -13,6 +13,8 @@ fn test_unknown_provider_error() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = Config {
@@ -54,6 +56,8 @@ fn test_missing_api_key_error() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = Config {

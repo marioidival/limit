@@ -22,6 +22,8 @@ fn test_tui_integration_full_conversation() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -53,6 +55,8 @@ fn test_tui_bridge_event_ordering() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -104,6 +108,8 @@ fn test_tui_bridge_tool_execution_display() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -161,6 +167,8 @@ fn test_tui_bridge_error_handling() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -198,6 +206,8 @@ fn test_tui_bridge_spinner_animation() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -250,6 +260,8 @@ fn test_tui_bridge_content_streaming() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -290,6 +302,8 @@ fn test_tui_bridge_is_ready() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -318,6 +332,8 @@ fn test_tui_bridge_get_tool_definitions() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -347,6 +363,8 @@ fn test_tui_bridge_tool_schema() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -383,6 +401,8 @@ fn test_tui_bridge_with_good_config() {
             max_tokens: 8192,
             timeout: 120,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {
@@ -420,6 +440,8 @@ fn test_tui_bridge_from_string_config() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = LlmConfig {

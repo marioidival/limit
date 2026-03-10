@@ -773,6 +773,8 @@ mod tests {
                 max_tokens: 4096,
                 timeout: 60,
                 max_iterations: 100,
+                thinking_enabled: false,
+                clear_thinking: true,
             },
         );
         let config = LlmConfig {
@@ -796,6 +798,8 @@ mod tests {
                 max_tokens: 4096,
                 timeout: 60,
                 max_iterations: 100,
+                thinking_enabled: false,
+                clear_thinking: true,
             },
         );
         let config = LlmConfig {
@@ -813,12 +817,14 @@ mod tests {
         providers.insert(
             "anthropic".to_string(),
             ProviderConfig {
-                api_key: Some("test-key".to_string()),
+                api_key: None,
                 model: "claude-3-5-sonnet-20241022".to_string(),
                 base_url: None,
                 max_tokens: 4096,
                 timeout: 60,
                 max_iterations: 100,
+                thinking_enabled: false,
+                clear_thinking: true,
             },
         );
         let config = LlmConfig {
@@ -882,6 +888,8 @@ mod tests {
                 max_tokens: 4096,
                 timeout: 60,
                 max_iterations: 100,
+                thinking_enabled: false,
+                clear_thinking: true,
             },
         );
         let config_with_key = LlmConfig {

@@ -20,7 +20,7 @@ provider = "openai"
 api_key = "sk-..."
 model = "gpt-4"
 max_tokens = 4096
-timeout = 300000
+timeout = 60
 ```
 
 Or use environment variable:
@@ -38,7 +38,7 @@ Limit supports custom OpenAI-compatible API servers (local LLMs, proxy services,
 api_key = ""  # Leave empty if server doesn't require auth
 model = "glm-4.7"
 base_url = "http://localhost:8080/v1/chat/completions"
-timeout = 3000000
+timeout = 60
 ```
 
 **Important**: The `base_url` should include the **full API endpoint path**. Limit does not automatically append `/chat/completions`. Check your server's documentation for the correct endpoint:

@@ -13,6 +13,8 @@ fn test_anthropic_provider_creation() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = Config {
@@ -36,6 +38,8 @@ fn test_openai_provider_creation() {
             max_tokens: 4096,
             timeout: 60,
             max_iterations: 100,
+            thinking_enabled: false,
+            clear_thinking: true,
         },
     );
     let config = Config {

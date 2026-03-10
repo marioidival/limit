@@ -135,6 +135,8 @@ fn test_zai_api_key_env_var() {
         max_tokens: 4096,
         timeout: 60,
         max_iterations: 100,
+        thinking_enabled: false,
+        clear_thinking: true,
     };
 
     let key = provider_config.api_key_or_env("zai");
@@ -152,6 +154,8 @@ fn test_zai_api_key_from_config() {
         max_tokens: 4096,
         timeout: 60,
         max_iterations: 100,
+        thinking_enabled: false,
+        clear_thinking: true,
     };
 
     let key = provider_config.api_key_or_env("zai");

@@ -60,8 +60,7 @@ That's it! Start chatting with your AI coding assistant.
 ## Features
 
 - **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, and z.ai with streaming API
-- **16 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis
-- **Terminal UI** — Ratatui-based TUI with Virtual DOM rendering and syntax highlighting
+- **15 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis
 - **Session Persistence** — Auto-save/restore conversation history
 - **Token Tracking** — SQLite-based usage tracking with cost estimation
 - **Docker Sandbox** — Optional containerized tool execution for isolation
@@ -158,8 +157,7 @@ provider = "openai"
 api_key = "sk-..."
 model = "gpt-4"
 max_tokens = 4096
-timeout = 300000
-# Optional: Custom API endpoint (for OpenAI-compatible servers)
+timeout = 60
 # base_url = "http://localhost:8080/v1/chat/completions"
 # Note: Must include full endpoint path (e.g., /v1/chat/completions)
 ```
@@ -174,11 +172,11 @@ provider = "zai"
 api_key = "..."
 model = "glm-4.7"
 max_tokens = 4096
-timeout = 300000
-# Optional: Enable thinking mode
-# thinking_enabled = true
-```
-
+timeout = 60
+# Optional: Enable thinking mode for complex reasoning tasks
+# thinking_enabled = false
+# clear_thinking = true  # Set to false for Preserved Thinking in multi-turn
+``
 ### Environment Variables
 
 Provider API keys can be set via environment variables as fallback:
@@ -271,8 +269,7 @@ This file contains the main entry point for the CLI application...
 |-------|-------------|
 | [`limit-llm`](limit-llm) | Multi-provider LLM client with streaming, SQLite tracking, binary persistence, model handoff |
 | [`limit-agent`](limit-agent) | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
-| [`limit-cli`](limit-cli) | REPL interface with 16 tools, markdown rendering, session management |
-| [`limit-tui`](limit-tui) | Terminal UI with Virtual DOM, flexbox layout, chat/diff views |
+| [`limit-cli`](limit-cli) | REPL interface with 15 tools, markdown rendering, session management |
 
 ---
 
@@ -354,8 +351,7 @@ We welcome contributions!
 |------------|--------|
 | Unix-only TUI | Windows support planned |
 | Max 50MB file reads | By design |
-| Max 50 tool calls per session | Configurable |
-| No syntax highlighting in REPL | TUI only |
+| Max 100 iterations per session | Configurable via max_iterations |
 
 ---
 

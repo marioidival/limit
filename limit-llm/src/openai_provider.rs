@@ -68,7 +68,7 @@ impl LlmProvider for OpenAiProvider {
         Ok(Box::pin(stream! {
             info!("OpenAI API request: model={}, max_tokens={}", self.model, self.max_tokens);
 
-            let request_body = match build_request_body(&messages_cloned, &tools_cloned, &model, max_tokens) {
+            let request_body = match build_request_body(&messages_cloned, &tools_cloned, &model, max_tokens, None) {
                 Ok(body) => body,
                 Err(e) => {
                     error!("OpenAI API error: {}", e);
@@ -154,6 +154,7 @@ fn build_request_body(
     tools: &[Tool],
     model: &str,
     max_tokens: u32,
+    extra_body: Option<serde_json::Map<String, serde_json::Value>>,
 ) -> Result<Value, LlmError> {
     let mut request = serde_json::json!({
         "model": model,
@@ -165,6 +166,13 @@ fn build_request_body(
     if !tools.is_empty() {
         request["tools"] = serde_json::to_value(tools)
             .map_err(|e| LlmError::ApiError(format!("Failed to serialize tools: {}", e)))?;
+    }
+
+    // Add any extra body parameters
+    if let Some(extra) = extra_body {
+        for (key, value) in extra {
+            request[key] = value;
+        }
     }
 
     Ok(request)
