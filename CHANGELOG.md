@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.19] - 2026-03-10
+
+### 🚀 Features
+
+- Add TUI performance optimizations
+- *(llm)* Add thinking_enabled config for Z.AI
+
+### 🐛 Bug Fixes
+
+- *(llm)* [**breaking**] Change FunctionCall.arguments to String for bincode compatibility
+- *(release)* Sync versions to 0.0.17 and fix sed bug
+- Correct scroll when using sliding window
+- *(release)* Update workspace dependencies in release script
+
+### 📚 Documentation
+
+- Add base_url configuration for custom OpenAI-compatible servers
+
+### ⚙️ Miscellaneous Tasks
+
+- Add git-cliff configuration for changelog generation
+- *(release)* Bump version to v0.0.18
+- Prepare crates for crates.io publishing v0.0.18 (#6)
+- Trash
+
+## [0.0.19] - 2026-03-10
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.18] - 2026-03-09
 
 ### 🐛 Bug Fixes

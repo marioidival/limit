@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "limit-agent"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1528,7 +1528,7 @@ dependencies = [
 
 [[package]]
 name = "limit-cli"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "limit-llm"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1584,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "limit-tui"
-version = "0.0.18"
+version = "0.0.19"
 dependencies = [
  "chrono",
  "crossterm 0.29.0",
