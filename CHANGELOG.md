@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.20] - 2026-03-11
+
+### 🚀 Features
+
+- Add clipboard and text selection to TUI (#7)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to v0.0.19
+
+## [0.0.20] - 2026-03-11
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.19] - 2026-03-10
 
 ### 🚀 Features

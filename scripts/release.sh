@@ -300,6 +300,7 @@ commit_changes() {
     git add limit-llm/Cargo.toml
     git add limit-tui/Cargo.toml
     git add CHANGELOG.md
+    git add Cargo.lock
 
     git commit -m "chore(release): bump version to $tag_name" \
                 -m "" \
