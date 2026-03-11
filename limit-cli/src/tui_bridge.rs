@@ -2,7 +2,7 @@ use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
 use crate::session::SessionManager;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    self, DisableMouseCapture, EnableBracketedPaste, DisableBracketedPaste, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
     KeyModifiers, MouseEventKind,
 };
 use crossterm::execute;
@@ -428,6 +428,10 @@ impl TuiApp {
         execute!(std::io::stdout(), EnableMouseCapture)
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
+        // Enable bracketed paste for multi-line paste support
+        execute!(std::io::stdout(), EnableBracketedPaste)
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+
         crossterm::terminal::enable_raw_mode()
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
@@ -436,6 +440,7 @@ impl TuiApp {
         impl Drop for AlternateScreenGuard {
             fn drop(&mut self) {
                 let _ = crossterm::terminal::disable_raw_mode();
+                let _ = execute!(std::io::stdout(), DisableBracketedPaste);
                 let _ = execute!(std::io::stdout(), DisableMouseCapture);
                 let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
             }
