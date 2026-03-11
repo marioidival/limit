@@ -307,6 +307,7 @@ impl ChatView {
     /// Add a message to the chat
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);
+        self.cache_dirty.set(true); // Invalidate cache when message is added
         // Auto-scroll to bottom on new message
         self.scroll_to_bottom();
     }
@@ -316,6 +317,7 @@ impl ChatView {
         if let Some(last) = self.messages.last_mut() {
             if matches!(last.role, Role::Assistant) {
                 last.content.push_str(content);
+                self.cache_dirty.set(true); // Invalidate cache on content change
                 self.scroll_to_bottom();
                 return;
             }
@@ -337,11 +339,11 @@ impl ChatView {
     /// Scroll up by multiple lines (better UX than single line)
     pub fn scroll_up(&mut self) {
         const SCROLL_LINES: usize = 5;
-        // When leaving pinned state, sync scroll_offset to actual position
+        // If pinned to bottom, sync scroll_offset before scrolling up
         if self.pinned_to_bottom {
             self.scroll_offset = self.last_max_scroll_offset.get();
+            self.pinned_to_bottom = false;
         }
-        self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_sub(SCROLL_LINES);
         // Invalidate cache since window size changed
         self.cache_dirty.set(true);
@@ -350,32 +352,30 @@ impl ChatView {
     /// Scroll down by multiple lines
     pub fn scroll_down(&mut self) {
         const SCROLL_LINES: usize = 5;
-        // When leaving pinned state, sync scroll_offset to actual position
+        // If pinned to bottom, trying to scroll down does nothing (already at bottom)
         if self.pinned_to_bottom {
-            self.scroll_offset = self.last_max_scroll_offset.get();
+            return;
         }
-        self.pinned_to_bottom = false;
         self.scroll_offset = self.scroll_offset.saturating_add(SCROLL_LINES);
     }
 
     /// Scroll up by one page (viewport height)
     pub fn scroll_page_up(&mut self, viewport_height: u16) {
-        // When leaving pinned state, sync scroll_offset to actual position
+        // If pinned to bottom, sync scroll_offset before scrolling up
         if self.pinned_to_bottom {
             self.scroll_offset = self.last_max_scroll_offset.get();
+            self.pinned_to_bottom = false;
         }
-        self.pinned_to_bottom = false;
         let page_size = viewport_height as usize;
         self.scroll_offset = self.scroll_offset.saturating_sub(page_size);
     }
 
     /// Scroll down by one page
     pub fn scroll_page_down(&mut self, viewport_height: u16) {
-        // When leaving pinned state, sync scroll_offset to actual position
+        // If pinned to bottom, trying to scroll down does nothing (already at bottom)
         if self.pinned_to_bottom {
-            self.scroll_offset = self.last_max_scroll_offset.get();
+            return;
         }
-        self.pinned_to_bottom = false;
         let page_size = viewport_height as usize;
         self.scroll_offset = self.scroll_offset.saturating_add(page_size);
     }
@@ -1085,8 +1085,17 @@ mod tests {
         // After adding, pinned to bottom
         assert!(chat.pinned_to_bottom);
 
+        // Scroll down when pinned to bottom should do nothing (already at bottom)
         chat.scroll_down();
-        // Scroll down unpins from bottom
+        assert!(chat.pinned_to_bottom); // Still pinned
+        assert_eq!(chat.scroll_offset, 0); // Offset unchanged
+
+        // Scroll up first to unpin
+        chat.scroll_up();
+        assert!(!chat.pinned_to_bottom);
+
+        // Now scroll down should work
+        chat.scroll_down();
         assert!(!chat.pinned_to_bottom);
         // scroll_offset increases by SCROLL_LINES (5)
         assert_eq!(chat.scroll_offset, 5);
