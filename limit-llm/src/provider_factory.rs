@@ -1,6 +1,7 @@
 use crate::client::AnthropicClient;
 use crate::config::Config;
 use crate::error::LlmError;
+use crate::local_provider::LocalProvider;
 use crate::openai_provider::OpenAiProvider;
 use crate::providers::LlmProvider;
 use crate::zai_provider::{ThinkingConfig, ZaiProvider};
@@ -48,6 +49,17 @@ impl ProviderFactory {
                     provider_config.max_tokens,
                     provider_config.timeout,
                     thinking_config,
+                )))
+            }
+            // Local LLM providers (all use LocalProvider with different defaults)
+            "local" | "ollama" | "lmstudio" | "vllm" => {
+                // Local providers don't require API key, use placeholder if empty
+                let _ = api_key; // Suppress unused warning
+                Ok(Box::new(LocalProvider::new(
+                    provider_config.base_url.as_deref(),
+                    &provider_config.model,
+                    provider_config.max_tokens,
+                    provider_config.timeout,
                 )))
             }
             _ => Err(LlmError::ConfigError(format!(
