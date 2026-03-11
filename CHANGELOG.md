@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.21] - 2026-03-11
+
+### 🚀 Features
+
+- Add local LLM provider support
+- Add web search and fetch tools
+
+### 🐛 Bug Fixes
+
+- *(test)* Resolve failing test_get_tool_definitions by adding API key
+- *(test)* Update zai provider test expectation
+
+### 📚 Documentation
+
+- Add local LLM providers documentation
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to v0.0.20
+
+## [0.0.21] - 2026-03-11
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.20] - 2026-03-11
 
 ### 🚀 Features
