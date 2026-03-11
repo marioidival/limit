@@ -573,6 +573,19 @@ impl TuiApp {
         self.cursor_pos += normalized.len();
     }
 
+    /// Check if the current key event is a copy/paste shortcut
+    /// Returns true for Ctrl+C/V on Linux/Windows, Cmd+C/V on macOS
+    fn is_copy_paste_modifier(&self, key: &KeyEvent, char: char) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::SUPER)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::CONTROL)
+        }
+    }
+
     /// Map screen coordinates to (message_idx, byte_offset)
     /// Returns None if position is not on message content
     fn screen_to_text_pos(&self, _col: u16, row: u16) -> Option<(usize, usize)> {
@@ -603,11 +616,61 @@ impl TuiApp {
             key.code, key.modifiers, key.kind
         ));
 
-        // Allow Ctrl+C to exit anytime
-        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
-            debug_log("Ctrl+C - exiting");
-            self.running = false;
+        // Copy selection to clipboard (Ctrl/Cmd+C)
+        if self.is_copy_paste_modifier(&key, 'c') {
+            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+            if chat.has_selection() {
+                if let Some(selected) = chat.get_selected_text() {
+                    if !selected.is_empty() {
+                        match self.clipboard.set_text(&selected) {
+                            Ok(()) => {
+                                self.status_message = "Copied to clipboard".to_string();
+                                self.status_is_error = false;
+                            }
+                            Err(e) => {
+                                self.status_message = format!("Clipboard error: {}", e);
+                                self.status_is_error = true;
+                            }
+                        }
+                    }
+                    chat.clear_selection();
+                }
+                return Ok(());
+            }
+            // On non-macOS, fall through to Ctrl+C exit behavior
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Ctrl+C with no selection will exit (handled below)
+            }
+            #[cfg(target_os = "macos")]
+            {
+                return Ok(()); // Cmd+C with no selection does nothing on macOS
+            }
+        }
+
+        // Paste from clipboard (Ctrl/Cmd+V)
+        if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
+            match self.clipboard.get_text() {
+                Ok(text) if !text.is_empty() => {
+                    self.insert_paste(&text);
+                }
+                Ok(_) => {} // Empty clipboard
+                Err(e) => {
+                    self.status_message = format!("Could not read clipboard: {}", e);
+                    self.status_is_error = true;
+                }
+            }
             return Ok(());
+        }
+
+        // Allow Ctrl+C to exit anytime (only if no selection on non-macOS)
+        #[cfg(not(target_os = "macos"))]
+        {
+            if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
+                debug_log("Ctrl+C - exiting");
+                self.running = false;
+                return Ok(());
+            }
         }
 
         // Allow scrolling even when agent is busy
