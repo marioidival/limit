@@ -482,6 +482,11 @@ impl TuiApp {
                         }
                         _ => {}
                     },
+                    Event::Paste(pasted) => {
+                        if !self.tui_bridge.is_busy() {
+                            self.insert_paste(&pasted);
+                        }
+                    }
                     _ => {}
                 }
             } else {
@@ -530,6 +535,14 @@ impl TuiApp {
                 self.status_is_error = false;
             }
         }
+    }
+
+    /// Insert pasted text at cursor position without submitting
+    fn insert_paste(&mut self, text: &str) {
+        // Normalize newlines (some terminals convert \n to \r)
+        let normalized = text.replace("\r", "\n");
+        self.input_text.insert_str(self.cursor_pos, &normalized);
+        self.cursor_pos += normalized.len();
     }
 
     fn tick_cursor_blink(&mut self) {
