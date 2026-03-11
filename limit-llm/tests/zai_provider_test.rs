@@ -119,7 +119,7 @@ model = "glm-4.7"
     let config: Config = toml::from_str(config_content).unwrap();
     let provider = ProviderFactory::create_provider(&config).unwrap();
 
-    assert_eq!(provider.provider_name(), "openai"); // Uses OpenAiProvider for now
+    assert_eq!(provider.provider_name(), "zai");
     assert_eq!(provider.model_name(), "glm-4.7");
 }
 
