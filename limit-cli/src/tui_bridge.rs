@@ -3,7 +3,7 @@ use crate::error::CliError;
 use crate::session::SessionManager;
 use crossterm::event::{
     self, DisableMouseCapture, EnableBracketedPaste, DisableBracketedPaste, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    KeyModifiers, MouseEventKind,
+    KeyModifiers, MouseButton, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -393,6 +393,8 @@ pub struct TuiApp {
     status_is_error: bool,
     cursor_blink_state: bool,
     cursor_blink_timer: std::time::Instant,
+    /// Mouse selection state
+    mouse_selection_start: Option<(u16, u16)>,
 }
 
 impl TuiApp {
@@ -415,6 +417,7 @@ impl TuiApp {
             status_is_error: false,
             cursor_blink_state: true,
             cursor_blink_timer: std::time::Instant::now(),
+            mouse_selection_start: None,
         })
     }
 
@@ -472,6 +475,26 @@ impl TuiApp {
                         self.handle_key_event(key)?;
                     }
                     Event::Mouse(mouse) => match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            self.mouse_selection_start = Some((mouse.column, mouse.row));
+                            // Map screen position to message/offset and start selection
+                            if let Some((msg_idx, byte_offset)) = self.screen_to_text_pos(mouse.column, mouse.row) {
+                                self.tui_bridge.chat_view().lock().unwrap().start_selection(msg_idx, byte_offset);
+                            } else {
+                                self.tui_bridge.chat_view().lock().unwrap().clear_selection();
+                            }
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            if self.mouse_selection_start.is_some() {
+                                // Extend selection to current position
+                                if let Some((msg_idx, byte_offset)) = self.screen_to_text_pos(mouse.column, mouse.row) {
+                                    self.tui_bridge.chat_view().lock().unwrap().extend_selection(msg_idx, byte_offset);
+                                }
+                            }
+                        }
+                        MouseEventKind::Up(MouseButton::Left) => {
+                            self.mouse_selection_start = None;
+                        }
                         MouseEventKind::ScrollUp => {
                             let mut chat = self.tui_bridge.chat_view().lock().unwrap();
                             chat.scroll_up();
@@ -543,6 +566,21 @@ impl TuiApp {
         let normalized = text.replace("\r", "\n");
         self.input_text.insert_str(self.cursor_pos, &normalized);
         self.cursor_pos += normalized.len();
+    }
+
+    /// Map screen coordinates to (message_idx, byte_offset)
+    /// Returns None if position is not on message content
+    fn screen_to_text_pos(&self, _col: u16, row: u16) -> Option<(usize, usize)> {
+        let chat = self.tui_bridge.chat_view().lock().unwrap();
+
+        // Approximate: each message takes ~3 lines minimum (header + content + separator)
+        // This is a simplified mapping - full impl would track exact render positions
+        let estimated_msg_idx = (row as usize) / 3;
+        if estimated_msg_idx < chat.message_count() {
+            Some((estimated_msg_idx, 0))
+        } else {
+            None
+        }
     }
 
     fn tick_cursor_blink(&mut self) {
