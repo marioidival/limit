@@ -1,9 +1,10 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
+use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
 use crate::session::SessionManager;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    KeyModifiers, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -19,6 +20,9 @@ use ratatui::{
 use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+
+/// Maximum paste size to prevent memory issues (100KB)
+const MAX_PASTE_SIZE: usize = 100 * 1024;
 
 /// Debug log to file (bypasses tracing)
 fn debug_log(msg: &str) {
@@ -393,6 +397,10 @@ pub struct TuiApp {
     status_is_error: bool,
     cursor_blink_state: bool,
     cursor_blink_timer: std::time::Instant,
+    /// Mouse selection state
+    mouse_selection_start: Option<(u16, u16)>,
+    /// Clipboard manager
+    clipboard: Option<ClipboardManager>,
 }
 
 impl TuiApp {
@@ -415,6 +423,10 @@ impl TuiApp {
             status_is_error: false,
             cursor_blink_state: true,
             cursor_blink_timer: std::time::Instant::now(),
+            mouse_selection_start: None,
+            clipboard: ClipboardManager::new()
+                .inspect_err(|e| tracing::warn!("Clipboard unavailable: {}", e))
+                .ok(),
         })
     }
 
@@ -428,6 +440,10 @@ impl TuiApp {
         execute!(std::io::stdout(), EnableMouseCapture)
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
+        // Enable bracketed paste for multi-line paste support
+        execute!(std::io::stdout(), EnableBracketedPaste)
+            .map_err(|e| CliError::IoError(io::Error::other(e)))?;
+
         crossterm::terminal::enable_raw_mode()
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
@@ -436,6 +452,7 @@ impl TuiApp {
         impl Drop for AlternateScreenGuard {
             fn drop(&mut self) {
                 let _ = crossterm::terminal::disable_raw_mode();
+                let _ = execute!(std::io::stdout(), DisableBracketedPaste);
                 let _ = execute!(std::io::stdout(), DisableMouseCapture);
                 let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
             }
@@ -467,6 +484,47 @@ impl TuiApp {
                         self.handle_key_event(key)?;
                     }
                     Event::Mouse(mouse) => match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            self.mouse_selection_start = Some((mouse.column, mouse.row));
+                            // Map screen position to message/offset and start selection
+                            let chat = self.tui_bridge.chat_view().lock().unwrap();
+                            if let Some((msg_idx, char_offset)) =
+                                chat.screen_to_text_pos(mouse.column, mouse.row)
+                            {
+                                drop(chat);
+                                self.tui_bridge
+                                    .chat_view()
+                                    .lock()
+                                    .unwrap()
+                                    .start_selection(msg_idx, char_offset);
+                            } else {
+                                drop(chat);
+                                self.tui_bridge
+                                    .chat_view()
+                                    .lock()
+                                    .unwrap()
+                                    .clear_selection();
+                            }
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            if self.mouse_selection_start.is_some() {
+                                // Extend selection to current position
+                                let chat = self.tui_bridge.chat_view().lock().unwrap();
+                                if let Some((msg_idx, char_offset)) =
+                                    chat.screen_to_text_pos(mouse.column, mouse.row)
+                                {
+                                    drop(chat);
+                                    self.tui_bridge
+                                        .chat_view()
+                                        .lock()
+                                        .unwrap()
+                                        .extend_selection(msg_idx, char_offset);
+                                }
+                            }
+                        }
+                        MouseEventKind::Up(MouseButton::Left) => {
+                            self.mouse_selection_start = None;
+                        }
                         MouseEventKind::ScrollUp => {
                             let mut chat = self.tui_bridge.chat_view().lock().unwrap();
                             chat.scroll_up();
@@ -477,6 +535,11 @@ impl TuiApp {
                         }
                         _ => {}
                     },
+                    Event::Paste(pasted) => {
+                        if !self.tui_bridge.is_busy() {
+                            self.insert_paste(&pasted);
+                        }
+                    }
                     _ => {}
                 }
             } else {
@@ -527,6 +590,41 @@ impl TuiApp {
         }
     }
 
+    /// Insert pasted text at cursor position without submitting
+    fn insert_paste(&mut self, text: &str) {
+        // Enforce size limit to prevent memory issues
+        let text = if text.len() > MAX_PASTE_SIZE {
+            self.status_message = "Paste truncated (too large)".to_string();
+            self.status_is_error = true;
+            // Find valid UTF-8 boundary at approximately MAX_PASTE_SIZE
+            &text[..text
+                .char_indices()
+                .nth(MAX_PASTE_SIZE)
+                .map(|(i, _)| i)
+                .unwrap_or(text.len())]
+        } else {
+            text
+        };
+
+        // Normalize newlines (some terminals convert \n to \r)
+        let normalized = text.replace("\r", "\n");
+        self.input_text.insert_str(self.cursor_pos, &normalized);
+        self.cursor_pos += normalized.len();
+    }
+
+    /// Check if the current key event is a copy/paste shortcut
+    /// Returns true for Ctrl+C/V on Linux/Windows, Cmd+C/V on macOS
+    fn is_copy_paste_modifier(&self, key: &KeyEvent, char: char) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::SUPER)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::CONTROL)
+        }
+    }
+
     fn tick_cursor_blink(&mut self) {
         // Blink every 500ms for standard terminal cursor behavior
         if self.cursor_blink_timer.elapsed().as_millis() > 500 {
@@ -542,11 +640,71 @@ impl TuiApp {
             key.code, key.modifiers, key.kind
         ));
 
-        // Allow Ctrl+C to exit anytime
-        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
-            debug_log("Ctrl+C - exiting");
-            self.running = false;
+        // Copy selection to clipboard (Ctrl/Cmd+C)
+        if self.is_copy_paste_modifier(&key, 'c') {
+            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+            if chat.has_selection() {
+                if let Some(selected) = chat.get_selected_text() {
+                    if !selected.is_empty() {
+                        if let Some(ref clipboard) = self.clipboard {
+                            match clipboard.set_text(&selected) {
+                                Ok(()) => {
+                                    self.status_message = "Copied to clipboard".to_string();
+                                    self.status_is_error = false;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Clipboard error: {}", e);
+                                    self.status_is_error = true;
+                                }
+                            }
+                        } else {
+                            self.status_message = "Clipboard not available".to_string();
+                            self.status_is_error = true;
+                        }
+                    }
+                    chat.clear_selection();
+                }
+                return Ok(());
+            }
+            // On non-macOS, fall through to Ctrl+C exit behavior
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Ctrl+C with no selection will exit (handled below)
+            }
+            #[cfg(target_os = "macos")]
+            {
+                return Ok(()); // Cmd+C with no selection does nothing on macOS
+            }
+        }
+
+        // Paste from clipboard (Ctrl/Cmd+V)
+        if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
+            if let Some(ref clipboard) = self.clipboard {
+                match clipboard.get_text() {
+                    Ok(text) if !text.is_empty() => {
+                        self.insert_paste(&text);
+                    }
+                    Ok(_) => {} // Empty clipboard
+                    Err(e) => {
+                        self.status_message = format!("Could not read clipboard: {}", e);
+                        self.status_is_error = true;
+                    }
+                }
+            } else {
+                self.status_message = "Clipboard not available".to_string();
+                self.status_is_error = true;
+            }
             return Ok(());
+        }
+
+        // Allow Ctrl+C to exit anytime (only if no selection on non-macOS)
+        #[cfg(not(target_os = "macos"))]
+        {
+            if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
+                debug_log("Ctrl+C - exiting");
+                self.running = false;
+                return Ok(());
+            }
         }
 
         // Allow scrolling even when agent is busy
