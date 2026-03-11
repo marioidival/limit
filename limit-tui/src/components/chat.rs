@@ -308,7 +308,7 @@ impl ChatView {
     pub fn add_message(&mut self, message: Message) {
         self.messages.push(message);
         self.cache_dirty.set(true); // Invalidate cache when message is added
-        // Auto-scroll to bottom on new message
+                                    // Auto-scroll to bottom on new message
         self.scroll_to_bottom();
     }
 
@@ -352,11 +352,18 @@ impl ChatView {
     /// Scroll down by multiple lines
     pub fn scroll_down(&mut self) {
         const SCROLL_LINES: usize = 5;
-        // If pinned to bottom, trying to scroll down does nothing (already at bottom)
+        let max_offset = self.last_max_scroll_offset.get();
+
+        // If pinned to bottom, just unpin but don't move offset
+        // User is already at the bottom, can't go further down
         if self.pinned_to_bottom {
+            self.scroll_offset = max_offset;
+            self.pinned_to_bottom = false;
             return;
         }
-        self.scroll_offset = self.scroll_offset.saturating_add(SCROLL_LINES);
+
+        // Increment offset but clamp to max_scroll_offset to prevent overshoot
+        self.scroll_offset = (self.scroll_offset.saturating_add(SCROLL_LINES)).min(max_offset);
     }
 
     /// Scroll up by one page (viewport height)
@@ -372,12 +379,19 @@ impl ChatView {
 
     /// Scroll down by one page
     pub fn scroll_page_down(&mut self, viewport_height: u16) {
-        // If pinned to bottom, trying to scroll down does nothing (already at bottom)
+        let max_offset = self.last_max_scroll_offset.get();
+
+        // If pinned to bottom, just unpin but don't move offset
+        // User is already at the bottom, can't go further down
         if self.pinned_to_bottom {
+            self.scroll_offset = max_offset;
+            self.pinned_to_bottom = false;
             return;
         }
+
         let page_size = viewport_height as usize;
-        self.scroll_offset = self.scroll_offset.saturating_add(page_size);
+        // Increment offset but clamp to max_scroll_offset to prevent overshoot
+        self.scroll_offset = (self.scroll_offset.saturating_add(page_size)).min(max_offset);
     }
 
     /// Scroll to the bottom (show newest messages)
@@ -1085,20 +1099,37 @@ mod tests {
         // After adding, pinned to bottom
         assert!(chat.pinned_to_bottom);
 
-        // Scroll down when pinned to bottom should do nothing (already at bottom)
+        // Scroll down when pinned to bottom: just unpin, don't move offset
         chat.scroll_down();
-        assert!(chat.pinned_to_bottom); // Still pinned
-        assert_eq!(chat.scroll_offset, 0); // Offset unchanged
+        assert!(!chat.pinned_to_bottom); // Now unpinned
+                                         // Note: scroll_offset stays 0 because last_max_scroll_offset is only updated during render
 
-        // Scroll up first to unpin
+        // Add more messages to create scrollable content
+        for i in 0..20 {
+            chat.add_message(Message::user(format!("Message {}", i)));
+        }
+
+        // Simulate what render() does - update last_max_scroll_offset
+        // (in real usage, render() is called before scroll operations are visible)
+        chat.last_max_scroll_offset.set(100); // Simulate large content
+
+        chat.scroll_to_bottom(); // Pin again
+        assert!(chat.pinned_to_bottom);
+
         chat.scroll_up();
         assert!(!chat.pinned_to_bottom);
+        // scroll_offset should be synced to last_max_scroll_offset (100) then decremented by 5
+        assert_eq!(chat.scroll_offset, 95);
 
-        // Now scroll down should work
+        // Now scroll down should work and increase offset
         chat.scroll_down();
         assert!(!chat.pinned_to_bottom);
         // scroll_offset increases by SCROLL_LINES (5)
-        assert_eq!(chat.scroll_offset, 5);
+        assert_eq!(chat.scroll_offset, 100);
+
+        // Scroll down again should not exceed max_scroll_offset
+        chat.scroll_down();
+        assert_eq!(chat.scroll_offset, 100); // Clamped to max
     }
 
     #[test]
