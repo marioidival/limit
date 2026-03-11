@@ -817,7 +817,7 @@ mod tests {
         providers.insert(
             "anthropic".to_string(),
             ProviderConfig {
-                api_key: None,
+                api_key: Some("test-key".to_string()),
                 model: "claude-3-5-sonnet-20241022".to_string(),
                 base_url: None,
                 max_tokens: 4096,
