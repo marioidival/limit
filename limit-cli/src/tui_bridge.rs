@@ -1,4 +1,5 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
+use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
 use crate::session::SessionManager;
 use crossterm::event::{
@@ -395,6 +396,8 @@ pub struct TuiApp {
     cursor_blink_timer: std::time::Instant,
     /// Mouse selection state
     mouse_selection_start: Option<(u16, u16)>,
+    /// Clipboard manager
+    clipboard: ClipboardManager,
 }
 
 impl TuiApp {
@@ -418,6 +421,8 @@ impl TuiApp {
             cursor_blink_state: true,
             cursor_blink_timer: std::time::Instant::now(),
             mouse_selection_start: None,
+            clipboard: ClipboardManager::new()
+                .expect("Failed to initialize clipboard"),
         })
     }
 

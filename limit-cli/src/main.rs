@@ -1,4 +1,5 @@
 mod agent_bridge;
+mod clipboard;
 mod system_prompt;
 
 mod error;
