@@ -1,4 +1,5 @@
 pub mod agent_bridge;
+pub mod clipboard;
 pub mod system_prompt;
 
 pub mod error;
