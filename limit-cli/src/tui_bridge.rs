@@ -21,6 +21,9 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+/// Maximum paste size to prevent memory issues (100KB)
+const MAX_PASTE_SIZE: usize = 100 * 1024;
+
 /// Debug log to file (bypasses tracing)
 fn debug_log(msg: &str) {
     use std::fs::OpenOptions;
@@ -397,7 +400,7 @@ pub struct TuiApp {
     /// Mouse selection state
     mouse_selection_start: Option<(u16, u16)>,
     /// Clipboard manager
-    clipboard: ClipboardManager,
+    clipboard: Option<ClipboardManager>,
 }
 
 impl TuiApp {
@@ -421,7 +424,9 @@ impl TuiApp {
             cursor_blink_state: true,
             cursor_blink_timer: std::time::Instant::now(),
             mouse_selection_start: None,
-            clipboard: ClipboardManager::new().expect("Failed to initialize clipboard"),
+            clipboard: ClipboardManager::new()
+                .inspect_err(|e| tracing::warn!("Clipboard unavailable: {}", e))
+                .ok(),
         })
     }
 
@@ -482,15 +487,18 @@ impl TuiApp {
                         MouseEventKind::Down(MouseButton::Left) => {
                             self.mouse_selection_start = Some((mouse.column, mouse.row));
                             // Map screen position to message/offset and start selection
-                            if let Some((msg_idx, byte_offset)) =
-                                self.screen_to_text_pos(mouse.column, mouse.row)
+                            let chat = self.tui_bridge.chat_view().lock().unwrap();
+                            if let Some((msg_idx, char_offset)) =
+                                chat.screen_to_text_pos(mouse.column, mouse.row)
                             {
+                                drop(chat);
                                 self.tui_bridge
                                     .chat_view()
                                     .lock()
                                     .unwrap()
-                                    .start_selection(msg_idx, byte_offset);
+                                    .start_selection(msg_idx, char_offset);
                             } else {
+                                drop(chat);
                                 self.tui_bridge
                                     .chat_view()
                                     .lock()
@@ -501,14 +509,16 @@ impl TuiApp {
                         MouseEventKind::Drag(MouseButton::Left) => {
                             if self.mouse_selection_start.is_some() {
                                 // Extend selection to current position
-                                if let Some((msg_idx, byte_offset)) =
-                                    self.screen_to_text_pos(mouse.column, mouse.row)
+                                let chat = self.tui_bridge.chat_view().lock().unwrap();
+                                if let Some((msg_idx, char_offset)) =
+                                    chat.screen_to_text_pos(mouse.column, mouse.row)
                                 {
+                                    drop(chat);
                                     self.tui_bridge
                                         .chat_view()
                                         .lock()
                                         .unwrap()
-                                        .extend_selection(msg_idx, byte_offset);
+                                        .extend_selection(msg_idx, char_offset);
                                 }
                             }
                         }
@@ -582,6 +592,20 @@ impl TuiApp {
 
     /// Insert pasted text at cursor position without submitting
     fn insert_paste(&mut self, text: &str) {
+        // Enforce size limit to prevent memory issues
+        let text = if text.len() > MAX_PASTE_SIZE {
+            self.status_message = "Paste truncated (too large)".to_string();
+            self.status_is_error = true;
+            // Find valid UTF-8 boundary at approximately MAX_PASTE_SIZE
+            &text[..text
+                .char_indices()
+                .nth(MAX_PASTE_SIZE)
+                .map(|(i, _)| i)
+                .unwrap_or(text.len())]
+        } else {
+            text
+        };
+
         // Normalize newlines (some terminals convert \n to \r)
         let normalized = text.replace("\r", "\n");
         self.input_text.insert_str(self.cursor_pos, &normalized);
@@ -598,21 +622,6 @@ impl TuiApp {
         #[cfg(not(target_os = "macos"))]
         {
             key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::CONTROL)
-        }
-    }
-
-    /// Map screen coordinates to (message_idx, byte_offset)
-    /// Returns None if position is not on message content
-    fn screen_to_text_pos(&self, _col: u16, row: u16) -> Option<(usize, usize)> {
-        let chat = self.tui_bridge.chat_view().lock().unwrap();
-
-        // Approximate: each message takes ~3 lines minimum (header + content + separator)
-        // This is a simplified mapping - full impl would track exact render positions
-        let estimated_msg_idx = (row as usize) / 3;
-        if estimated_msg_idx < chat.message_count() {
-            Some((estimated_msg_idx, 0))
-        } else {
-            None
         }
     }
 
@@ -637,15 +646,20 @@ impl TuiApp {
             if chat.has_selection() {
                 if let Some(selected) = chat.get_selected_text() {
                     if !selected.is_empty() {
-                        match self.clipboard.set_text(&selected) {
-                            Ok(()) => {
-                                self.status_message = "Copied to clipboard".to_string();
-                                self.status_is_error = false;
+                        if let Some(ref clipboard) = self.clipboard {
+                            match clipboard.set_text(&selected) {
+                                Ok(()) => {
+                                    self.status_message = "Copied to clipboard".to_string();
+                                    self.status_is_error = false;
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("Clipboard error: {}", e);
+                                    self.status_is_error = true;
+                                }
                             }
-                            Err(e) => {
-                                self.status_message = format!("Clipboard error: {}", e);
-                                self.status_is_error = true;
-                            }
+                        } else {
+                            self.status_message = "Clipboard not available".to_string();
+                            self.status_is_error = true;
                         }
                     }
                     chat.clear_selection();
@@ -665,15 +679,20 @@ impl TuiApp {
 
         // Paste from clipboard (Ctrl/Cmd+V)
         if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
-            match self.clipboard.get_text() {
-                Ok(text) if !text.is_empty() => {
-                    self.insert_paste(&text);
+            if let Some(ref clipboard) = self.clipboard {
+                match clipboard.get_text() {
+                    Ok(text) if !text.is_empty() => {
+                        self.insert_paste(&text);
+                    }
+                    Ok(_) => {} // Empty clipboard
+                    Err(e) => {
+                        self.status_message = format!("Could not read clipboard: {}", e);
+                        self.status_is_error = true;
+                    }
                 }
-                Ok(_) => {} // Empty clipboard
-                Err(e) => {
-                    self.status_message = format!("Could not read clipboard: {}", e);
-                    self.status_is_error = true;
-                }
+            } else {
+                self.status_message = "Clipboard not available".to_string();
+                self.status_is_error = true;
             }
             return Ok(());
         }

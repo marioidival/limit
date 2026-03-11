@@ -1,6 +1,6 @@
 // Chat view component for displaying conversation messages
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use crate::syntax::SyntaxHighlighter;
 use tracing::debug;
@@ -16,6 +16,15 @@ use ratatui::{
 
 /// Maximum number of messages to render at once (sliding window)
 const RENDER_WINDOW_SIZE: usize = 50;
+
+/// Convert character offset to byte offset for UTF-8 safe slicing
+fn char_offset_to_byte(text: &str, char_offset: usize) -> usize {
+    text.char_indices()
+        .nth(char_offset)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len())
+}
+
 /// Line type for markdown rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LineType {
@@ -233,6 +242,21 @@ impl Message {
     }
 }
 
+/// Position metadata for mapping screen coordinates to text positions
+#[derive(Debug, Clone, Copy)]
+pub struct RenderPosition {
+    /// Index of the message in the messages vector
+    pub message_idx: usize,
+    /// Index of the line within the message content
+    pub line_idx: usize,
+    /// Character offset where this screen line starts
+    pub char_start: usize,
+    /// Character offset where this screen line ends
+    pub char_end: usize,
+    /// Absolute screen Y coordinate
+    pub screen_row: u16,
+}
+
 /// Chat view component for displaying conversation messages
 #[derive(Debug, Clone)]
 pub struct ChatView {
@@ -249,9 +273,11 @@ pub struct ChatView {
     cache_dirty: Cell<bool>,
     /// Number of hidden messages when using sliding window
     hidden_message_count: Cell<usize>,
-    /// Text selection state: (message_idx, byte_offset)
+    /// Text selection state: (message_idx, char_offset)
     selection_start: Option<(usize, usize)>,
     selection_end: Option<(usize, usize)>,
+    /// Render position metadata for mouse-to-text mapping
+    render_positions: RefCell<Vec<RenderPosition>>,
 }
 
 impl Default for ChatView {
@@ -274,6 +300,7 @@ impl ChatView {
             hidden_message_count: Cell::new(0),
             selection_start: None,
             selection_end: None,
+            render_positions: RefCell::new(Vec::new()),
         }
     }
 
@@ -388,8 +415,23 @@ impl ChatView {
         self.selection_start.is_some() && self.selection_end.is_some()
     }
 
+    /// Map screen coordinates to text position for mouse selection
+    /// Returns (message_idx, char_offset) if a valid position is found
+    pub fn screen_to_text_pos(&self, col: u16, row: u16) -> Option<(usize, usize)> {
+        for pos in self.render_positions.borrow().iter() {
+            if pos.screen_row == row {
+                // Calculate character offset within the line based on column
+                // (assumes monospace font - accurate for terminal)
+                let line_len = pos.char_end.saturating_sub(pos.char_start);
+                let char_in_line = (col as usize).min(line_len);
+                return Some((pos.message_idx, pos.char_start + char_in_line));
+            }
+        }
+        None
+    }
+
     /// Check if a byte position is within the current selection
-    pub fn is_selected(&self, message_idx: usize, byte_offset: usize) -> bool {
+    pub fn is_selected(&self, message_idx: usize, char_offset: usize) -> bool {
         let Some((start_msg, start_offset)) = self.selection_start else {
             return false;
         };
@@ -412,16 +454,78 @@ impl ChatView {
 
         if message_idx == min_msg && message_idx == max_msg {
             // Same message: check offset range
-            byte_offset >= min_offset && byte_offset < max_offset
+            char_offset >= min_offset && char_offset < max_offset
         } else if message_idx == min_msg {
             // First message: offset >= min_offset
-            byte_offset >= min_offset
+            char_offset >= min_offset
         } else if message_idx == max_msg {
             // Last message: offset < max_offset
-            byte_offset < max_offset
+            char_offset < max_offset
         } else {
             // Middle message: fully selected
             true
+        }
+    }
+
+    /// Apply selection highlighting to text spans
+    /// Takes a line of text and returns styled spans with selection highlighted
+    fn apply_selection_highlight<'a>(
+        &self,
+        text: &'a str,
+        message_idx: usize,
+        line_char_start: usize,
+        base_style: Style,
+    ) -> Vec<Span<'a>> {
+        let selection_style = Style::default().bg(Color::Blue).fg(Color::White);
+
+        // If no selection, just return styled text
+        if !self.has_selection() {
+            return vec![Span::styled(text, base_style)];
+        }
+
+        let mut spans = Vec::new();
+        let mut current_start = 0;
+        let mut in_selection = false;
+        let char_positions: Vec<(usize, char)> = text.char_indices().collect();
+
+        for (i, (byte_idx, _)) in char_positions.iter().enumerate() {
+            let global_char = line_char_start + i;
+            let is_sel = self.is_selected(message_idx, global_char);
+
+            if is_sel != in_selection {
+                // Transition point - push current segment
+                if i > current_start {
+                    let segment_byte_start = char_positions[current_start].0;
+                    let segment_byte_end = *byte_idx;
+                    let segment = &text[segment_byte_start..segment_byte_end];
+                    let style = if in_selection {
+                        selection_style
+                    } else {
+                        base_style
+                    };
+                    spans.push(Span::styled(segment, style));
+                }
+                current_start = i;
+                in_selection = is_sel;
+            }
+        }
+
+        // Push final segment
+        if current_start < char_positions.len() {
+            let segment_byte_start = char_positions[current_start].0;
+            let segment = &text[segment_byte_start..];
+            let style = if in_selection {
+                selection_style
+            } else {
+                base_style
+            };
+            spans.push(Span::styled(segment, style));
+        }
+
+        if spans.is_empty() {
+            vec![Span::styled(text, base_style)]
+        } else {
+            spans
         }
     }
 
@@ -439,11 +543,13 @@ impl ChatView {
             };
 
         if min_msg == max_msg {
-            // Single message: extract substring
+            // Single message: extract substring using character indices
             let msg = self.messages.get(min_msg)?;
             let content = &msg.content;
-            if min_offset < content.len() && max_offset <= content.len() {
-                Some(content[min_offset..max_offset].to_string())
+            let start_byte = char_offset_to_byte(content, min_offset);
+            let end_byte = char_offset_to_byte(content, max_offset);
+            if start_byte < content.len() && end_byte <= content.len() {
+                Some(content[start_byte..end_byte].to_string())
             } else {
                 None
             }
@@ -453,8 +559,9 @@ impl ChatView {
 
             // First message: from offset to end
             if let Some(msg) = self.messages.get(min_msg) {
-                if min_offset < msg.content.len() {
-                    result.push_str(&msg.content[min_offset..]);
+                let start_byte = char_offset_to_byte(&msg.content, min_offset);
+                if start_byte < msg.content.len() {
+                    result.push_str(&msg.content[start_byte..]);
                 }
             }
 
@@ -469,8 +576,9 @@ impl ChatView {
             // Last message: from start to offset
             if let Some(msg) = self.messages.get(max_msg) {
                 result.push('\n');
-                if max_offset > 0 && max_offset <= msg.content.len() {
-                    result.push_str(&msg.content[..max_offset]);
+                let end_byte = char_offset_to_byte(&msg.content, max_offset);
+                if end_byte > 0 && end_byte <= msg.content.len() {
+                    result.push_str(&msg.content[..end_byte]);
                 }
             }
 
@@ -657,6 +765,9 @@ impl ChatView {
     /// Render visible messages based on scroll offset
     /// Render visible messages based on scroll offset
     fn render_to_buffer(&self, area: Rect, buf: &mut Buffer) {
+        // Clear render position metadata for this frame
+        self.render_positions.borrow_mut().clear();
+
         let total_height = self.calculate_total_height(area.width);
         let viewport_height = area.height as usize;
 
@@ -704,7 +815,9 @@ impl ChatView {
                 global_y += role_height + content_height + separator_height;
             }
         }
-        for message in messages_to_render {
+        for (local_msg_idx, message) in messages_to_render.iter().enumerate() {
+            let message_idx = hidden_count + local_msg_idx;
+
             // Skip if this message is above the viewport
             let role_height = 1;
             let processed = self.process_code_blocks(&message.content);
@@ -742,10 +855,24 @@ impl ChatView {
             global_y += 1;
 
             // Render message content with markdown and code highlighting
-            for (line, line_type, is_code_block, lang) in processed {
-                let line_height = Self::estimate_line_count(&line, area.width as usize);
+            // Track character offset within the message for selection mapping
+            let mut char_offset: usize = 0;
+            for (line_idx, (line, line_type, is_code_block, lang)) in processed.iter().enumerate() {
+                let line_height = Self::estimate_line_count(line, area.width as usize);
+                let line_char_count = line.chars().count();
 
-                if is_code_block && global_y >= skip_until {
+                // Track this line's render position for mouse selection
+                if global_y >= skip_until && y_offset < area.y + area.height {
+                    self.render_positions.borrow_mut().push(RenderPosition {
+                        message_idx,
+                        line_idx,
+                        char_start: char_offset,
+                        char_end: char_offset + line_char_count,
+                        screen_row: y_offset,
+                    });
+                }
+
+                if *is_code_block && global_y >= skip_until {
                     // Code block with syntax highlighting
                     if let Some(ref lang_str) = lang {
                         if let Ok(highlighted_spans) = self
@@ -772,9 +899,14 @@ impl ChatView {
                     }
                 }
 
-                // Regular text with markdown styling
+                // Regular text with markdown styling and selection highlighting
                 let base_style = line_type.style();
-                let spans = parse_inline_markdown(&line, base_style);
+                let spans = if self.has_selection() {
+                    // Apply selection highlighting on top of markdown styling
+                    self.apply_selection_highlight(line, message_idx, char_offset, base_style)
+                } else {
+                    parse_inline_markdown(line, base_style)
+                };
                 let text_line = Line::from(spans);
 
                 // Render the line
@@ -788,6 +920,9 @@ impl ChatView {
                     y_offset += line_height as u16;
                 }
                 global_y += line_height;
+
+                // Update character offset for next line
+                char_offset += line_char_count + 1; // +1 for newline
 
                 if global_y >= max_y {
                     break;
