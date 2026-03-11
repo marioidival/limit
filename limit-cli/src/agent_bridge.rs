@@ -3,8 +3,9 @@ use crate::system_prompt::SYSTEM_PROMPT;
 use crate::tools::{
     AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool, GitCloneTool,
     GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool, GrepTool,
-    LspTool,
+    LspTool, WebFetchTool, WebSearchTool,
 };
+use chrono::Datelike;
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
@@ -90,6 +91,8 @@ impl AgentBridge {
             "grep",
             "ast_grep",
             "lsp",
+            "web_search",
+            "web_fetch",
         ];
 
         Ok(Self {
@@ -161,6 +164,14 @@ impl AgentBridge {
         registry
             .register(LspTool::new())
             .expect("Failed to register lsp");
+
+        // Web tools
+        registry
+            .register(WebSearchTool::new())
+            .expect("Failed to register web_search");
+        registry
+            .register(WebFetchTool::new())
+            .expect("Failed to register web_fetch");
     }
 
     /// Process a user message through the LLM and execute any tool calls
@@ -684,6 +695,43 @@ impl AgentBridge {
                     "required": ["command", "file_path", "position"]
                 }),
             ),
+            "web_search" => (
+                format!("Search the web using Exa AI. Returns results with titles, URLs, and content snippets. Use for current information beyond knowledge cutoff. The current year is {} - use this year when searching for recent information.", chrono::Local::now().year()),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": format!("Search query. Be specific for better results (e.g., 'Rust async tutorial {}' rather than 'Rust')", chrono::Local::now().year())
+                        },
+                        "numResults": {
+                            "type": "integer",
+                            "description": "Number of results to return (default: 8, max: 20)",
+                            "default": 8
+                        }
+                    },
+                    "required": ["query"]
+                }),
+            ),
+            "web_fetch" => (
+                "Fetch content from a URL. Converts HTML to markdown format by default. Use when user provides a URL or after web_search to read full content of a specific result.".to_string(),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "URL to fetch (must start with http:// or https://)"
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["markdown", "text", "html"],
+                            "default": "markdown",
+                            "description": "Output format (default: markdown)"
+                        }
+                    },
+                    "required": ["url"]
+                }),
+            ),
             _ => (
                 format!("Tool: {}", name),
                 json!({
@@ -835,7 +883,7 @@ mod tests {
         let bridge = AgentBridge::new(config).unwrap();
         let definitions = bridge.get_tool_definitions();
 
-        assert_eq!(definitions.len(), 15);
+        assert_eq!(definitions.len(), 17);
 
         // Check file_read tool definition
         let file_read = definitions

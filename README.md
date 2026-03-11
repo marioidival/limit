@@ -50,7 +50,7 @@ That's it! Start chatting with your AI coding assistant.
 ## Features
 
 - **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, z.ai, and local LLMs (Ollama, LM Studio, vLLM)
-- **15 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis
+- **17 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis, web search/fetch
 - **Session Persistence** — Auto-save/restore conversation history
 - **Token Tracking** — SQLite-based usage tracking with cost estimation
 - **Docker Sandbox** — Optional containerized tool execution for isolation
@@ -270,6 +270,12 @@ This file contains the main entry point for the CLI application...
 | `ast_grep` | AST-aware code search (Rust, TypeScript, Python) |
 | `lsp` | LSP operations (go-to-definition, find-references) |
 
+### Web
+| Tool | Description |
+|------|-------------|
+| `web_search` | Search the web using Exa AI for current information |
+| `web_fetch` | Fetch and convert web pages to markdown |
+
 ---
 
 ## Crates
@@ -278,7 +284,7 @@ This file contains the main entry point for the CLI application...
 |-------|-------------|
 | [`limit-llm`](limit-llm) | Multi-provider LLM client with streaming, SQLite tracking, binary persistence, model handoff |
 | [`limit-agent`](limit-agent) | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
-| [`limit-cli`](limit-cli) | REPL interface with 15 tools, markdown rendering, session management |
+| [`limit-cli`](limit-cli) | REPL interface with 17 tools, markdown rendering, session management |
 
 ---
 
