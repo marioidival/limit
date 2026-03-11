@@ -44,16 +44,6 @@ export ANTHROPIC_API_KEY="your-key-here"
 That's it! Start chatting with your AI coding assistant.
 
 > Use `--no-tui` flag for text-based REPL: `lim --no-tui`
-## Screenshots
-
-### TUI Chat View
-> *[Screenshot placeholder: Interactive chat with syntax-highlighted code blocks]*
-
-### Diff View with Syntax Highlighting  
-> *[Screenshot placeholder: Side-by-side diff showing code changes]*
-
-### Interactive Prompts
-> *[Screenshot placeholder: Select prompt with multiple choices]*
 
 ---
 
