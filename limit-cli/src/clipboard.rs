@@ -19,18 +19,20 @@ impl ClipboardManager {
 
     /// Copy text to clipboard
     pub fn set_text(&self, text: &str) -> Result<(), arboard::Error> {
-        let mut clipboard = self.clipboard.lock().map_err(|_| {
-            arboard::Error::ClipboardNotSupported
-        })?;
+        let mut clipboard = self
+            .clipboard
+            .lock()
+            .map_err(|_| arboard::Error::ClipboardNotSupported)?;
         clipboard.set_text(text.to_string())?;
         Ok(())
     }
 
     /// Get text from clipboard
     pub fn get_text(&self) -> Result<String, arboard::Error> {
-        let mut clipboard = self.clipboard.lock().map_err(|_| {
-            arboard::Error::ClipboardNotSupported
-        })?;
+        let mut clipboard = self
+            .clipboard
+            .lock()
+            .map_err(|_| arboard::Error::ClipboardNotSupported)?;
         clipboard.get_text()
     }
 }

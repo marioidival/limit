@@ -390,17 +390,20 @@ impl ChatView {
 
     /// Check if a byte position is within the current selection
     pub fn is_selected(&self, message_idx: usize, byte_offset: usize) -> bool {
-        let Some((start_msg, start_offset)) = self.selection_start else { return false };
-        let Some((end_msg, end_offset)) = self.selection_end else { return false };
+        let Some((start_msg, start_offset)) = self.selection_start else {
+            return false;
+        };
+        let Some((end_msg, end_offset)) = self.selection_end else {
+            return false;
+        };
 
         // Normalize order
-        let (min_msg, min_offset, max_msg, max_offset) = if start_msg < end_msg
-            || (start_msg == end_msg && start_offset <= end_offset)
-        {
-            (start_msg, start_offset, end_msg, end_offset)
-        } else {
-            (end_msg, end_offset, start_msg, start_offset)
-        };
+        let (min_msg, min_offset, max_msg, max_offset) =
+            if start_msg < end_msg || (start_msg == end_msg && start_offset <= end_offset) {
+                (start_msg, start_offset, end_msg, end_offset)
+            } else {
+                (end_msg, end_offset, start_msg, start_offset)
+            };
 
         // Check if position is in selection range
         if message_idx < min_msg || message_idx > max_msg {
@@ -428,13 +431,12 @@ impl ChatView {
         let (end_msg, end_offset) = self.selection_end?;
 
         // Normalize order
-        let (min_msg, min_offset, max_msg, max_offset) = if start_msg < end_msg
-            || (start_msg == end_msg && start_offset <= end_offset)
-        {
-            (start_msg, start_offset, end_msg, end_offset)
-        } else {
-            (end_msg, end_offset, start_msg, start_offset)
-        };
+        let (min_msg, min_offset, max_msg, max_offset) =
+            if start_msg < end_msg || (start_msg == end_msg && start_offset <= end_offset) {
+                (start_msg, start_offset, end_msg, end_offset)
+            } else {
+                (end_msg, end_offset, start_msg, start_offset)
+            };
 
         if min_msg == max_msg {
             // Single message: extract substring

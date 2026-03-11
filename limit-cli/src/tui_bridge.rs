@@ -3,8 +3,8 @@ use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
 use crate::session::SessionManager;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableBracketedPaste, DisableBracketedPaste, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    KeyModifiers, MouseButton, MouseEventKind,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
@@ -421,8 +421,7 @@ impl TuiApp {
             cursor_blink_state: true,
             cursor_blink_timer: std::time::Instant::now(),
             mouse_selection_start: None,
-            clipboard: ClipboardManager::new()
-                .expect("Failed to initialize clipboard"),
+            clipboard: ClipboardManager::new().expect("Failed to initialize clipboard"),
         })
     }
 
@@ -483,17 +482,33 @@ impl TuiApp {
                         MouseEventKind::Down(MouseButton::Left) => {
                             self.mouse_selection_start = Some((mouse.column, mouse.row));
                             // Map screen position to message/offset and start selection
-                            if let Some((msg_idx, byte_offset)) = self.screen_to_text_pos(mouse.column, mouse.row) {
-                                self.tui_bridge.chat_view().lock().unwrap().start_selection(msg_idx, byte_offset);
+                            if let Some((msg_idx, byte_offset)) =
+                                self.screen_to_text_pos(mouse.column, mouse.row)
+                            {
+                                self.tui_bridge
+                                    .chat_view()
+                                    .lock()
+                                    .unwrap()
+                                    .start_selection(msg_idx, byte_offset);
                             } else {
-                                self.tui_bridge.chat_view().lock().unwrap().clear_selection();
+                                self.tui_bridge
+                                    .chat_view()
+                                    .lock()
+                                    .unwrap()
+                                    .clear_selection();
                             }
                         }
                         MouseEventKind::Drag(MouseButton::Left) => {
                             if self.mouse_selection_start.is_some() {
                                 // Extend selection to current position
-                                if let Some((msg_idx, byte_offset)) = self.screen_to_text_pos(mouse.column, mouse.row) {
-                                    self.tui_bridge.chat_view().lock().unwrap().extend_selection(msg_idx, byte_offset);
+                                if let Some((msg_idx, byte_offset)) =
+                                    self.screen_to_text_pos(mouse.column, mouse.row)
+                                {
+                                    self.tui_bridge
+                                        .chat_view()
+                                        .lock()
+                                        .unwrap()
+                                        .extend_selection(msg_idx, byte_offset);
                                 }
                             }
                         }
