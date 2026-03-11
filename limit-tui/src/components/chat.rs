@@ -249,6 +249,9 @@ pub struct ChatView {
     cache_dirty: Cell<bool>,
     /// Number of hidden messages when using sliding window
     hidden_message_count: Cell<usize>,
+    /// Text selection state: (message_idx, byte_offset)
+    selection_start: Option<(usize, usize)>,
+    selection_end: Option<(usize, usize)>,
 }
 
 impl Default for ChatView {
@@ -269,6 +272,8 @@ impl ChatView {
             cache_dirty: Cell::new(true),
             cached_height: Cell::new(0),
             hidden_message_count: Cell::new(0),
+            selection_start: None,
+            selection_end: None,
         }
     }
 
@@ -357,6 +362,118 @@ impl ChatView {
     pub fn scroll_to_top(&mut self) {
         self.pinned_to_bottom = false;
         self.scroll_offset = 0;
+    }
+
+    /// Start text selection at position
+    pub fn start_selection(&mut self, message_idx: usize, byte_offset: usize) {
+        self.selection_start = Some((message_idx, byte_offset));
+        self.selection_end = Some((message_idx, byte_offset));
+    }
+
+    /// Extend selection to position
+    pub fn extend_selection(&mut self, message_idx: usize, byte_offset: usize) {
+        if self.selection_start.is_some() {
+            self.selection_end = Some((message_idx, byte_offset));
+        }
+    }
+
+    /// Clear text selection
+    pub fn clear_selection(&mut self) {
+        self.selection_start = None;
+        self.selection_end = None;
+    }
+
+    /// Check if there is an active selection
+    pub fn has_selection(&self) -> bool {
+        self.selection_start.is_some() && self.selection_end.is_some()
+    }
+
+    /// Check if a byte position is within the current selection
+    pub fn is_selected(&self, message_idx: usize, byte_offset: usize) -> bool {
+        let Some((start_msg, start_offset)) = self.selection_start else { return false };
+        let Some((end_msg, end_offset)) = self.selection_end else { return false };
+
+        // Normalize order
+        let (min_msg, min_offset, max_msg, max_offset) = if start_msg < end_msg
+            || (start_msg == end_msg && start_offset <= end_offset)
+        {
+            (start_msg, start_offset, end_msg, end_offset)
+        } else {
+            (end_msg, end_offset, start_msg, start_offset)
+        };
+
+        // Check if position is in selection range
+        if message_idx < min_msg || message_idx > max_msg {
+            return false;
+        }
+
+        if message_idx == min_msg && message_idx == max_msg {
+            // Same message: check offset range
+            byte_offset >= min_offset && byte_offset < max_offset
+        } else if message_idx == min_msg {
+            // First message: offset >= min_offset
+            byte_offset >= min_offset
+        } else if message_idx == max_msg {
+            // Last message: offset < max_offset
+            byte_offset < max_offset
+        } else {
+            // Middle message: fully selected
+            true
+        }
+    }
+
+    /// Get selected text (character-precise)
+    pub fn get_selected_text(&self) -> Option<String> {
+        let (start_msg, start_offset) = self.selection_start?;
+        let (end_msg, end_offset) = self.selection_end?;
+
+        // Normalize order
+        let (min_msg, min_offset, max_msg, max_offset) = if start_msg < end_msg
+            || (start_msg == end_msg && start_offset <= end_offset)
+        {
+            (start_msg, start_offset, end_msg, end_offset)
+        } else {
+            (end_msg, end_offset, start_msg, start_offset)
+        };
+
+        if min_msg == max_msg {
+            // Single message: extract substring
+            let msg = self.messages.get(min_msg)?;
+            let content = &msg.content;
+            if min_offset < content.len() && max_offset <= content.len() {
+                Some(content[min_offset..max_offset].to_string())
+            } else {
+                None
+            }
+        } else {
+            // Multiple messages: collect parts
+            let mut result = String::new();
+
+            // First message: from offset to end
+            if let Some(msg) = self.messages.get(min_msg) {
+                if min_offset < msg.content.len() {
+                    result.push_str(&msg.content[min_offset..]);
+                }
+            }
+
+            // Middle messages: full content
+            for idx in (min_msg + 1)..max_msg {
+                if let Some(msg) = self.messages.get(idx) {
+                    result.push('\n');
+                    result.push_str(&msg.content);
+                }
+            }
+
+            // Last message: from start to offset
+            if let Some(msg) = self.messages.get(max_msg) {
+                result.push('\n');
+                if max_offset > 0 && max_offset <= msg.content.len() {
+                    result.push_str(&msg.content[..max_offset]);
+                }
+            }
+
+            Some(result)
+        }
     }
 
     /// Clear all messages
