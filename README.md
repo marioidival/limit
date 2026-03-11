@@ -176,7 +176,8 @@ timeout = 60
 # Optional: Enable thinking mode for complex reasoning tasks
 # thinking_enabled = false
 # clear_thinking = true  # Set to false for Preserved Thinking in multi-turn
-``
+```
+
 ### Environment Variables
 
 Provider API keys can be set via environment variables as fallback:
