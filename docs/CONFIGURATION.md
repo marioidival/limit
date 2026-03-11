@@ -7,6 +7,7 @@ Configure Limit with your preferred LLM provider.
 - [Anthropic Claude](CLAUDE_SETUP.md)
 - [OpenAI](OPENAI_SETUP.md)
 - [z.ai](ZAI_SETUP.md)
+- [Local LLMs](LOCAL_PROVIDERS.md) - Ollama, LM Studio, vLLM
 
 ## Quick Setup
 

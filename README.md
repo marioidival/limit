@@ -59,7 +59,7 @@ That's it! Start chatting with your AI coding assistant.
 
 ## Features
 
-- **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, and z.ai with streaming API
+- **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, z.ai, and local LLMs (Ollama, LM Studio, vLLM)
 - **15 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis
 - **Session Persistence** — Auto-save/restore conversation history
 - **Token Tracking** — SQLite-based usage tracking with cost estimation
@@ -76,6 +76,7 @@ That's it! Start chatting with your AI coding assistant.
 |---------|:-----:|:-----:|:------:|:--------------:|
 | Terminal-native | ✅ | ✅ | ❌ | ❌ |
 | Multi-provider LLM | ✅ | ✅ | ❌ | ❌ |
+| Local LLM support | ✅ | ✅ | ❌ | ❌ |
 | Docker sandbox | ✅ | ❌ | ❌ | ❌ |
 | Session persistence | ✅ | ✅ | ✅ | ✅ |
 | Token tracking | ✅ | ❌ | ❌ | ✅ |
@@ -86,8 +87,9 @@ That's it! Start chatting with your AI coding assistant.
 **Perfect for:**
 - 🖥️ Developers who live in the terminal
 - 🔒 Privacy-conscious teams wanting Docker isolation
+- 🏠 Local LLM enthusiasts running models offline
 - 📊 Projects requiring audit trails of AI interactions
-- 🔄 Multi-model workflows (switch between Claude, GPT-4, z.ai)
+- 🔄 Multi-model workflows (switch between Claude, GPT-4, z.ai, local)
 
 ---
 
@@ -128,6 +130,7 @@ cargo build --workspace --release
 - [Anthropic Claude](docs/CLAUDE_SETUP.md) - Recommended for code analysis
 - [OpenAI GPT](docs/OPENAI_SETUP.md) - Fast and reliable
 - [z.ai](docs/ZAI_SETUP.md) - Cost-effective alternative
+- [Local LLMs](docs/LOCAL_PROVIDERS.md) - Ollama, LM Studio, vLLM
 - [Full Configuration Guide](docs/CONFIGURATION.md) - All options in one place
 
 Create a configuration file at `~/.limit/config.toml`:
@@ -177,6 +180,21 @@ timeout = 60
 # thinking_enabled = false
 # clear_thinking = true  # Set to false for Preserved Thinking in multi-turn
 ```
+
+### Local LLMs (Ollama, LM Studio, vLLM)
+
+```toml
+provider = "local"  # or "ollama", "lmstudio", "vllm"
+
+[providers.local]
+model = "llama3.2"
+base_url = "http://localhost:11434/v1/chat/completions"
+# api_key not required for local servers
+max_tokens = 4096
+timeout = 120  # Longer timeout for local inference
+```
+
+See [Local LLM Providers](docs/LOCAL_PROVIDERS.md) for detailed setup guides.
 
 ### Environment Variables
 
@@ -292,6 +310,7 @@ See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
 - [Anthropic Claude Setup](docs/CLAUDE_SETUP.md) - Detailed guide for Claude setup
 - [OpenAI Setup](docs/OPENAI_SETUP.md) - Detailed guide for GPT-4/GPT-3.5 setup
 - [z.ai Setup](docs/ZAI_SETUP.md) - Detailed guide for z.ai (GLM-4) setup
+- [Local LLM Providers](docs/LOCAL_PROVIDERS.md) - Ollama, LM Studio, vLLM, and custom servers
 
 ---
 
