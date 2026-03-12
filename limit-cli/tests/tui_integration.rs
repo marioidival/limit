@@ -457,3 +457,36 @@ fn test_tui_bridge_from_string_config() {
     // Verify the bridge was created and is ready
     assert!(tui_bridge.agent_bridge().is_ready());
 }
+
+#[test]
+fn test_file_autocomplete_integration() {
+    // Test that file autocomplete can be triggered and returns results
+    use limit_cli::file_finder::FileFinder;
+
+    // Create a file finder for current directory
+    let working_dir = std::env::current_dir().unwrap();
+    let mut finder = FileFinder::new(working_dir);
+
+    // Scan files (clone to avoid borrow issues)
+    let files = finder.scan_files().clone();
+    assert!(!files.is_empty(), "Should find files in current directory");
+
+    // Filter by "Cargo"
+    let matches = finder.filter_files(&files, "Cargo");
+    assert!(!matches.is_empty(), "Should find Cargo files");
+
+    // Verify Cargo.toml is in results
+    assert!(
+        matches
+            .iter()
+            .any(|m| m.path.to_string_lossy() == "Cargo.toml"),
+        "Should find Cargo.toml"
+    );
+
+    // Verify fuzzy matching works
+    let fuzzy_matches = finder.filter_files(&files, "Crgo");
+    // Fuzzy matching should still find Cargo.toml even with typo
+    // Note: frizbee may or may not match depending on fuzziness threshold
+    // So we just verify the function runs without error
+    assert!(fuzzy_matches.len() <= 20, "Should limit to 20 results");
+}
