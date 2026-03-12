@@ -388,9 +388,15 @@ main() {
     echo ""
 
     update_all_versions "$new_version"
+    
+    # Atualiza o Cargo.lock para refletir as novas versões
+    log_info "Atualizando Cargo.lock..."
+    cargo generate-lockfile
+    log_success "Cargo.lock atualizado"
+    
     generate_changelog "$new_version"
-    create_git_tag "$new_version"
     commit_changes "$new_version"
+    create_git_tag "$new_version"
 
     echo ""
     log_success "========================================"
