@@ -202,32 +202,43 @@ impl TuiBridge {
 
     /// Process events from the agent and update TUI state
     pub fn process_events(&mut self) -> Result<(), CliError> {
+        let mut event_count = 0;
         while let Ok(event) = self.event_rx.try_recv() {
+            event_count += 1;
             match event {
                 AgentEvent::Thinking => {
+                    debug_log("process_events: Thinking event received");
                     *self.state.lock().unwrap() = TuiState::Thinking;
                 }
                 AgentEvent::ToolStart { name, args } => {
+                    debug_log(&format!("process_events: ToolStart event - {}", name));
                     let activity_msg = Self::format_activity_message(&name, &args);
                     // Add to activity feed instead of changing state
                     self.activity_feed.lock().unwrap().add(activity_msg, true);
                 }
                 AgentEvent::ToolComplete { name: _, result: _ } => {
+                    debug_log("process_events: ToolComplete event");
                     // Mark current activity as complete
                     self.activity_feed.lock().unwrap().complete_current();
                 }
                 AgentEvent::ContentChunk(chunk) => {
+                    debug_log(&format!(
+                        "process_events: ContentChunk event ({} chars)",
+                        chunk.len()
+                    ));
                     self.chat_view
                         .lock()
                         .unwrap()
                         .append_to_last_assistant(&chunk);
                 }
                 AgentEvent::Done => {
+                    debug_log("process_events: Done event received");
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Mark all activities as complete when LLM finishes
                     self.activity_feed.lock().unwrap().complete_all();
                 }
                 AgentEvent::Error(err) => {
+                    debug_log(&format!("process_events: Error event - {}", err));
                     // Reset state to Idle so user can continue
                     *self.state.lock().unwrap() = TuiState::Idle;
                     let chat_msg = Message::system(format!("Error: {}", err));
@@ -237,11 +248,18 @@ impl TuiBridge {
                     input_tokens,
                     output_tokens,
                 } => {
+                    debug_log(&format!(
+                        "process_events: TokenUsage event - in={}, out={}",
+                        input_tokens, output_tokens
+                    ));
                     // Accumulate token counts for display
                     *self.total_input_tokens.lock().unwrap() += input_tokens;
                     *self.total_output_tokens.lock().unwrap() += output_tokens;
                 }
             }
+        }
+        if event_count > 0 {
+            debug_log(&format!("process_events: processed {} events", event_count));
         }
         Ok(())
     }
@@ -1186,6 +1204,9 @@ impl TuiApp {
                  /session list  - List all sessions\n\
                  /session new   - Create a new session\n\
                  /session load  <id> - Load a session by ID\n\
+                 /share         - Copy session to clipboard (markdown)\n\
+                 /share md      - Export session as markdown file\n\
+                 /share json    - Export session as JSON file\n\
                  \n\
                  Page Up/Down - Scroll chat history"
                     .to_string(),
@@ -1224,7 +1245,14 @@ impl TuiApp {
             }
         }
 
-        // Add user message to chat (for display)
+        // Handle share commands
+        if text_lower == "/share" || text_lower.starts_with("/share ") {
+            let share_cmd = text.strip_prefix("/share ").unwrap_or("").trim();
+            self.handle_share(share_cmd)?;
+            return Ok(());
+        }
+
+        // Add user message to chat immediately for visual feedback
         self.tui_bridge.add_user_message(text.clone());
 
         // Clone Arcs for the spawned thread
@@ -1250,8 +1278,10 @@ impl TuiApp {
 
                 match bridge.process_message(&text, &mut messages_guard).await {
                     Ok(_response) => {
-                        // Response already displayed via streaming (ContentChunk events)
-                        // No need to add_message again - would cause duplication
+                        // Don't sync ChatView here - it causes race conditions with ContentChunk events
+                        // ChatView is already updated via ContentChunk events during streaming
+                        // The messages_guard is the authoritative source for session persistence
+
                         // Auto-save session after successful response
                         let msgs = messages_guard.clone();
                         let input_tokens = *total_input_tokens.lock().unwrap();
@@ -1371,6 +1401,11 @@ impl TuiApp {
         }
         if let Ok(mut output_guard) = self.tui_bridge.total_output_tokens.try_lock() {
             *output_guard = 0;
+        }
+
+        // IMPORTANT: Also clear the chat view to prevent duplicate messages
+        if let Ok(mut chat) = self.tui_bridge.chat_view.try_lock() {
+            chat.clear();
         }
 
         tracing::info!(
@@ -1506,6 +1541,143 @@ impl TuiApp {
                 session_info.total_output_tokens
             ));
             chat.add_message(msg);
+        }
+
+        Ok(())
+    }
+
+    /// Handle /share command
+    fn handle_share(&mut self, format_str: &str) -> Result<(), CliError> {
+        use crate::session_share::{ExportFormat, SessionShare};
+
+        tracing::info!("Share command detected with format: {:?}", format_str);
+
+        // Determine export format
+        let format = match format_str.to_lowercase().as_str() {
+            "" | "clipboard" | "cb" => ExportFormat::Markdown,
+            "md" | "markdown" => ExportFormat::Markdown,
+            "json" => ExportFormat::Json,
+            _ => {
+                let msg = Message::system(
+                    "Invalid format. Use: /share, /share md, /share json".to_string(),
+                );
+                self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+                return Ok(());
+            }
+        };
+
+        // Get session data
+        let session_id = self.tui_bridge.session_id();
+        let messages = self
+            .tui_bridge
+            .messages
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        let total_input_tokens = self.tui_bridge.total_input_tokens();
+        let total_output_tokens = self.tui_bridge.total_output_tokens();
+        let model = self
+            .tui_bridge
+            .agent_bridge
+            .lock()
+            .ok()
+            .map(|bridge| bridge.model().to_string());
+
+        // Check if there are messages to share
+        let user_assistant_count = messages
+            .iter()
+            .filter(|m| matches!(m.role, limit_llm::Role::User | limit_llm::Role::Assistant))
+            .count();
+
+        if user_assistant_count == 0 {
+            let msg =
+                Message::system("⚠ No messages to share. Start a conversation first.".to_string());
+            self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+            return Ok(());
+        }
+
+        // Export based on format
+        if format_str.is_empty() || format_str == "clipboard" || format_str == "cb" {
+            // Copy to clipboard
+            match SessionShare::generate_share_content(
+                &session_id,
+                &messages,
+                total_input_tokens,
+                total_output_tokens,
+                model.clone(),
+                format,
+            ) {
+                Ok(content) => {
+                    if let Some(ref clipboard) = self.clipboard {
+                        match clipboard.set_text(&content) {
+                            Ok(()) => {
+                                let short_id = &session_id[..session_id.len().min(8)];
+                                let msg = Message::system(format!(
+                                    "✓ Session {} copied to clipboard ({} messages, {} tokens)",
+                                    short_id,
+                                    user_assistant_count,
+                                    total_input_tokens + total_output_tokens
+                                ));
+                                self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+                            }
+                            Err(e) => {
+                                let msg = Message::system(format!(
+                                    "❌ Failed to copy to clipboard: {}",
+                                    e
+                                ));
+                                self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+                            }
+                        }
+                    } else {
+                        let msg = Message::system(
+                            "❌ Clipboard not available. Try '/share md' to save as file."
+                                .to_string(),
+                        );
+                        self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+                    }
+                }
+                Err(e) => {
+                    let msg =
+                        Message::system(format!("❌ Failed to generate share content: {}", e));
+                    self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+                }
+            }
+        } else {
+            // Save to file
+            match SessionShare::export_session(
+                &session_id,
+                &messages,
+                total_input_tokens,
+                total_output_tokens,
+                model,
+                format,
+            ) {
+                Ok((filepath, export)) => {
+                    let short_id = &session_id[..session_id.len().min(8)];
+                    let extension = match format {
+                        ExportFormat::Markdown => "md",
+                        ExportFormat::Json => "json",
+                    };
+                    let msg = Message::system(format!(
+                        "✓ Session {} exported to {}\n  ({} messages, {} tokens)\n  Location: ~/.limit/exports/",
+                        short_id,
+                        extension,
+                        user_assistant_count,
+                        total_input_tokens + total_output_tokens
+                    ));
+                    self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+
+                    tracing::info!(
+                        "Session exported to {:?} ({} messages)",
+                        filepath,
+                        export.messages.len()
+                    );
+                }
+                Err(e) => {
+                    let msg = Message::system(format!("❌ Failed to export session: {}", e));
+                    self.tui_bridge.chat_view().lock().unwrap().add_message(msg);
+                }
+            }
         }
 
         Ok(())

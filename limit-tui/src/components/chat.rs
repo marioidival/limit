@@ -314,15 +314,42 @@ impl ChatView {
 
     /// Append content to the last assistant message, or create a new one if none exists
     pub fn append_to_last_assistant(&mut self, content: &str) {
+        // Skip empty content - don't create new messages for empty chunks
+        if content.is_empty() {
+            debug!("append_to_last_assistant: skipping empty content");
+            return;
+        }
+
+        let last_role = self
+            .messages
+            .last()
+            .map(|m| format!("{:?}", m.role))
+            .unwrap_or_else(|| "None".to_string());
+        debug!(
+            "append_to_last_assistant: content.len()={}, messages.count()={}, last_role={}",
+            content.len(),
+            self.messages.len(),
+            last_role
+        );
+
         if let Some(last) = self.messages.last_mut() {
             if matches!(last.role, Role::Assistant) {
+                debug!(
+                    "append_to_last_assistant: appending to existing assistant message (content now {} chars)",
+                    last.content.len() + content.len()
+                );
                 last.content.push_str(content);
                 self.cache_dirty.set(true); // Invalidate cache on content change
                 self.scroll_to_bottom();
                 return;
             }
         }
+
         // No assistant message to append to, create new
+        debug!(
+            "append_to_last_assistant: creating NEW assistant message with {} chars",
+            content.len()
+        );
         self.add_message(Message::assistant(content.to_string()));
     }
 
