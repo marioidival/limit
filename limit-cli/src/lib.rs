@@ -1,5 +1,6 @@
 pub mod agent_bridge;
 pub mod clipboard;
+pub mod session_share;
 pub mod system_prompt;
 
 pub mod error;
@@ -17,5 +18,6 @@ pub use file_finder::{FileFinder, FileMatch};
 pub use logging::init_logging;
 pub use render::MarkdownRenderer;
 pub use session::SessionManager;
+pub use session_share::{ExportFormat, SessionExport, SessionShare};
 pub use syntax::SyntaxHighlighter;
 pub use tui_bridge::{TuiApp, TuiBridge, TuiState};
