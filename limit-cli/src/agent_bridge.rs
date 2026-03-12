@@ -253,6 +253,11 @@ impl AgentBridge {
                 match chunk_result {
                     Ok(ProviderResponseChunk::ContentDelta(text)) => {
                         current_content.push_str(&text);
+                        debug!(
+                            "ContentDelta: {} chars (total: {})",
+                            text.len(),
+                            current_content.len()
+                        );
                         self.send_event(AgentEvent::ContentChunk(text));
                     }
                     Ok(ProviderResponseChunk::ReasoningDelta(_)) => {
@@ -263,7 +268,12 @@ impl AgentBridge {
                         name,
                         arguments,
                     }) => {
-                        debug!("ToolCallDelta: id={}, name={}", id, name);
+                        debug!(
+                            "ToolCallDelta: id={}, name={}, args_len={}",
+                            id,
+                            name,
+                            arguments.to_string().len()
+                        );
                         // Store/merge tool call arguments
                         accumulated_calls.insert(id.clone(), (name.clone(), arguments.clone()));
                     }
@@ -306,7 +316,12 @@ impl AgentBridge {
                     },
                 })
                 .collect();
-            full_response.push_str(&current_content);
+
+            // BUG FIX: Don't accumulate content across iterations
+            // Only store content from the current iteration
+            // If there are tool calls, we'll continue the loop and the LLM will see the tool results
+            // If there are NO tool calls, this is the final response
+            full_response = current_content.clone();
 
             debug!(
                 "After iter {}: content.len()={}, tool_calls={}, response.len()={}",
@@ -318,8 +333,15 @@ impl AgentBridge {
 
             // If no tool calls, we're done
             if tool_calls.is_empty() {
+                debug!("No tool calls, breaking loop after iteration {}", iteration);
                 break;
             }
+
+            debug!(
+                "Tool calls found (count={}), continuing to iteration {}",
+                tool_calls.len(),
+                iteration + 1
+            );
 
             // Execute tool calls - add assistant message with tool_calls
             // Note: Per OpenAI API spec, when tool_calls are present, content should be null
@@ -382,7 +404,8 @@ impl AgentBridge {
         }
 
         // If we hit max iterations, make one final request to get a response (no tools = forced text)
-        if iteration >= max_iterations && !_messages.is_empty() {
+        // IMPORTANT: Only do this if max_iterations > 0 (0 means unlimited, so we never "hit" the limit)
+        if max_iterations > 0 && iteration >= max_iterations && !_messages.is_empty() {
             debug!("Making final LLM call after hitting max iterations (forcing text response)");
 
             // Add constraint message to force text response
@@ -408,6 +431,8 @@ impl AgentBridge {
                 .await
                 .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
+            // BUG FIX: Replace full_response instead of appending
+            full_response.clear();
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(ProviderResponseChunk::ContentDelta(text)) => {
@@ -423,6 +448,53 @@ impl AgentBridge {
                     }
                     _ => {}
                 }
+            }
+        }
+
+        // IMPORTANT: Add final assistant response to message history for session persistence
+        // This is crucial for session export/share to work correctly
+        // Only add if we have content AND we haven't already added this response
+        if !full_response.is_empty() {
+            // Find the last assistant message and check if it has content
+            // If it has tool_calls but no content, UPDATE it instead of adding a new one
+            // This prevents accumulation of empty assistant messages in the history
+            let last_assistant_idx = _messages.iter().rposition(|m| m.role == Role::Assistant);
+
+            if let Some(idx) = last_assistant_idx {
+                let last_assistant = &mut _messages[idx];
+
+                // If the last assistant message has no content (tool_calls only), update it
+                if last_assistant.content.is_none()
+                    || last_assistant
+                        .content
+                        .as_ref()
+                        .map(|c| c.is_empty())
+                        .unwrap_or(true)
+                {
+                    last_assistant.content = Some(full_response.clone());
+                    debug!("Updated last assistant message with final response content");
+                } else {
+                    // Last assistant already has content, this shouldn't happen normally
+                    // but we add a new message to be safe
+                    debug!("Last assistant already has content, adding new message");
+                    let final_assistant_message = Message {
+                        role: Role::Assistant,
+                        content: Some(full_response.clone()),
+                        tool_calls: None,
+                        tool_call_id: None,
+                    };
+                    _messages.push(final_assistant_message);
+                }
+            } else {
+                // No assistant message found, add a new one
+                debug!("No assistant message found, adding new message");
+                let final_assistant_message = Message {
+                    role: Role::Assistant,
+                    content: Some(full_response.clone()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                };
+                _messages.push(final_assistant_message);
             }
         }
 
