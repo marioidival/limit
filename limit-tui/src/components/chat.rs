@@ -432,16 +432,37 @@ impl ChatView {
     /// Map screen coordinates to text position for mouse selection
     /// Returns (message_idx, char_offset) if a valid position is found
     pub fn screen_to_text_pos(&self, col: u16, row: u16) -> Option<(usize, usize)> {
+        debug!(
+            "screen_to_text_pos: col={}, row={}, positions={}",
+            col,
+            row,
+            self.render_positions.borrow().len()
+        );
         for pos in self.render_positions.borrow().iter() {
+            debug!(
+                "  checking pos.screen_row={} vs row={}",
+                pos.screen_row, row
+            );
             if pos.screen_row == row {
                 // Calculate character offset within the line based on column
                 // (assumes monospace font - accurate for terminal)
                 let line_len = pos.char_end.saturating_sub(pos.char_start);
                 let char_in_line = (col as usize).min(line_len);
+                debug!(
+                    "    matched! msg_idx={}, char_offset={}",
+                    pos.message_idx,
+                    pos.char_start + char_in_line
+                );
                 return Some((pos.message_idx, pos.char_start + char_in_line));
             }
         }
+        debug!("  no match found");
         None
+    }
+
+    /// Get the number of render positions tracked (for debugging)
+    pub fn render_position_count(&self) -> usize {
+        self.render_positions.borrow().len()
     }
 
     /// Check if a byte position is within the current selection
@@ -779,8 +800,11 @@ impl ChatView {
     /// Render visible messages based on scroll offset
     /// Render visible messages based on scroll offset
     fn render_to_buffer(&self, area: Rect, buf: &mut Buffer) {
-        // Clear render position metadata for this frame
-        self.render_positions.borrow_mut().clear();
+        // Only clear render positions if content has changed (cache is dirty)
+        // This prevents clearing during mouse drag operations
+        if self.cache_dirty.get() {
+            self.render_positions.borrow_mut().clear();
+        }
 
         let total_height = self.calculate_total_height(area.width);
         let viewport_height = area.height as usize;
@@ -876,13 +900,15 @@ impl ChatView {
                 let line_char_count = line.chars().count();
 
                 // Track this line's render position for mouse selection
+                // Store absolute screen coordinates (area.y + relative y_offset)
+                // so mouse events can be matched correctly
                 if global_y >= skip_until && y_offset < area.y + area.height {
                     self.render_positions.borrow_mut().push(RenderPosition {
                         message_idx,
                         line_idx,
                         char_start: char_offset,
                         char_end: char_offset + line_char_count,
-                        screen_row: y_offset,
+                        screen_row: y_offset, // Already absolute since y_offset starts at area.y
                     });
                 }
 

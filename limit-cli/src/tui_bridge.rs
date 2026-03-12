@@ -413,6 +413,19 @@ impl TuiApp {
         let session_id = tui_bridge.session_id();
         tracing::info!("TUI started with session: {}", session_id);
 
+        let clipboard = match ClipboardManager::new() {
+            Ok(cb) => {
+                debug_log("✓ Clipboard initialized successfully");
+                tracing::info!("Clipboard initialized successfully");
+                Some(cb)
+            }
+            Err(e) => {
+                debug_log(&format!("✗ Clipboard initialization failed: {}", e));
+                tracing::warn!("Clipboard unavailable: {}", e);
+                None
+            }
+        };
+
         Ok(Self {
             tui_bridge,
             terminal,
@@ -424,9 +437,7 @@ impl TuiApp {
             cursor_blink_state: true,
             cursor_blink_timer: std::time::Instant::now(),
             mouse_selection_start: None,
-            clipboard: ClipboardManager::new()
-                .inspect_err(|e| tracing::warn!("Clipboard unavailable: {}", e))
-                .ok(),
+            clipboard,
         })
     }
 
@@ -480,61 +491,84 @@ impl TuiApp {
                 .map_err(|e| CliError::IoError(io::Error::other(e)))?
             {
                 match event::read().map_err(|e| CliError::IoError(io::Error::other(e)))? {
-                    Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        self.handle_key_event(key)?;
-                    }
-                    Event::Mouse(mouse) => match mouse.kind {
-                        MouseEventKind::Down(MouseButton::Left) => {
-                            self.mouse_selection_start = Some((mouse.column, mouse.row));
-                            // Map screen position to message/offset and start selection
-                            let chat = self.tui_bridge.chat_view().lock().unwrap();
-                            if let Some((msg_idx, char_offset)) =
-                                chat.screen_to_text_pos(mouse.column, mouse.row)
-                            {
-                                drop(chat);
-                                self.tui_bridge
-                                    .chat_view()
-                                    .lock()
-                                    .unwrap()
-                                    .start_selection(msg_idx, char_offset);
-                            } else {
-                                drop(chat);
-                                self.tui_bridge
-                                    .chat_view()
-                                    .lock()
-                                    .unwrap()
-                                    .clear_selection();
-                            }
+                    Event::Key(key) => {
+                        // Log ALL key events (not just Press) to debug modifier detection
+                        debug_log(&format!(
+                            "Event::Key - code={:?} mod={:?} kind={:?}",
+                            key.code, key.modifiers, key.kind
+                        ));
+
+                        if key.kind == KeyEventKind::Press {
+                            self.handle_key_event(key)?;
                         }
-                        MouseEventKind::Drag(MouseButton::Left) => {
-                            if self.mouse_selection_start.is_some() {
-                                // Extend selection to current position
+                    }
+                    Event::Mouse(mouse) => {
+                        match mouse.kind {
+                            MouseEventKind::Down(MouseButton::Left) => {
+                                debug_log(&format!(
+                                    "MouseDown at ({}, {})",
+                                    mouse.column, mouse.row
+                                ));
+                                self.mouse_selection_start = Some((mouse.column, mouse.row));
+                                // Map screen position to message/offset and start selection
                                 let chat = self.tui_bridge.chat_view().lock().unwrap();
+                                debug_log(&format!(
+                                    "  render_positions count: {}",
+                                    chat.render_position_count()
+                                ));
                                 if let Some((msg_idx, char_offset)) =
                                     chat.screen_to_text_pos(mouse.column, mouse.row)
                                 {
+                                    debug_log(&format!(
+                                        "  -> Starting selection at msg={}, offset={}",
+                                        msg_idx, char_offset
+                                    ));
                                     drop(chat);
                                     self.tui_bridge
                                         .chat_view()
                                         .lock()
                                         .unwrap()
-                                        .extend_selection(msg_idx, char_offset);
+                                        .start_selection(msg_idx, char_offset);
+                                } else {
+                                    debug_log("  -> No match, clearing selection");
+                                    drop(chat);
+                                    self.tui_bridge
+                                        .chat_view()
+                                        .lock()
+                                        .unwrap()
+                                        .clear_selection();
                                 }
                             }
+                            MouseEventKind::Drag(MouseButton::Left) => {
+                                if self.mouse_selection_start.is_some() {
+                                    // Extend selection to current position
+                                    let chat = self.tui_bridge.chat_view().lock().unwrap();
+                                    if let Some((msg_idx, char_offset)) =
+                                        chat.screen_to_text_pos(mouse.column, mouse.row)
+                                    {
+                                        drop(chat);
+                                        self.tui_bridge
+                                            .chat_view()
+                                            .lock()
+                                            .unwrap()
+                                            .extend_selection(msg_idx, char_offset);
+                                    }
+                                }
+                            }
+                            MouseEventKind::Up(MouseButton::Left) => {
+                                self.mouse_selection_start = None;
+                            }
+                            MouseEventKind::ScrollUp => {
+                                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                                chat.scroll_up();
+                            }
+                            MouseEventKind::ScrollDown => {
+                                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
+                                chat.scroll_down();
+                            }
+                            _ => {}
                         }
-                        MouseEventKind::Up(MouseButton::Left) => {
-                            self.mouse_selection_start = None;
-                        }
-                        MouseEventKind::ScrollUp => {
-                            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                            chat.scroll_up();
-                        }
-                        MouseEventKind::ScrollDown => {
-                            let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                            chat.scroll_down();
-                        }
-                        _ => {}
-                    },
+                    }
                     Event::Paste(pasted) => {
                         if !self.tui_bridge.is_busy() {
                             self.insert_paste(&pasted);
@@ -614,14 +648,31 @@ impl TuiApp {
 
     /// Check if the current key event is a copy/paste shortcut
     /// Returns true for Ctrl+C/V on Linux/Windows, Cmd+C/V on macOS
+    /// Note: Some macOS terminals report Cmd as CONTROL instead of SUPER
     fn is_copy_paste_modifier(&self, key: &KeyEvent, char: char) -> bool {
         #[cfg(target_os = "macos")]
         {
-            key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::SUPER)
+            // Accept both SUPER and CONTROL on macOS since terminal emulators vary
+            let has_super = key.modifiers.contains(KeyModifiers::SUPER);
+            let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+            let result = key.code == KeyCode::Char(char) && (has_super || has_ctrl);
+            debug_log(&format!("is_copy_paste_modifier('{}') macOS: code={:?}, mod={:?}, super={}, ctrl={}, result={}", 
+                char, key.code, key.modifiers, has_super, has_ctrl, result));
+            result
         }
         #[cfg(not(target_os = "macos"))]
         {
-            key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::CONTROL)
+            let result =
+                key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::CONTROL);
+            debug_log(&format!(
+                "is_copy_paste_modifier('{}') non-macOS: code={:?}, mod={:?}, ctrl={:?}, result={}",
+                char,
+                key.code,
+                key.modifiers,
+                KeyModifiers::CONTROL,
+                result
+            ));
+            result
         }
     }
 
@@ -636,75 +687,95 @@ impl TuiApp {
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), CliError> {
         // Direct file logging (always works)
         debug_log(&format!(
-            "Key: {:?} mod={:?} kind={:?}",
+            "handle_key_event: code={:?} mod={:?} kind={:?}",
             key.code, key.modifiers, key.kind
         ));
 
+        // Special log for 'c' and 'v' keys to debug copy/paste
+        if matches!(key.code, KeyCode::Char('c') | KeyCode::Char('v')) {
+            debug_log(&format!(
+                ">>> SPECIAL: '{}' key detected with modifiers: {:?} (SUPER={:?}, CONTROL={:?})",
+                if matches!(key.code, KeyCode::Char('c')) {
+                    'c'
+                } else {
+                    'v'
+                },
+                key.modifiers,
+                key.modifiers.contains(KeyModifiers::SUPER),
+                key.modifiers.contains(KeyModifiers::CONTROL)
+            ));
+        }
+
         // Copy selection to clipboard (Ctrl/Cmd+C)
         if self.is_copy_paste_modifier(&key, 'c') {
+            debug_log("✓ Copy shortcut CONFIRMED - processing...");
             let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-            if chat.has_selection() {
+            let has_selection = chat.has_selection();
+            debug_log(&format!("has_selection={}", has_selection));
+
+            if has_selection {
                 if let Some(selected) = chat.get_selected_text() {
+                    debug_log(&format!("Selected text length={}", selected.len()));
                     if !selected.is_empty() {
                         if let Some(ref clipboard) = self.clipboard {
+                            debug_log("Attempting to copy to clipboard...");
                             match clipboard.set_text(&selected) {
                                 Ok(()) => {
+                                    debug_log("✓ Clipboard copy successful");
                                     self.status_message = "Copied to clipboard".to_string();
                                     self.status_is_error = false;
                                 }
                                 Err(e) => {
+                                    debug_log(&format!("✗ Clipboard copy failed: {}", e));
                                     self.status_message = format!("Clipboard error: {}", e);
                                     self.status_is_error = true;
                                 }
                             }
                         } else {
+                            debug_log("✗ Clipboard not available (None)");
                             self.status_message = "Clipboard not available".to_string();
                             self.status_is_error = true;
                         }
+                    } else {
+                        debug_log("Selected text is empty");
                     }
                     chat.clear_selection();
+                } else {
+                    debug_log("get_selected_text() returned None");
                 }
                 return Ok(());
             }
-            // On non-macOS, fall through to Ctrl+C exit behavior
-            #[cfg(not(target_os = "macos"))]
-            {
-                // Ctrl+C with no selection will exit (handled below)
-            }
-            #[cfg(target_os = "macos")]
-            {
-                return Ok(()); // Cmd+C with no selection does nothing on macOS
-            }
+
+            // No selection - do nothing (Ctrl+C is only for copying text)
+            debug_log("Ctrl/Cmd+C with no selection - ignoring");
+            return Ok(());
         }
 
         // Paste from clipboard (Ctrl/Cmd+V)
         if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
+            debug_log("✓ Paste shortcut CONFIRMED - processing...");
             if let Some(ref clipboard) = self.clipboard {
+                debug_log("Attempting to read from clipboard...");
                 match clipboard.get_text() {
                     Ok(text) if !text.is_empty() => {
+                        debug_log(&format!("Read {} chars from clipboard", text.len()));
                         self.insert_paste(&text);
                     }
-                    Ok(_) => {} // Empty clipboard
+                    Ok(_) => {
+                        debug_log("Clipboard is empty");
+                    } // Empty clipboard
                     Err(e) => {
+                        debug_log(&format!("✗ Failed to read clipboard: {}", e));
                         self.status_message = format!("Could not read clipboard: {}", e);
                         self.status_is_error = true;
                     }
                 }
             } else {
+                debug_log("✗ Clipboard not available (None)");
                 self.status_message = "Clipboard not available".to_string();
                 self.status_is_error = true;
             }
             return Ok(());
-        }
-
-        // Allow Ctrl+C to exit anytime (only if no selection on non-macOS)
-        #[cfg(not(target_os = "macos"))]
-        {
-            if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
-                debug_log("Ctrl+C - exiting");
-                self.running = false;
-                return Ok(());
-            }
         }
 
         // Allow scrolling even when agent is busy
@@ -1356,7 +1427,7 @@ impl TuiApp {
         {
             let input_block = Block::default()
                 .borders(Borders::ALL)
-                .title(" Input (Esc to quit) ")
+                .title(" Input (Esc or /exit to quit) ")
                 .title_style(Style::default().fg(Color::Cyan));
 
             let input_inner = input_block.inner(chunks[chunk_idx]);
