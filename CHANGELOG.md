@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.23] - 2026-03-12
+
+### 🚀 Features
+
+- File autocomplete with fuzzy matching (#8)
+
+
+### 🐛 Bug Fixes
+
+- Git cliff config
+
+## [0.0.23] - 2026-03-12
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.22] - 2026-03-12
 
 ### 🚀 Features
