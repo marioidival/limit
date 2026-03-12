@@ -1,6 +1,7 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
+use crate::file_finder::FileFinder;
 use crate::session::SessionManager;
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
@@ -8,7 +9,10 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
-use limit_tui::components::{ActivityFeed, ChatView, Message, Spinner};
+use limit_tui::components::{
+    calculate_popup_area, ActivityFeed, ChatView, FileAutocompleteWidget, FileMatchData, Message,
+    Spinner,
+};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -23,6 +27,21 @@ use tokio::sync::mpsc;
 
 /// Maximum paste size to prevent memory issues (100KB)
 const MAX_PASTE_SIZE: usize = 100 * 1024;
+
+/// State for file autocomplete popup
+#[derive(Debug, Clone)]
+pub struct FileAutocompleteState {
+    /// Whether autocomplete popup is visible
+    pub is_active: bool,
+    /// Query typed after @ (e.g., "Cargo" in "@Cargo")
+    pub query: String,
+    /// Start position of @ in input_text
+    pub trigger_pos: usize,
+    /// List of matching files
+    pub matches: Vec<FileMatchData>,
+    /// Currently selected index in matches
+    pub selected_index: usize,
+}
 
 /// Debug log to file (bypasses tracing)
 fn debug_log(msg: &str) {
@@ -401,6 +420,10 @@ pub struct TuiApp {
     mouse_selection_start: Option<(u16, u16)>,
     /// Clipboard manager
     clipboard: Option<ClipboardManager>,
+    /// File autocomplete state
+    file_autocomplete: Option<FileAutocompleteState>,
+    /// File finder instance
+    file_finder: FileFinder,
 }
 
 impl TuiApp {
@@ -426,6 +449,10 @@ impl TuiApp {
             }
         };
 
+        // Initialize file finder with current directory
+        let working_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let file_finder = FileFinder::new(working_dir);
+
         Ok(Self {
             tui_bridge,
             terminal,
@@ -438,6 +465,8 @@ impl TuiApp {
             cursor_blink_timer: std::time::Instant::now(),
             mouse_selection_start: None,
             clipboard,
+            file_autocomplete: None,
+            file_finder,
         })
     }
 
@@ -801,11 +830,44 @@ impl TuiApp {
                 return Ok(());
             }
             KeyCode::Down => {
+                // If autocomplete is active, navigate matches
+                if let Some(ref mut ac) = self.file_autocomplete {
+                    if ac.is_active && ac.selected_index + 1 < ac.matches.len() {
+                        ac.selected_index += 1;
+                        return Ok(());
+                    }
+                }
+                // Otherwise scroll chat
                 let mut chat = self.tui_bridge.chat_view().lock().unwrap();
                 chat.scroll_down();
                 return Ok(());
             }
             _ => {}
+        }
+
+        // Handle autocomplete navigation
+        if let Some(ref mut ac) = self.file_autocomplete {
+            if ac.is_active {
+                match key.code {
+                    KeyCode::Up => {
+                        if ac.selected_index > 0 {
+                            ac.selected_index -= 1;
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Enter | KeyCode::Tab => {
+                        // Accept selected completion
+                        self.accept_file_completion();
+                        return Ok(());
+                    }
+                    KeyCode::Esc => {
+                        // Cancel autocomplete
+                        self.file_autocomplete = None;
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
         }
 
         // Don't accept input while agent is busy
@@ -845,19 +907,67 @@ impl TuiApp {
                 self.cursor_pos = self.input_text.len();
             }
             KeyCode::Enter => {
+                // If autocomplete is active, it's already handled above
                 self.handle_enter()?;
             }
             KeyCode::Esc => {
-                debug_log("Esc pressed, exiting");
-                self.running = false;
+                // If autocomplete is active, cancel it
+                if self.file_autocomplete.is_some() {
+                    self.file_autocomplete = None;
+                } else {
+                    debug_log("Esc pressed, exiting");
+                    self.running = false;
+                }
             }
             // Regular character input (including UTF-8)
             KeyCode::Char(c)
                 if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
             {
-                // Insert the character at cursor position
-                self.input_text.insert(self.cursor_pos, c);
-                self.cursor_pos += c.len_utf8();
+                // Check if we're triggering autocomplete with @
+                if c == '@' {
+                    // Insert @ character
+                    self.input_text.insert(self.cursor_pos, '@');
+                    self.cursor_pos += 1;
+                    
+                    // Activate autocomplete
+                    self.activate_file_autocomplete();
+                } else {
+                    // Check if autocomplete is active
+                    let is_autocomplete_active = self.file_autocomplete
+                        .as_ref()
+                        .map(|ac| ac.is_active)
+                        .unwrap_or(false);
+                    
+                    if is_autocomplete_active {
+                        // Clone query to avoid borrow issues
+                        let query = self.file_autocomplete
+                            .as_ref()
+                            .map(|ac| {
+                                let mut q = ac.query.clone();
+                                q.push(c);
+                                q
+                            })
+                            .unwrap_or_default();
+                        
+                        // Get matches
+                        let matches = self.get_file_matches(&query);
+                        
+                        // Update autocomplete state
+                        if let Some(ref mut ac) = self.file_autocomplete {
+                            ac.query.push(c);
+                            ac.matches = matches;
+                            ac.selected_index = 0;
+                        }
+                        
+                        // Also insert the character in input
+                        self.input_text.insert(self.cursor_pos, c);
+                        self.cursor_pos += c.len_utf8();
+                    } else {
+                        // Normal character insertion
+                        self.input_text.insert(self.cursor_pos, c);
+                        self.cursor_pos += c.len_utf8();
+                    }
+                }
             }
             _ => {
                 // Ignore other keys
@@ -902,6 +1012,56 @@ impl TuiApp {
             self.input_text.len(),
             self.input_text
         ));
+        
+        // If autocomplete is active, handle backspace specially
+        let should_close_autocomplete = if let Some(ref ac) = self.file_autocomplete {
+            if ac.is_active {
+                // Check if query is empty
+                ac.query.is_empty()
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        
+        if should_close_autocomplete {
+            // Need to delete the @ from input
+            if self.cursor_pos > 0 {
+                let prev_pos = self.prev_char_pos();
+                if &self.input_text[prev_pos..self.cursor_pos] == "@" {
+                    self.input_text.drain(prev_pos..self.cursor_pos);
+                    self.cursor_pos = prev_pos;
+                    self.file_autocomplete = None;
+                    return;
+                }
+            }
+        }
+        
+        // Update autocomplete query if active
+        if self.file_autocomplete
+            .as_ref()
+            .map(|ac| ac.is_active && !ac.query.is_empty())
+            .unwrap_or(false)
+        {
+            let new_query = self.file_autocomplete
+                .as_ref()
+                .map(|ac| {
+                    let mut q = ac.query.clone();
+                    q.pop();
+                    q
+                })
+                .unwrap_or_default();
+            
+            let matches = self.get_file_matches(&new_query);
+            
+            if let Some(ref mut ac) = self.file_autocomplete {
+                ac.query.pop();
+                ac.matches = matches;
+                ac.selected_index = 0;
+            }
+        }
+        
         if self.cursor_pos > 0 {
             let prev_pos = self.prev_char_pos();
             debug_log(&format!("draining {}..{}", prev_pos, self.cursor_pos));
@@ -914,6 +1074,68 @@ impl TuiApp {
         } else {
             debug_log("cursor at 0, nothing to delete");
         }
+    }
+
+    /// Activate file autocomplete
+    fn activate_file_autocomplete(&mut self) {
+        let matches = self.get_file_matches("");
+        
+        self.file_autocomplete = Some(FileAutocompleteState {
+            is_active: true,
+            query: String::new(),
+            trigger_pos: self.cursor_pos - 1, // Position of @
+            matches,
+            selected_index: 0,
+        });
+        
+        debug_log(&format!("Activated autocomplete at pos {}", self.cursor_pos - 1));
+    }
+
+    /// Get file matches for autocomplete
+    fn get_file_matches(&mut self, query: &str) -> Vec<FileMatchData> {
+        let files = self.file_finder.scan_files().clone();
+        let matches = self.file_finder.filter_files(&files, query);
+        
+        matches
+            .into_iter()
+            .map(|m| FileMatchData {
+                path: m.path.to_string_lossy().to_string(),
+                is_dir: m.is_dir,
+            })
+            .collect()
+    }
+
+    /// Accept selected file completion
+    fn accept_file_completion(&mut self) {
+        if let Some(ref ac) = self.file_autocomplete {
+            if let Some(selected) = ac.matches.get(ac.selected_index) {
+                // Replace @query with @path
+                let end_pos = self.cursor_pos;
+                
+                // Calculate how much to remove (from @ to current cursor)
+                let remove_start = ac.trigger_pos;
+                
+                // Remove the query part (keep the @)
+                self.input_text.drain(remove_start + 1..end_pos);
+                self.cursor_pos = remove_start + 1;
+                
+                // Insert the selected path
+                self.input_text.insert_str(self.cursor_pos, &selected.path);
+                self.cursor_pos += selected.path.len();
+                
+                // Add space after completion for better UX
+                self.input_text.insert(self.cursor_pos, ' ');
+                self.cursor_pos += 1;
+                
+                debug_log(&format!(
+                    "Accepted completion: {} -> input now: {:?}",
+                    selected.path, self.input_text
+                ));
+            }
+        }
+        
+        // Close autocomplete
+        self.file_autocomplete = None;
     }
 
     fn handle_enter(&mut self) -> Result<(), CliError> {
@@ -1316,6 +1538,7 @@ impl TuiApp {
         let status_is_error = self.status_is_error;
         let cursor_blink_state = self.cursor_blink_state;
         let tui_bridge = &self.tui_bridge;
+        let file_autocomplete = self.file_autocomplete.clone();
 
         self.terminal
             .draw(|f| {
@@ -1329,6 +1552,7 @@ impl TuiApp {
                     status_is_error,
                     cursor_blink_state,
                     tui_bridge,
+                    &file_autocomplete,
                 );
             })
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
@@ -1348,6 +1572,7 @@ impl TuiApp {
         status_is_error: bool,
         cursor_blink_state: bool,
         tui_bridge: &TuiBridge,
+        file_autocomplete: &Option<FileAutocompleteState>,
     ) {
         let size = f.area();
 
@@ -1473,6 +1698,21 @@ impl TuiApp {
 
             let input_para = Paragraph::new(input_line).wrap(Wrap { trim: false });
             f.render_widget(input_para, input_inner);
+        }
+
+        // Draw file autocomplete popup if active
+        if let Some(ref ac) = file_autocomplete {
+            if ac.is_active && !ac.matches.is_empty() {
+                // Find the input area chunk (it's the last one)
+                let input_area = chunks.last().unwrap();
+                
+                // Calculate popup area above input
+                let popup_area = calculate_popup_area(*input_area, ac.matches.len());
+                
+                // Create and render the autocomplete widget
+                let widget = FileAutocompleteWidget::new(&ac.matches, ac.selected_index, &ac.query);
+                f.render_widget(widget, popup_area);
+            }
         }
     }
 }

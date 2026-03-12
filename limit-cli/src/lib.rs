@@ -3,6 +3,7 @@ pub mod clipboard;
 pub mod system_prompt;
 
 pub mod error;
+pub mod file_finder;
 pub mod logging;
 pub mod render;
 pub mod session;
@@ -12,6 +13,7 @@ pub mod tui_bridge;
 
 pub use agent_bridge::{AgentBridge, AgentEvent};
 pub use error::CliError;
+pub use file_finder::{FileFinder, FileMatch};
 pub use logging::init_logging;
 pub use render::MarkdownRenderer;
 pub use session::SessionManager;

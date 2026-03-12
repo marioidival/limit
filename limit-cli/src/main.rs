@@ -1,18 +1,5 @@
-mod agent_bridge;
-mod clipboard;
-mod system_prompt;
-
-mod error;
-mod logging;
-mod render;
-mod repl;
-mod session;
-mod syntax;
-mod tools;
-mod tui_bridge;
-
 use clap::Parser;
-use error::CliError;
+use limit_cli::CliError;
 
 #[derive(Parser)]
 #[command(name = "limit", about = "AI-powered code agent with TUI", version)]
@@ -35,13 +22,13 @@ fn main() {
 }
 
 fn run_repl() -> Result<(), CliError> {
-    repl::Repl::new().and_then(|mut r| r.run())
+    // For now, just error - REPL is not the main focus
+    Err(CliError::ConfigError("REPL mode not yet implemented in this version".to_string()))
 }
 
 fn run_tui() -> Result<(), CliError> {
-    use agent_bridge::AgentBridge;
+    use limit_cli::{AgentBridge, TuiApp, TuiBridge};
     use tokio::sync::mpsc;
-    use tui_bridge::{TuiApp, TuiBridge};
 
     let config = limit_llm::Config::load().map_err(|e| CliError::ConfigError(e.to_string()))?;
 
