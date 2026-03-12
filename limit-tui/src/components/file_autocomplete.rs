@@ -39,26 +39,26 @@ impl<'a> FileAutocompleteWidget<'a> {
     fn highlight_match(&self, path: &str) -> Vec<Span<'static>> {
         let query_lower = self.query.to_lowercase();
         let path_lower = path.to_lowercase();
-        
+
         if self.query.is_empty() {
             return vec![Span::raw(path.to_string())];
         }
 
         let mut spans = Vec::new();
         let mut last_end = 0;
-        
+
         // Find all matches
         let mut pos = 0;
         while pos < path.len() {
             if let Some(start) = path_lower[pos..].find(&query_lower) {
                 let abs_start = pos + start;
                 let abs_end = abs_start + self.query.len();
-                
+
                 // Add text before match
                 if abs_start > last_end {
                     spans.push(Span::raw(path[last_end..abs_start].to_string()));
                 }
-                
+
                 // Add matched text with highlight
                 spans.push(Span::styled(
                     path[abs_start..abs_end.min(path.len())].to_string(),
@@ -66,19 +66,19 @@ impl<'a> FileAutocompleteWidget<'a> {
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
                 ));
-                
+
                 last_end = abs_end.min(path.len());
                 pos = abs_end;
             } else {
                 break;
             }
         }
-        
+
         // Add remaining text
         if last_end < path.len() {
             spans.push(Span::raw(path[last_end..].to_string()));
         }
-        
+
         spans
     }
 }
@@ -91,22 +91,24 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
 
         // Draw border
         let border_style = Style::default().fg(Color::Cyan);
-        
+
         // Top border
         if area.height > 0 {
-            let top_line = Line::default()
-                .spans(vec![
-                    Span::styled("┌", border_style),
-                    Span::styled("─".repeat(area.width.saturating_sub(2) as usize), border_style),
-                    Span::styled("┐", border_style),
-                ]);
+            let top_line = Line::default().spans(vec![
+                Span::styled("┌", border_style),
+                Span::styled(
+                    "─".repeat(area.width.saturating_sub(2) as usize),
+                    border_style,
+                ),
+                Span::styled("┐", border_style),
+            ]);
             top_line.render(area, buf);
         }
 
         // Draw each match
         let max_items = (area.height.saturating_sub(2)) as usize; // -2 for borders
         let items_to_show = self.matches.len().min(max_items);
-        
+
         for (i, file_match) in self.matches.iter().take(items_to_show).enumerate() {
             let y = area.y + 1 + i as u16;
             if y >= area.y + area.height - 1 {
@@ -121,10 +123,8 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
             };
 
             // Build the line with selection indicator and path
-            let mut spans = vec![
-                Span::styled("│", border_style),
-            ];
-            
+            let mut spans = vec![Span::styled("│", border_style)];
+
             if is_selected {
                 spans.push(Span::styled(
                     "► ",
@@ -133,11 +133,11 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
             } else {
                 spans.push(Span::styled("  ", Style::default().bg(bg_color)));
             }
-            
+
             // Add highlighted path
             let mut path_spans = self.highlight_match(&file_match.path);
             spans.append(&mut path_spans);
-            
+
             // Add directory indicator
             if file_match.is_dir {
                 spans.push(Span::styled(
@@ -145,18 +145,21 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
                     Style::default().fg(Color::Blue).bg(bg_color),
                 ));
             }
-            
+
             // Calculate remaining space for padding
             let used_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-            let padding = area.width.saturating_sub(used_width as u16).saturating_sub(1);
-            
+            let padding = area
+                .width
+                .saturating_sub(used_width as u16)
+                .saturating_sub(1);
+
             spans.push(Span::styled(
                 " ".repeat(padding as usize),
                 Style::default().bg(bg_color),
             ));
-            
+
             spans.push(Span::styled("│", border_style));
-            
+
             let line = Line::default().spans(spans);
             line.render(
                 Rect {
@@ -172,12 +175,14 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
         // Bottom border
         if area.height > 1 {
             let bottom_y = area.y + area.height - 1;
-            let bottom_line = Line::default()
-                .spans(vec![
-                    Span::styled("└", border_style),
-                    Span::styled("─".repeat(area.width.saturating_sub(2) as usize), border_style),
-                    Span::styled("┘", border_style),
-                ]);
+            let bottom_line = Line::default().spans(vec![
+                Span::styled("└", border_style),
+                Span::styled(
+                    "─".repeat(area.width.saturating_sub(2) as usize),
+                    border_style,
+                ),
+                Span::styled("┘", border_style),
+            ]);
             bottom_line.render(
                 Rect {
                     x: area.x,
@@ -195,7 +200,7 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
 pub fn calculate_popup_area(input_area: Rect, match_count: usize) -> Rect {
     let max_height = 10;
     let height = (match_count + 2).min(max_height as usize) as u16; // +2 for borders
-    
+
     Rect {
         x: input_area.x,
         y: input_area.y.saturating_sub(height),
@@ -216,7 +221,7 @@ mod tests {
         }];
         let widget = FileAutocompleteWidget::new(&matches, 0, "Cargo");
         let spans = widget.highlight_match("Cargo.toml");
-        
+
         assert!(!spans.is_empty());
     }
 
@@ -228,7 +233,7 @@ mod tests {
         }];
         let widget = FileAutocompleteWidget::new(&matches, 0, "");
         let spans = widget.highlight_match("Cargo.toml");
-        
+
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content, "Cargo.toml");
     }
@@ -237,7 +242,7 @@ mod tests {
     fn test_calculate_popup_area() {
         let input_area = Rect::new(0, 20, 80, 3);
         let popup = calculate_popup_area(input_area, 5);
-        
+
         assert_eq!(popup.height, 7); // 5 + 2 borders
         assert_eq!(popup.y, 13); // 20 - 7
     }

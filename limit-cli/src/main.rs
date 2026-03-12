@@ -23,7 +23,9 @@ fn main() {
 
 fn run_repl() -> Result<(), CliError> {
     // For now, just error - REPL is not the main focus
-    Err(CliError::ConfigError("REPL mode not yet implemented in this version".to_string()))
+    Err(CliError::ConfigError(
+        "REPL mode not yet implemented in this version".to_string(),
+    ))
 }
 
 fn run_tui() -> Result<(), CliError> {

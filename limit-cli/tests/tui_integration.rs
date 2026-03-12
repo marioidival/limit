@@ -462,7 +462,6 @@ fn test_tui_bridge_from_string_config() {
 fn test_file_autocomplete_integration() {
     // Test that file autocomplete can be triggered and returns results
     use limit_cli::file_finder::FileFinder;
-    use std::path::PathBuf;
 
     // Create a file finder for current directory
     let working_dir = std::env::current_dir().unwrap();
@@ -478,7 +477,9 @@ fn test_file_autocomplete_integration() {
 
     // Verify Cargo.toml is in results
     assert!(
-        matches.iter().any(|m| m.path.to_string_lossy() == "Cargo.toml"),
+        matches
+            .iter()
+            .any(|m| m.path.to_string_lossy() == "Cargo.toml"),
         "Should find Cargo.toml"
     );
 
