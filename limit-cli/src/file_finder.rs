@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use walkdir::WalkDir;
+use ignore::WalkBuilder;
 
 /// Represents a matched file with fuzzy score
 #[derive(Debug, Clone)]
@@ -14,11 +14,10 @@ pub struct FileMatch {
 }
 
 /// File finder with fuzzy matching and caching
+/// Uses the `ignore` crate from ripgrep to automatically respect .gitignore
 pub struct FileFinder {
     /// Working directory for file scanning
     working_dir: PathBuf,
-    /// Ignore patterns (from .gitignore, etc.)
-    ignore_patterns: Vec<glob::Pattern>,
     /// Cached file list
     cached_files: Vec<PathBuf>,
     /// Last scan timestamp
@@ -31,12 +30,10 @@ pub struct FileFinder {
 
 impl FileFinder {
     /// Create a new FileFinder for the given working directory
+    /// Automatically respects .gitignore, .ignore, and other standard ignore files
     pub fn new(working_dir: PathBuf) -> Self {
-        let ignore_patterns = Self::load_ignore_patterns(&working_dir);
-        
         Self {
             working_dir,
-            ignore_patterns,
             cached_files: Vec::new(),
             last_scan: None,
             cache_ttl: Duration::from_secs(5),
@@ -44,56 +41,8 @@ impl FileFinder {
         }
     }
 
-    /// Load ignore patterns from .gitignore, .ignore, etc.
-    fn load_ignore_patterns(dir: &Path) -> Vec<glob::Pattern> {
-        let mut patterns = Vec::new();
-        
-        // Default ignore patterns
-        let default_ignores = vec![
-            "target",
-            ".git",
-            "node_modules",
-            "*.lock",
-            ".DS_Store",
-            "dist",
-            "build",
-        ];
-        
-        for pattern in default_ignores {
-            if let Ok(p) = glob::Pattern::new(pattern) {
-                patterns.push(p);
-            }
-        }
-        
-        // Load .gitignore
-        if let Ok(content) = std::fs::read_to_string(dir.join(".gitignore")) {
-            for line in content.lines() {
-                let line = line.trim();
-                if !line.is_empty() && !line.starts_with('#') {
-                    if let Ok(pattern) = glob::Pattern::new(line) {
-                        patterns.push(pattern);
-                    }
-                }
-            }
-        }
-        
-        patterns
-    }
-
-    /// Check if a path should be ignored
-    fn should_ignore(&self, path: &Path) -> bool {
-        let path_str = path.to_string_lossy();
-        
-        for pattern in &self.ignore_patterns {
-            if pattern.matches(&path_str) {
-                return true;
-            }
-        }
-        
-        false
-    }
-
     /// Scan directory and return all files (relative paths)
+    /// The `ignore` crate automatically handles .gitignore, .ignore, etc.
     pub fn scan_files(&mut self) -> &Vec<PathBuf> {
         // Check cache
         if let Some(last_scan) = self.last_scan {
@@ -105,27 +54,33 @@ impl FileFinder {
         // Rescan
         self.cached_files.clear();
         
-        for entry in WalkDir::new(&self.working_dir)
-            .max_depth(self.max_depth)
-            .into_iter()
-            .filter_map(|e| e.ok())
+        // Use ignore crate's WalkBuilder which respects .gitignore automatically
+        for result in WalkBuilder::new(&self.working_dir)
+            .max_depth(Some(self.max_depth))
+            .hidden(true)              // Skip hidden files
+            .git_ignore(true)          // Respect .gitignore
+            .git_global(true)          // Respect global gitignore
+            .git_exclude(true)         // Respect .git/info/exclude
+            .ignore(true)              // Respect .ignore files
+            .build()
         {
-            let path = entry.path();
-            
-            // Get relative path
-            if let Ok(rel_path) = path.strip_prefix(&self.working_dir) {
-                // Skip ignored patterns
-                if self.should_ignore(rel_path) {
-                    continue;
+            match result {
+                Ok(entry) => {
+                    let path = entry.path();
+                    
+                    // Get relative path
+                    if let Ok(rel_path) = path.strip_prefix(&self.working_dir) {
+                        // Skip the root directory itself (empty path)
+                        if rel_path.as_os_str().is_empty() {
+                            continue;
+                        }
+                        
+                        self.cached_files.push(rel_path.to_path_buf());
+                    }
                 }
-                
-                // Skip hidden files/dirs (except .gitignore is already handled)
-                let path_str = rel_path.to_string_lossy();
-                if path_str.starts_with('.') && !path_str.contains('/') {
-                    continue;
+                Err(err) => {
+                    tracing::debug!("Error scanning directory: {}", err);
                 }
-                
-                self.cached_files.push(rel_path.to_path_buf());
             }
         }
         
@@ -207,6 +162,12 @@ mod tests {
         
         // Should find Cargo.toml in current directory
         assert!(files.iter().any(|p| p.to_string_lossy() == "Cargo.toml"));
+        
+        // Should NOT include .git directory (respects .gitignore)
+        assert!(!files.iter().any(|p| p.to_string_lossy().starts_with(".git/")));
+        
+        // Should NOT include target directory (respects .gitignore)
+        assert!(!files.iter().any(|p| p.to_string_lossy().starts_with("target/")));
     }
 
     #[test]
@@ -239,5 +200,24 @@ mod tests {
         // Should have rescanned
         let files3 = finder.scan_files().clone();
         assert!(!files3.is_empty());
+    }
+
+    #[test]
+    fn test_gitignore_respected() {
+        let dir = std::env::current_dir().unwrap();
+        let mut finder = FileFinder::new(dir);
+        let files = finder.scan_files();
+        
+        // These directories should be excluded by .gitignore
+        let file_paths: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        
+        // Check that common ignored patterns are not present
+        for path in &file_paths {
+            assert!(!path.starts_with("target/"), "Found target/ in results: {}", path);
+            assert!(!path.starts_with(".git/"), "Found .git/ in results: {}", path);
+        }
     }
 }
