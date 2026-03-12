@@ -3,6 +3,27 @@
 **Data:** 2025-03-11  
 **Objetivo:** Implementar autocomplete de arquivos quando o usuário digita `@` no input, similar ao GitHub Copilot/Cursor
 
+---
+
+## ✅ Status: FASE 1, 2 e 3 COMPLETAS
+
+**Branch:** `feature/file-autocomplete`  
+**Commits:** 2 (implementação inicial + refactor com crate ignore)
+
+### Implementado:
+- ✅ Backend completo com FileFinder
+- ✅ Integração com .gitignore via crate `ignore` do ripgrep
+- ✅ Estado de autocomplete no TuiApp
+- ✅ UI com popup e highlight
+- ✅ Navegação completa (↑/↓/Enter/Tab/Esc)
+- ✅ Testes unitários passando
+
+### Pendente:
+- ⏳ FASE 4: Features avançadas (paths relativos, múltiplos arquivos)
+- ⏳ FASE 5: Testes de integração e documentação
+
+---
+
 ## Visão Geral
 
 Quando o usuário digita `@` no campo de input do TUI, o sistema deve:
@@ -406,34 +427,36 @@ fn test_complete_file_flow() {
 
 ## Checklist de Implementação
 
-- [ ] **FASE 1: Backend**
-  - [ ] Adicionar dependências (frizbee, walkdir, glob)
-  - [ ] Criar `FileFinder` com scan de diretórios
-  - [ ] Implementar fuzzy matching com Frizbee
-  - [ ] Suporte a .gitignore/.ignore
-  - [ ] Cache de arquivos com TTL
+- [x] **FASE 1: Backend**
+  - [x] Adicionar dependências (frizbee, ignore)
+  - [x] Criar `FileFinder` com scan de diretórios
+  - [x] Implementar fuzzy matching com substring (Frizbee disponível, mas não utilizado ainda)
+  - [x] Suporte a .gitignore/.ignore (via crate `ignore` do ripgrep)
+  - [x] Cache de arquivos com TTL (5 segundos)
 
-- [ ] **FASE 2: Estado**
-  - [ ] Adicionar `FileAutocompleteState` ao `TuiApp`
-  - [ ] Detectar `@` como trigger
-  - [ ] Implementar navegação (↑/↓/Enter/Tab/Esc)
-  - [ ] Inserir arquivo selecionado no input
+- [x] **FASE 2: Estado**
+  - [x] Adicionar `FileAutocompleteState` ao `TuiApp`
+  - [x] Detectar `@` como trigger
+  - [x] Implementar navegação (↑/↓/Enter/Tab/Esc)
+  - [x] Inserir arquivo selecionado no input
+  - [x] Suporte a backspace para modificar query
 
-- [ ] **FASE 3: UI**
-  - [ ] Criar `FileAutocompleteWidget`
-  - [ ] Renderizar popup sobre input
-  - [ ] Highlight do query nos matches
-  - [ ] Indicador visual de seleção
-  - [ ] Scroll para listas longas
+- [x] **FASE 3: UI**
+  - [x] Criar `FileAutocompleteWidget`
+  - [x] Renderizar popup sobre input
+  - [x] Highlight do query nos matches
+  - [x] Indicador visual de seleção (►)
+  - [x] Limite de 20 resultados com scroll implícito
 
-- [ ] **FASE 4: Features**
+- [ ] **FASE 4: Features Avançadas**
   - [ ] Paths relativos (../, ./)
   - [ ] Múltiplos arquivos (@file1 @file2)
   - [ ] Diretórios com trailing /
   - [ ] Preview de arquivo (opcional)
+  - [ ] Fuzzy matching com Frizbee (atualmente substring simples)
 
 - [ ] **FASE 5: Testes & Docs**
-  - [ ] Unit tests para FileFinder
+  - [x] Unit tests para FileFinder (4 testes passando)
   - [ ] Integration tests para TUI
   - [ ] Atualizar README
   - [ ] Documentar no DEVELOPMENT_GUIDE.md
