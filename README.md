@@ -57,6 +57,7 @@ That's it! Start chatting with your AI coding assistant.
 - **LSP Integration** — Go-to-definition, find-references
 - **AST-Aware Search** — Code search that understands syntax (Rust, TypeScript, Python)
 - **Markdown Rendering** — Rich formatting with syntax-highlighted code blocks
+- **File Autocomplete** — Type `@` in TUI to quickly reference files with fuzzy matching
 
 ---
 
@@ -73,6 +74,7 @@ That's it! Start chatting with your AI coding assistant.
 | Open source | ✅ | ✅ | ❌ | ❌ |
 | AST-aware search | ✅ | ❌ | ✅ | ❌ |
 | LSP integration | ✅ | ❌ | ✅ | ✅ |
+| File autocomplete | ✅ | ❌ | ✅ | ✅ |
 
 **Perfect for:**
 - 🖥️ Developers who live in the terminal
@@ -234,6 +236,38 @@ This file contains the main entry point for the CLI application...
 | `/session list` | List all saved sessions |
 | `/session new` | Create a new session |
 | `/session load <id>` | Load a specific session by ID |
+
+---
+
+## File Autocomplete (TUI)
+
+When using the TUI mode, you can quickly reference files in your project by typing `@` followed by the filename:
+
+```
+Read @Cargo.toml and analyze the dependencies
+```
+
+**Features:**
+- **Fuzzy Matching** — Powered by Frizbee for fast, typo-tolerant search
+- **Smart Filtering** — Automatically respects `.gitignore` and `.ignore` files
+- **Keyboard Navigation** — Use ↑/↓ to navigate, Enter/Tab to select, Esc to cancel
+- **Visual Highlighting** — Matching characters are highlighted in yellow
+- **Cached Results** — File list is cached for 5 seconds for better performance
+
+**Example:**
+```
+Input: Analyze @src/main
+
+[Popup appears showing:]
+┌─────────────────────────────┐
+│ ► src/main.rs               │  ← selected
+│   src/main_test.rs          │
+│   src/bin/main.rs           │
+└─────────────────────────────┘
+
+[After Enter:]
+Input: Analyze @src/main.rs and explain
+```
 
 ---
 

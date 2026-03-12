@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use ignore::WalkBuilder;
+use frizbee::Config as FrizbeeConfig;
 
 /// Represents a matched file with fuzzy score
 #[derive(Debug, Clone)]
@@ -91,7 +92,7 @@ impl FileFinder {
         &self.cached_files
     }
 
-    /// Filter files by query using fuzzy matching
+    /// Filter files by query using fuzzy matching with frizbee
     pub fn filter_files(&self, files: &[PathBuf], query: &str) -> Vec<FileMatch> {
         if query.is_empty() {
             // Return first 20 files if no query
@@ -106,31 +107,43 @@ impl FileFinder {
                 .collect();
         }
 
-        let query_lower = query.to_lowercase();
-        let mut matches: Vec<FileMatch> = Vec::new();
+        // Use frizbee for fuzzy matching
+        // Convert paths to strings first (owned)
+        let haystacks: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
 
-        for path in files {
-            let path_str = path.to_string_lossy().to_string();
-            let path_lower = path_str.to_lowercase();
-            
-            // Use simple substring matching for now (frizbee will be added later)
-            if path_lower.contains(&query_lower) {
-                // Calculate simple score based on position
-                let score = if path_lower.starts_with(&query_lower) {
-                    1000 - path_str.len() as i64  // Prefer shorter paths at start
+        // Create a slice of &str for frizbee
+        let haystack_refs: Vec<&str> = haystacks.iter().map(|s| s.as_str()).collect();
+
+        // Configure frizbee for fuzzy matching
+        let config = FrizbeeConfig::default();
+        
+        // Match files against query
+        let fuzzy_matches = frizbee::match_list(query, &haystack_refs, &config);
+
+        // Convert frizbee matches to our FileMatch type
+        let mut matches: Vec<FileMatch> = fuzzy_matches
+            .into_iter()
+            .filter_map(|m| {
+                // frizbee returns Match with index, score, and exact
+                if (m.index as usize) < files.len() {
+                    let path = files[m.index as usize].clone();
+                    let path_str = haystacks[m.index as usize].clone();
+                    
+                    Some(FileMatch {
+                        path,
+                        is_dir: path_str.ends_with('/'),
+                        score: m.score as i64,
+                    })
                 } else {
-                    500 - (path_lower.find(&query_lower).unwrap_or(999) as i64)
-                };
-                
-                matches.push(FileMatch {
-                    path: path.clone(),
-                    is_dir: path_str.ends_with('/'),
-                    score,
-                });
-            }
-        }
+                    None
+                }
+            })
+            .collect();
 
-        // Sort by score (descending)
+        // Sort by score (descending) - frizbee returns higher scores for better matches
         matches.sort_by(|a, b| b.score.cmp(&a.score));
         
         // Limit to 20 results

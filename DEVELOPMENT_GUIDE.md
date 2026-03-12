@@ -291,6 +291,35 @@ match provider_name {
 
 ---
 
+## TUI Features
+
+### File Autocomplete
+
+The TUI includes a file autocomplete feature triggered by typing `@` in the input field. This is implemented in:
+
+**Backend (`limit-cli/src/file_finder.rs`):**
+- `FileFinder` — Scans project directory with `.gitignore` support
+- Uses `ignore` crate from ripgrep for smart filtering
+- Caches file list for 5 seconds (TTL configurable)
+- Fuzzy matching powered by `frizbee` crate
+
+**Frontend (`limit-tui/src/components/file_autocomplete.rs`):**
+- `FileAutocompleteWidget` — Renders popup with file suggestions
+- `FileMatchData` — Data structure for file matches
+- `calculate_popup_area` — Positions popup above input
+
+**Integration (`limit-cli/src/tui_bridge.rs`):**
+- `FileAutocompleteState` — Tracks autocomplete state in `TuiApp`
+- Handles keyboard navigation (↑/↓/Enter/Tab/Esc)
+- Inserts selected path into input field
+
+**Testing:**
+- Unit tests: `limit-cli/src/file_finder.rs` (4 tests)
+- Unit tests: `limit-tui/src/components/file_autocomplete.rs` (3 tests)
+- Integration test: `limit-cli/tests/tui_integration.rs::test_file_autocomplete_integration`
+
+---
+
 ## Debugging
 
 ### Enable Debug Logging
