@@ -133,7 +133,7 @@ provider = "anthropic"
 [providers.anthropic]
 # api_key is optional - falls back to ANTHROPIC_API_KEY env var
 api_key = "sk-ant-api03-..."
-model = "claude-3-5-sonnet-20241022"
+model = "claude-sonnet-4-6-20260217"  # or "claude-opus-4-6-20260205" for most capable
 max_tokens = 4096
 timeout = 60
 # Optional: Custom API endpoint
@@ -148,7 +148,7 @@ provider = "openai"
 [providers.openai]
 # api_key is optional - falls back to OPENAI_API_KEY or ZAI_API_KEY env var
 api_key = "sk-..."
-model = "gpt-4"
+model = "gpt-5.4"  # or "gpt-4" for legacy
 max_tokens = 4096
 timeout = 60
 # base_url = "http://localhost:8080/v1/chat/completions"
@@ -163,7 +163,7 @@ provider = "zai"
 [providers.zai]
 # api_key is optional - falls back to ZAI_API_KEY env var
 api_key = "..."
-model = "glm-4.7"
+model = "glm-5"  # 744B parameters, 200K context, best open-weights model
 max_tokens = 4096
 timeout = 60
 # Optional: Enable thinking mode for complex reasoning tasks
@@ -177,7 +177,7 @@ timeout = 60
 provider = "local"  # or "ollama", "lmstudio", "vllm"
 
 [providers.local]
-model = "llama3.2"
+model = "llama3.3"  # or "qwen2.5", "deepseek-r1", "mistral"
 base_url = "http://localhost:11434/v1/chat/completions"
 # api_key not required for local servers
 max_tokens = 4096
@@ -304,8 +304,8 @@ See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
 ### Configuration Guides
 - [Configuration Overview](docs/CONFIGURATION.md) - All configuration options in one place
 - [Anthropic Claude Setup](docs/CLAUDE_SETUP.md) - Detailed guide for Claude setup
-- [OpenAI Setup](docs/OPENAI_SETUP.md) - Detailed guide for GPT-4/GPT-3.5 setup
-- [z.ai Setup](docs/ZAI_SETUP.md) - Detailed guide for z.ai (GLM-4) setup
+- [OpenAI Setup](docs/OPENAI_SETUP.md) - Detailed guide for GPT-5.4 setup
+- [z.ai Setup](docs/ZAI_SETUP.md) - Detailed guide for z.ai (GLM-5) setup
 - [Local LLM Providers](docs/LOCAL_PROVIDERS.md) - Ollama, LM Studio, vLLM, and custom servers
 
 ---
