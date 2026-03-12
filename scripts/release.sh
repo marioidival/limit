@@ -236,12 +236,14 @@ generate_changelog() {
 
     log_info "Gerando CHANGELOG.md..."
 
-    # Verifica se git-cliff config existe
-    if [ ! -f ".cliff.toml" ] && [ ! -f "cliff.toml" ]; then
+    # Verifica qual config do git-cliff usar
+    if [ -f ".cliff.toml" ]; then
+        local cliff_config="--config .cliff.toml"
+    elif [ -f "cliff.toml" ]; then
+        local cliff_config="--config cliff.toml"
+    else
         log_warn "Config do git-cliff não encontrada, usando configuração padrão"
         local cliff_config=""
-    else
-        local cliff_config="--config .cliff.toml"
     fi
 
     # Cria header temporário
