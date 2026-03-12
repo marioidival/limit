@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.22] - 2026-03-12
+
+### 🚀 Features
+
+- *(cli)* Add --version flag support
+
+### 🐛 Bug Fixes
+
+- *(tui)* Correct scroll behavior when pinned to bottom
+- *(tui)* Resolve chat view scroll asymmetry issue
+- *(tui)* Improve clipboard and mouse selection handling
+- Script release
+
+### 📚 Documentation
+
+- Update LLM models to latest 2026 versions
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Bump version to v0.0.21
+- Bump version to 0.0.21
+- Add folder to gitignore
+
+## [0.0.22] - 2026-03-11
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.21] - 2026-03-11
 
 ### 🚀 Features
