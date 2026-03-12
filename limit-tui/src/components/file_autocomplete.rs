@@ -105,17 +105,27 @@ impl<'a> Widget for FileAutocompleteWidget<'a> {
             top_line.render(area, buf);
         }
 
-        // Draw each match
+        // Draw each match with scroll support
         let max_items = (area.height.saturating_sub(2)) as usize; // -2 for borders
-        let items_to_show = self.matches.len().min(max_items);
 
-        for (i, file_match) in self.matches.iter().take(items_to_show).enumerate() {
-            let y = area.y + 1 + i as u16;
+        // Calculate scroll offset to keep selected item visible
+        let scroll_offset = if self.selected_index >= max_items {
+            self.selected_index - max_items + 1
+        } else {
+            0
+        };
+
+        let items_to_show = self.matches.len().min(max_items);
+        let end_index = (scroll_offset + items_to_show).min(self.matches.len());
+
+        for (display_idx, file_match) in self.matches[scroll_offset..end_index].iter().enumerate() {
+            let actual_idx = scroll_offset + display_idx;
+            let y = area.y + 1 + display_idx as u16;
             if y >= area.y + area.height - 1 {
                 break;
             }
 
-            let is_selected = i == self.selected_index;
+            let is_selected = actual_idx == self.selected_index;
             let bg_color = if is_selected {
                 Color::DarkGray
             } else {

@@ -807,6 +807,37 @@ impl TuiApp {
             return Ok(());
         }
 
+        // Handle autocomplete navigation FIRST (before general scrolling)
+        if let Some(ref mut ac) = self.file_autocomplete {
+            if ac.is_active {
+                match key.code {
+                    KeyCode::Up => {
+                        if ac.selected_index > 0 {
+                            ac.selected_index -= 1;
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Down => {
+                        if ac.selected_index + 1 < ac.matches.len() {
+                            ac.selected_index += 1;
+                        }
+                        return Ok(());
+                    }
+                    KeyCode::Enter | KeyCode::Tab => {
+                        // Accept selected completion
+                        self.accept_file_completion();
+                        return Ok(());
+                    }
+                    KeyCode::Esc => {
+                        // Cancel autocomplete
+                        self.file_autocomplete = None;
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Allow scrolling even when agent is busy
         // Calculate actual viewport height dynamically
         let term_height = self.terminal.size().map(|s| s.height).unwrap_or(24);
@@ -830,44 +861,12 @@ impl TuiApp {
                 return Ok(());
             }
             KeyCode::Down => {
-                // If autocomplete is active, navigate matches
-                if let Some(ref mut ac) = self.file_autocomplete {
-                    if ac.is_active && ac.selected_index + 1 < ac.matches.len() {
-                        ac.selected_index += 1;
-                        return Ok(());
-                    }
-                }
                 // Otherwise scroll chat
                 let mut chat = self.tui_bridge.chat_view().lock().unwrap();
                 chat.scroll_down();
                 return Ok(());
             }
             _ => {}
-        }
-
-        // Handle autocomplete navigation
-        if let Some(ref mut ac) = self.file_autocomplete {
-            if ac.is_active {
-                match key.code {
-                    KeyCode::Up => {
-                        if ac.selected_index > 0 {
-                            ac.selected_index -= 1;
-                        }
-                        return Ok(());
-                    }
-                    KeyCode::Enter | KeyCode::Tab => {
-                        // Accept selected completion
-                        self.accept_file_completion();
-                        return Ok(());
-                    }
-                    KeyCode::Esc => {
-                        // Cancel autocomplete
-                        self.file_autocomplete = None;
-                        return Ok(());
-                    }
-                    _ => {}
-                }
-            }
         }
 
         // Don't accept input while agent is busy
