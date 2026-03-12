@@ -236,6 +236,9 @@ This file contains the main entry point for the CLI application...
 | `/session list` | List all saved sessions |
 | `/session new` | Create a new session |
 | `/session load <id>` | Load a specific session by ID |
+| `/share` | Copy session to clipboard (markdown) |
+| `/share md` | Export session as markdown file |
+| `/share json` | Export session as JSON file |
 
 ---
 
