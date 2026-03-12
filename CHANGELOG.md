@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.24] - 2026-03-12
+
+### 🚀 Features
+
+- Add session share/export with /share command
+
+
+### 🐛 Bug Fixes
+
+- Correct content accumulation and message persistence in agent loop
+
+- Prevent race conditions and clear chat on new session
+
+
+### 📚 Documentation
+
+- Add /share command documentation
+
+## [0.0.24] - 2026-03-12
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.23] - 2026-03-12
 
 ### 🚀 Features
