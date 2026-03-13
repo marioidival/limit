@@ -3,52 +3,30 @@
 //! Handles keyboard events, mouse events, and delegates to appropriate handlers.
 
 use crate::error::CliError;
-use crate::tui::MAX_PASTE_SIZE;
-use crossterm::event::{
-    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::time::Instant;
 
 /// Actions that can result from input handling
 #[derive(Debug, Clone, PartialEq)]
 pub enum InputAction {
-    /// No action taken
     None,
-    /// Submit input text
     Submit(String),
-    /// Exit the application
     Exit,
-    /// Cancel current operation
     Cancel,
-    /// Scroll up in chat
     ScrollUp,
-    /// Scroll down in chat
     ScrollDown,
-    /// Scroll up one page
     PageUp,
-    /// Scroll down one page
     PageDown,
-    /// Start file autocomplete
     StartAutocomplete,
-    /// Update autocomplete query
     UpdateAutocomplete(char),
-    /// Navigate autocomplete up
     AutocompleteUp,
-    /// Navigate autocomplete down
     AutocompleteDown,
-    /// Accept autocomplete selection
     AutocompleteAccept,
-    /// Cancel autocomplete
     AutocompleteCancel,
-    /// Copy selection to clipboard
     CopySelection,
-    /// Paste from clipboard
     Paste,
-    /// Show help message
     ShowHelp,
-    /// Clear chat
     ClearChat,
-    /// Handle command
     HandleCommand(String),
 }
 
@@ -81,20 +59,13 @@ impl InputHandler {
         is_busy: bool,
         has_autocomplete: bool,
     ) -> Result<InputAction, CliError> {
-        // Log key event for debugging
-        tracing::trace!(
-            "handle_key: code={:?} mod={:?} kind={:?}",
-            key.code,
-            key.modifiers,
-            key.kind
-        );
+        tracing::trace!("handle_key: code={:?} mod={:?} kind={:?}", key.code, key.modifiers, key.kind);
 
-        // Only process Press events (not Release)
         if key.kind != KeyEventKind::Press {
             return Ok(InputAction::None);
         }
 
-        // Handle copy/paste shortcuts first
+        // Handle copy/paste shortcuts
         if self.is_copy_paste_modifier(&key, 'c') {
             return Ok(InputAction::CopySelection);
         }
@@ -114,32 +85,12 @@ impl InputHandler {
             }
         }
 
-        // Handle ESC for cancellation or exit
+        // Handle ESC
         if key.code == KeyCode::Esc {
-            if has_autocomplete {
-                return Ok(InputAction::AutocompleteCancel);
-            } else if is_busy {
-                // Double-ESC to cancel
-                let now = Instant::now();
-                let should_cancel = if let Some(last_esc) = self.last_esc_time {
-                    now.duration_since(last_esc) < std::time::Duration::from_millis(1000)
-                } else {
-                    false
-                };
-
-                self.last_esc_time = Some(now);
-
-                if should_cancel {
-                    return Ok(InputAction::Cancel);
-                }
-                // Single ESC - wait for second press
-                return Ok(InputAction::None);
-            } else {
-                return Ok(InputAction::Exit);
-            }
+            return self.handle_esc(is_busy, has_autocomplete);
         }
 
-        // Handle scrolling (allowed even when busy)
+        // Handle scrolling
         match key.code {
             KeyCode::PageUp => return Ok(InputAction::PageUp),
             KeyCode::PageDown => return Ok(InputAction::PageDown),
@@ -148,7 +99,6 @@ impl InputHandler {
             _ => {}
         }
 
-        // Don't accept other input while busy
         if is_busy {
             return Ok(InputAction::None);
         }
@@ -156,18 +106,16 @@ impl InputHandler {
         // Handle command/character input
         match key.code {
             KeyCode::Enter => {
-                let text = input_text.trim().to_string();
+                let text = input_text.trim();
                 if text.is_empty() {
                     Ok(InputAction::None)
                 } else if text.starts_with('/') {
-                    Ok(InputAction::HandleCommand(text))
+                    Ok(InputAction::HandleCommand(text.to_string()))
                 } else {
-                    Ok(InputAction::Submit(text))
+                    Ok(InputAction::Submit(text.to_string()))
                 }
             }
-            KeyCode::Char(c)
-                if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
-            {
+            KeyCode::Char(c) if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT => {
                 if c == '@' {
                     Ok(InputAction::StartAutocomplete)
                 } else if has_autocomplete {
@@ -180,23 +128,40 @@ impl InputHandler {
         }
     }
 
-    /// Handle a mouse event and return true if it was consumed
-    pub fn handle_mouse(&mut self, mouse: MouseEvent) -> Result<bool, CliError> {
-        match mouse.kind {
-            MouseEventKind::Down(MouseButton::Left) => {
-                tracing::trace!("MouseDown at ({}, {})", mouse.column, mouse.row);
-                Ok(true)
-            }
-            MouseEventKind::Drag(MouseButton::Left) => Ok(true),
-            MouseEventKind::Up(MouseButton::Left) => Ok(true),
-            MouseEventKind::ScrollUp => Ok(true),
-            MouseEventKind::ScrollDown => Ok(true),
-            _ => Ok(false),
+    /// Handle ESC key (double-ESC to cancel when busy)
+    fn handle_esc(&mut self, is_busy: bool, has_autocomplete: bool) -> Result<InputAction, CliError> {
+        if has_autocomplete {
+            return Ok(InputAction::AutocompleteCancel);
         }
+        
+        if is_busy {
+            let now = Instant::now();
+            let should_cancel = self.last_esc_time
+                .map(|last| now.duration_since(last) < std::time::Duration::from_millis(1000))
+                .unwrap_or(false);
+
+            self.last_esc_time = Some(now);
+
+            return Ok(if should_cancel { InputAction::Cancel } else { InputAction::None });
+        }
+        
+        Ok(InputAction::Exit)
+    }
+
+    /// Handle a mouse event
+    pub fn handle_mouse(&mut self, mouse: MouseEvent) -> Result<bool, CliError> {
+        Ok(matches!(
+            mouse.kind,
+            MouseEventKind::Down(MouseButton::Left)
+                | MouseEventKind::Drag(MouseButton::Left)
+                | MouseEventKind::Up(MouseButton::Left)
+                | MouseEventKind::ScrollUp
+                | MouseEventKind::ScrollDown
+        ))
     }
 
     /// Check if the current key event is a copy/paste shortcut
-    /// Returns true for Ctrl+C/V on Linux/Windows, Cmd+C/V on macOS
+    #[inline]
     fn is_copy_paste_modifier(&self, key: &KeyEvent, char: char) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -211,6 +176,7 @@ impl InputHandler {
     }
 
     /// Tick cursor blink animation
+    #[inline]
     pub fn tick_cursor_blink(&mut self) {
         if self.cursor_blink_timer.elapsed().as_millis() > 500 {
             self.cursor_blink_state = !self.cursor_blink_state;
@@ -219,38 +185,27 @@ impl InputHandler {
     }
 
     /// Get current cursor blink state
+    #[inline]
     pub fn cursor_blink_state(&self) -> bool {
         self.cursor_blink_state
     }
 
-    /// Reset last ESC time (call when ESC is consumed)
+    /// Reset last ESC time
+    #[inline]
     pub fn reset_esc_time(&mut self) {
         self.last_esc_time = None;
     }
 
     /// Get last ESC time
+    #[inline]
     pub fn last_esc_time(&self) -> Option<Instant> {
         self.last_esc_time
     }
 
     /// Set last ESC time
+    #[inline]
     pub fn set_last_esc_time(&mut self, time: Instant) {
         self.last_esc_time = Some(time);
-    }
-
-    /// Enforce paste size limit
-    pub fn truncate_paste<'a>(&self, text: &'a str) -> (&'a str, bool) {
-        if text.len() > MAX_PASTE_SIZE {
-            // Find valid UTF-8 boundary
-            let truncated = &text[..text
-                .char_indices()
-                .nth(MAX_PASTE_SIZE)
-                .map(|(i, _)| i)
-                .unwrap_or(text.len())];
-            (truncated, true)
-        } else {
-            (text, false)
-        }
     }
 }
 
@@ -277,27 +232,10 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_paste() {
-        let handler = InputHandler::new();
-
-        // Small paste
-        let (text, truncated) = handler.truncate_paste("hello");
-        assert_eq!(text, "hello");
-        assert!(!truncated);
-
-        // Large paste
-        let large_text = "x".repeat(200 * 1024);
-        let (text, truncated) = handler.truncate_paste(&large_text);
-        assert!(truncated);
-        assert!(text.len() <= MAX_PASTE_SIZE);
-    }
-
-    #[test]
     fn test_cursor_blink() {
         let mut handler = InputHandler::new();
         let initial_state = handler.cursor_blink_state();
 
-        // Blink should not change immediately
         handler.tick_cursor_blink();
         assert_eq!(handler.cursor_blink_state(), initial_state);
     }
