@@ -625,36 +625,54 @@ impl TuiApp {
 
     /// Accept selected file completion
     fn accept_file_completion(&mut self) {
-        if let Some(completion) = self.autocomplete_manager.accept_completion() {
+        // Get the selected match WITHOUT using accept_completion()
+        // We do this manually to avoid the trailing space issue
+        let selected = self.autocomplete_manager.selected_match().cloned();
+        
+        if let Some(selected) = selected {
             let trigger_pos = self.autocomplete_manager.trigger_pos().unwrap_or(0);
             let current_cursor = self.input_editor.cursor();
 
-            tracing::debug!(
-                "accept_file_completion: trigger_pos={}, cursor={}, text='{}'",
+            tracing::info!(
+                "🎯 ACCEPT: trigger_pos={}, cursor={}, path='{}'",
                 trigger_pos,
                 current_cursor,
-                self.input_editor.text()
+                selected.path
             );
 
             // Calculate what to remove: from @+1 to current cursor
             let remove_start = trigger_pos + 1;
             let remove_end = current_cursor;
 
+            tracing::info!(
+                "🎯 REMOVE RANGE: {}..{} = '{}'",
+                remove_start,
+                remove_end,
+                &self.input_editor.text()[remove_start..remove_end.min(self.input_editor.text().len())]
+            );
+
             // Use replace_range to atomically replace the query with the completion
+            // Use selected.path WITHOUT trailing space
             if remove_end > remove_start {
-                self.input_editor.replace_range(remove_start, remove_end, &completion);
+                self.input_editor.replace_range(remove_start, remove_end, &selected.path);
             } else {
                 // Nothing to remove, just insert after @
                 self.input_editor.set_cursor(remove_start);
-                self.input_editor.insert_str(&completion);
+                self.input_editor.insert_str(&selected.path);
             }
 
-            tracing::debug!(
-                "Accepted completion: '{}' -> input now: '{}'",
-                completion,
-                self.input_editor.text()
+            // Add trailing space AFTER the completion
+            self.input_editor.insert_char(' ');
+
+            tracing::info!(
+                "🎯 FINAL: '{}', cursor={}",
+                self.input_editor.text(),
+                self.input_editor.cursor()
             );
         }
+        
+        // Close autocomplete
+        self.autocomplete_manager.deactivate();
     }
 
     fn handle_enter(&mut self) -> Result<(), CliError> {
