@@ -2,6 +2,85 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.26] - 2026-03-13
+
+### 🚀 Features
+
+- Complete command system implementation and code formatting
+
+
+### 🐛 Bug Fixes
+
+- Resolve clippy warning for unused parameter
+
+- Prevent text deletion before @ in file autocomplete
+
+- Add detailed debug logs for autocomplete investigation
+
+- Use selected_match() instead of accept_completion() for file autocomplete
+
+
+### 🚜 Refactor
+
+- Phase 1 - Extract state types to separate module
+
+- Phase 2 - Extract input handling to separate module
+
+- Phase 3 - Extract command system to separate module
+
+- Phase 4 - Extract UI rendering to separate module
+
+- Integrate InputHandler into TuiApp
+
+- Remove unused imports from command modules
+
+- Use InputHandler for cursor blink and ESC timing
+
+- Phase 5 - Split TuiBridge and TuiApp into separate modules
+
+- Extract activity message formatting to separate module
+
+- Extract input text editor to separate module
+
+- Improve TuiState and remove deprecated code
+
+- Extract file autocomplete manager to separate module
+
+- Update module structure and remove deprecated exports
+
+- Remove deprecated debug_log function
+
+- Consolidate imports in app_impl.rs
+
+- Clean up command registry
+
+- Remove unnecessary clones in OpenAI provider
+
+
+### 📚 Documentation
+
+- Crates
+
+
+### ⚡ Performance
+
+- Optimize input/handler.rs for hot paths
+
+- Optimize renderer with stack allocation and inlining
+
+- Add mutex poison recovery in bridge getters
+
+
+### 🧪 Testing
+
+- Fix integration tests to use dynamic operation_id
+
+- Add comprehensive tests for InputEditor and FileAutocompleteManager
+
+## [0.0.26] - 2026-03-13
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.25] - 2026-03-13
 
 ### 🚀 Features
