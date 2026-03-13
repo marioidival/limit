@@ -9,6 +9,9 @@ use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+/// Test operation ID for events
+const TEST_OP_ID: u64 = 1;
+
 #[test]
 fn test_tui_integration_full_conversation() {
     // Create a config with an API key (even if invalid, we just test the flow)
@@ -71,16 +74,18 @@ fn test_tui_bridge_event_ordering() {
 
     // Simulate event sequence: Thinking -> ToolStart -> ToolComplete -> Done
     let events = vec![
-        limit_cli::AgentEvent::Thinking,
+        limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID },
         limit_cli::AgentEvent::ToolStart {
+            operation_id: TEST_OP_ID,
             name: "file_read".to_string(),
             args: serde_json::json!({"path": "/tmp/test.txt"}),
         },
         limit_cli::AgentEvent::ToolComplete {
+            operation_id: TEST_OP_ID,
             name: "file_read".to_string(),
             result: "Hello, World!".to_string(),
         },
-        limit_cli::AgentEvent::Done,
+        limit_cli::AgentEvent::Done { operation_id: TEST_OP_ID },
     ];
 
     for event in events {
@@ -128,6 +133,7 @@ fn test_tui_bridge_tool_execution_display() {
 
     // Send tool events
     tx.send(limit_cli::AgentEvent::ToolStart {
+        operation_id: TEST_OP_ID,
         name: "file_read".to_string(),
         args: serde_json::json!({"path": "/tmp/test.txt"}),
     })
@@ -140,6 +146,7 @@ fn test_tui_bridge_tool_execution_display() {
 
     // Send tool complete event
     tx.send(limit_cli::AgentEvent::ToolComplete {
+        operation_id: TEST_OP_ID,
         name: "file_read".to_string(),
         result: "File content here".to_string(),
     })
@@ -182,9 +189,10 @@ fn test_tui_bridge_error_handling() {
     let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Send error event
-    tx.send(limit_cli::AgentEvent::Error(
-        "Tool execution failed".to_string(),
-    ))
+    tx.send(limit_cli::AgentEvent::Error {
+        operation_id: TEST_OP_ID,
+        message: "Tool execution failed".to_string(),
+    })
     .unwrap();
     tui_bridge.process_events().unwrap();
 
@@ -221,7 +229,7 @@ fn test_tui_bridge_spinner_animation() {
     let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Send thinking event
-    tx.send(limit_cli::AgentEvent::Thinking).unwrap();
+    tx.send(limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID }).unwrap();
 
     let mut tui_bridge_mut = tui_bridge;
     tui_bridge_mut.process_events().unwrap();
@@ -277,8 +285,11 @@ fn test_tui_bridge_content_streaming() {
     // Send multiple content chunks
     let chunks = ["Hello", " ", "World", "!"];
     for chunk in chunks.iter() {
-        tx.send(limit_cli::AgentEvent::ContentChunk(chunk.to_string()))
-            .unwrap();
+        tx.send(limit_cli::AgentEvent::ContentChunk {
+            operation_id: TEST_OP_ID,
+            chunk: chunk.to_string(),
+        })
+        .unwrap();
         tui_bridge.process_events().unwrap();
     }
 

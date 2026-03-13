@@ -16,6 +16,9 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
+/// Test operation ID for events
+const TEST_OP_ID: u64 = 1;
+
 fn create_test_config() -> LlmConfig {
     let mut providers = HashMap::new();
     providers.insert(
@@ -205,12 +208,13 @@ fn test_e2e_tui_rendering_components() {
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
     // Test thinking state
-    tx.send(limit_cli::AgentEvent::Thinking).unwrap();
+    tx.send(limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID }).unwrap();
     tui_bridge.process_events().unwrap();
     assert!(matches!(tui_bridge.state(), TuiState::Thinking));
 
     // Test tool execution state
     tx.send(limit_cli::AgentEvent::ToolStart {
+        operation_id: TEST_OP_ID,
         name: "file_read".to_string(),
         args: serde_json::json!({"path": "/tmp/test.txt"}),
     })
@@ -222,19 +226,23 @@ fn test_e2e_tui_rendering_components() {
 
     // Test completion
     tx.send(limit_cli::AgentEvent::ToolComplete {
+        operation_id: TEST_OP_ID,
         name: "file_read".to_string(),
         result: "File content here".to_string(),
     })
     .unwrap();
     tui_bridge.process_events().unwrap();
     // Done event resets Thinking state to Idle
-    tx.send(limit_cli::AgentEvent::Done).unwrap();
+    tx.send(limit_cli::AgentEvent::Done { operation_id: TEST_OP_ID }).unwrap();
     tui_bridge.process_events().unwrap();
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
     // Test error handling - errors reset state to Idle
-    tx.send(limit_cli::AgentEvent::Error("Test error".to_string()))
-        .unwrap();
+    tx.send(limit_cli::AgentEvent::Error {
+        operation_id: TEST_OP_ID,
+        message: "Test error".to_string(),
+    })
+    .unwrap();
     tui_bridge.process_events().unwrap();
     // Error resets state to Idle so user can continue
     assert_eq!(tui_bridge.state(), TuiState::Idle);
@@ -300,18 +308,26 @@ fn test_e2e_event_ordering() {
 
     // Simulate a complete conversation flow
     let events = vec![
-        limit_cli::AgentEvent::Thinking,
-        limit_cli::AgentEvent::ContentChunk("Hello".to_string()),
-        limit_cli::AgentEvent::ContentChunk(" World".to_string()),
+        limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID },
+        limit_cli::AgentEvent::ContentChunk {
+            operation_id: TEST_OP_ID,
+            chunk: "Hello".to_string(),
+        },
+        limit_cli::AgentEvent::ContentChunk {
+            operation_id: TEST_OP_ID,
+            chunk: " World".to_string(),
+        },
         limit_cli::AgentEvent::ToolStart {
+            operation_id: TEST_OP_ID,
             name: "file_read".to_string(),
             args: serde_json::json!({"path": "/test.txt"}),
         },
         limit_cli::AgentEvent::ToolComplete {
+            operation_id: TEST_OP_ID,
             name: "file_read".to_string(),
             result: "content".to_string(),
         },
-        limit_cli::AgentEvent::Done,
+        limit_cli::AgentEvent::Done { operation_id: TEST_OP_ID },
     ];
 
     for event in events {
