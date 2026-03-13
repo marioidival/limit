@@ -1,15 +1,19 @@
 //! Input text editor for TUI
 //!
-//! Manages input text buffer with cursor position and editing operations.
+//! Manages input text buffer with cursor position, editing operations, and history navigation.
 
+use crate::tui::input::history::InputHistory;
 use crate::tui::MAX_PASTE_SIZE;
+use std::path::PathBuf;
 
-/// Input text editor with cursor management
+/// Input text editor with cursor management and history
 pub struct InputEditor {
     /// Text buffer
     text: String,
     /// Cursor position (byte offset)
     cursor: usize,
+    /// Input history
+    history: InputHistory,
 }
 
 impl InputEditor {
@@ -18,7 +22,18 @@ impl InputEditor {
         Self {
             text: String::with_capacity(256),
             cursor: 0,
+            history: InputHistory::new(),
         }
+    }
+
+    /// Create editor with history loaded from file
+    pub fn with_history(history_path: &PathBuf) -> Result<Self, String> {
+        let history = InputHistory::load(history_path)?;
+        Ok(Self {
+            text: String::with_capacity(256),
+            cursor: 0,
+            history,
+        })
     }
 
     /// Get the current text
@@ -69,6 +84,11 @@ impl InputEditor {
     /// Insert a character at cursor position
     #[inline]
     pub fn insert_char(&mut self, c: char) {
+        // Reset history navigation when user types
+        if self.history.is_navigating() {
+            self.history.reset_navigation();
+        }
+
         self.text.insert(self.cursor, c);
         self.cursor += c.len_utf8();
     }
@@ -76,6 +96,11 @@ impl InputEditor {
     /// Insert a string at cursor position
     #[inline]
     pub fn insert_str(&mut self, s: &str) {
+        // Reset history navigation when user types
+        if self.history.is_navigating() {
+            self.history.reset_navigation();
+        }
+
         self.text.insert_str(self.cursor, s);
         self.cursor += s.len();
     }
@@ -212,6 +237,73 @@ impl InputEditor {
         self.text[prev_pos..self.cursor].chars().next()
     }
 
+    /// Navigate to previous (older) history entry
+    /// Returns true if navigation happened
+    pub fn navigate_history_up(&mut self) -> bool {
+        let current = self.text.trim();
+
+        if let Some(entry) = self.history.navigate_up(current) {
+            self.text = entry.to_string();
+            self.cursor = self.text.len();
+            return true;
+        }
+
+        false
+    }
+
+    /// Navigate to next (newer) history entry
+    /// Returns true if navigation happened (false if at newest)
+    pub fn navigate_history_down(&mut self) -> bool {
+        if let Some(entry) = self.history.navigate_down() {
+            self.text = entry.to_string();
+            self.cursor = self.text.len();
+            return true;
+        } else if !self.history.is_navigating() {
+            // Restoring draft - handled by saved_draft()
+            if let Some(draft) = self.history.saved_draft() {
+                self.text = draft.to_string();
+                self.cursor = self.text.len();
+            } else {
+                self.clear();
+            }
+            return true;
+        }
+
+        false
+    }
+
+    /// Check if currently navigating history
+    pub fn is_navigating_history(&self) -> bool {
+        self.history.is_navigating()
+    }
+
+    /// Add current text to history and clear
+    pub fn take_and_add_to_history(&mut self) -> String {
+        let text = self.text.trim().to_string();
+
+        if !text.is_empty() {
+            self.history.add(&text);
+        }
+
+        self.clear();
+        text
+    }
+
+    /// Save history to file
+    pub fn save_history(&self, path: &PathBuf) -> Result<(), String> {
+        self.history.save(path)
+    }
+
+    /// Get reference to history (for debugging)
+    pub fn history(&self) -> &InputHistory {
+        &self.history
+    }
+
+    /// Get mutable reference to history (for testing)
+    pub fn history_mut(&mut self) -> &mut InputHistory {
+        &mut self.history
+    }
+
     /// Find previous char boundary
     #[inline]
     fn prev_char_pos(&self) -> usize {
@@ -245,7 +337,7 @@ fn truncate_paste(text: &str) -> (&str, bool) {
     if text.len() <= MAX_PASTE_SIZE {
         return (text, false);
     }
-    
+
     let truncated = &text[..text
         .char_indices()
         .nth(MAX_PASTE_SIZE)
@@ -480,5 +572,97 @@ mod tests {
         editor.delete_range_to_cursor(6);
         assert_eq!(editor.text(), "hello ");
         assert_eq!(editor.cursor(), 6);
+    }
+
+    // History navigation tests
+
+    #[test]
+    fn test_navigate_history_up_empty_history() {
+        let mut editor = InputEditor::new();
+
+        let navigated = editor.navigate_history_up();
+        assert!(!navigated);
+        assert!(editor.is_empty());
+    }
+
+    #[test]
+    fn test_navigate_history_up_with_entries() {
+        let mut editor = InputEditor::new();
+        editor.history_mut().add("previous");
+
+        let navigated = editor.navigate_history_up();
+        assert!(navigated);
+        assert_eq!(editor.text(), "previous");
+        assert!(editor.is_navigating_history());
+    }
+
+    #[test]
+    fn test_navigate_history_cycle() {
+        let mut editor = InputEditor::new();
+        editor.history_mut().add("oldest");
+        editor.history_mut().add("newest");
+
+        // Navigate up to newest
+        editor.navigate_history_up();
+        assert_eq!(editor.text(), "newest");
+
+        // Navigate up to oldest
+        editor.navigate_history_up();
+        assert_eq!(editor.text(), "oldest");
+
+        // Navigate down to newest
+        editor.navigate_history_down();
+        assert_eq!(editor.text(), "newest");
+
+        // Navigate down to draft (empty)
+        editor.navigate_history_down();
+        assert!(editor.is_empty());
+        assert!(!editor.is_navigating_history());
+    }
+
+    #[test]
+    fn test_navigate_history_saves_draft() {
+        let mut editor = InputEditor::new();
+        editor.insert_str("my draft");
+        editor.history_mut().add("previous");
+
+        editor.navigate_history_up();
+        assert_eq!(editor.text(), "previous");
+
+        // Restore draft
+        editor.navigate_history_down();
+        assert_eq!(editor.text(), "my draft");
+    }
+
+    #[test]
+    fn test_take_and_add_to_history() {
+        let mut editor = InputEditor::new();
+        editor.insert_str("  hello world  ");
+
+        let text = editor.take_and_add_to_history();
+        assert_eq!(text, "hello world");
+        assert!(editor.is_empty());
+        assert_eq!(editor.history().len(), 1);
+    }
+
+    #[test]
+    fn test_take_and_add_to_history_empty() {
+        let mut editor = InputEditor::new();
+
+        let text = editor.take_and_add_to_history();
+        assert!(text.is_empty());
+        assert_eq!(editor.history().len(), 0);
+    }
+
+    #[test]
+    fn test_insert_char_resets_navigation() {
+        let mut editor = InputEditor::new();
+        editor.history_mut().add("previous");
+
+        editor.navigate_history_up();
+        assert!(editor.is_navigating_history());
+
+        editor.insert_char('a');
+        assert!(!editor.is_navigating_history());
     }
 }
