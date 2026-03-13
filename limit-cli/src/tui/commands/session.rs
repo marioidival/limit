@@ -4,7 +4,6 @@
 
 use super::{Command, CommandContext, CommandResult};
 use crate::error::CliError;
-use limit_tui::components::Message;
 
 /// Session command - manages sessions
 pub struct SessionCommand {

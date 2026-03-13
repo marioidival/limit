@@ -5,8 +5,7 @@
 use super::{Command, CommandContext, CommandResult};
 use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
-use crate::session_share::{ExportFormat, SessionShare};
-use limit_tui::components::Message;
+use crate::session_share::ExportFormat;
 
 /// Share command - exports session to clipboard or file
 pub struct ShareCommand {
