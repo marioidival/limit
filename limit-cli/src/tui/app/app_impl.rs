@@ -26,6 +26,8 @@ pub struct TuiApp {
     running: bool,
     /// Input text editor
     input_editor: InputEditor,
+    /// History file path
+    history_path: std::path::PathBuf,
     status_message: String,
     status_is_error: bool,
     /// Mouse selection state
@@ -52,6 +54,16 @@ impl TuiApp {
         let session_id = tui_bridge.session_id();
         tracing::info!("TUI started with session: {}", session_id);
 
+        // Initialize history path (~/.limit/input_history.bin)
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| CliError::ConfigError("Failed to get home directory".to_string()))?;
+        let limit_dir = home_dir.join(".limit");
+        let history_path = limit_dir.join("input_history.bin");
+
+        // Load input editor with history
+        let input_editor = InputEditor::with_history(&history_path)
+            .map_err(|e| CliError::ConfigError(format!("Failed to load input history: {}", e)))?;
+
         let clipboard = match ClipboardManager::new() {
             Ok(cb) => {
                 tracing::debug!("✓ Clipboard initialized successfully");
@@ -76,7 +88,8 @@ impl TuiApp {
             tui_bridge,
             terminal,
             running: true,
-            input_editor: InputEditor::new(),
+            input_editor,
+            history_path,
             status_message: "Ready - Type a message and press Enter".to_string(),
             status_is_error: false,
             mouse_selection_start: None,
@@ -235,6 +248,11 @@ impl TuiApp {
         // Save session before exiting
         if let Err(e) = self.tui_bridge.save_session() {
             tracing::error!("Failed to save session: {}", e);
+        }
+
+        // Save input history before exiting
+        if let Err(e) = self.input_editor.save_history(&self.history_path) {
+            tracing::error!("Failed to save input history: {}", e);
         }
 
         Ok(())
@@ -412,7 +430,15 @@ impl TuiApp {
         }
 
         // Handle autocomplete navigation FIRST (before general scrolling)
-        if self.autocomplete_manager.is_active() {
+        let autocomplete_active = self.autocomplete_manager.is_active();
+        tracing::debug!(
+            "Key handling: autocomplete_active={}, is_busy={}, history_len={}",
+            autocomplete_active,
+            self.tui_bridge.is_busy(),
+            self.input_editor.history().len()
+        );
+
+        if autocomplete_active {
             match key.code {
                 KeyCode::Up => {
                     self.autocomplete_manager.navigate_up();
@@ -464,7 +490,7 @@ impl TuiApp {
             return Ok(());
         }
 
-        // Allow scrolling even when agent is busy
+        // Allow scrolling even when agent is busy (PageUp/PageDown only)
         // Calculate actual viewport height dynamically
         let term_height = self.terminal.size().map(|s| s.height).unwrap_or(24);
         let viewport_height = term_height
@@ -482,14 +508,31 @@ impl TuiApp {
                 return Ok(());
             }
             KeyCode::Up => {
-                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                chat.scroll_up();
+                // Use for history navigation
+                tracing::debug!(
+                    "Up arrow: navigating history up, history_len={}",
+                    self.input_editor.history().len()
+                );
+                let navigated = self.input_editor.navigate_history_up();
+                tracing::debug!(
+                    "Up arrow: navigated={}, text='{}'",
+                    navigated,
+                    self.input_editor.text()
+                );
                 return Ok(());
             }
             KeyCode::Down => {
-                // Otherwise scroll chat
-                let mut chat = self.tui_bridge.chat_view().lock().unwrap();
-                chat.scroll_down();
+                // Use for history navigation
+                tracing::debug!(
+                    "Down arrow: navigating history down, is_navigating={}",
+                    self.input_editor.is_navigating_history()
+                );
+                let navigated = self.input_editor.navigate_history_down();
+                tracing::debug!(
+                    "Down arrow: navigated={}, text='{}'",
+                    navigated,
+                    self.input_editor.text()
+                );
                 return Ok(());
             }
             _ => {}
@@ -679,7 +722,7 @@ impl TuiApp {
     }
 
     fn handle_enter(&mut self) -> Result<(), CliError> {
-        let text = self.input_editor.take_trimmed();
+        let text = self.input_editor.take_and_add_to_history();
 
         if text.is_empty() {
             return Ok(());
@@ -778,7 +821,8 @@ impl TuiApp {
                  /share md      - Export session as markdown file\n\
                  /share json    - Export session as JSON file\n\
                  \n\
-                 Page Up/Down - Scroll chat history"
+                 Page Up/Down - Scroll chat history\n\
+                 Up/Down (empty input) - Navigate input history"
                     .to_string(),
             );
             self.tui_bridge
