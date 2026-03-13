@@ -40,7 +40,9 @@ impl ShareCommand {
             .count();
 
         if user_assistant_count == 0 {
-            ctx.add_system_message("⚠ No messages to share. Start a conversation first.".to_string());
+            ctx.add_system_message(
+                "⚠ No messages to share. Start a conversation first.".to_string(),
+            );
             return Ok(CommandResult::Continue);
         }
 
@@ -73,8 +75,7 @@ impl ShareCommand {
                     }
                 } else {
                     ctx.add_system_message(
-                        "❌ Clipboard not available. Try '/share md' to save as file."
-                            .to_string(),
+                        "❌ Clipboard not available. Try '/share md' to save as file.".to_string(),
                     );
                 }
             }
@@ -103,7 +104,9 @@ impl ShareCommand {
             .count();
 
         if user_assistant_count == 0 {
-            ctx.add_system_message("⚠ No messages to share. Start a conversation first.".to_string());
+            ctx.add_system_message(
+                "⚠ No messages to share. Start a conversation first.".to_string(),
+            );
             return Ok(CommandResult::Continue);
         }
 
@@ -199,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_share_default() {
-        let cmd = ShareCommand::default();
+        let cmd = ShareCommand;
         assert_eq!(cmd.name(), "share");
     }
 

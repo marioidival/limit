@@ -14,7 +14,7 @@ pub enum TuiState {
 }
 
 /// State for file autocomplete popup
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FileAutocompleteState {
     /// Whether autocomplete popup is visible
     pub is_active: bool,
@@ -28,23 +28,12 @@ pub struct FileAutocompleteState {
     pub selected_index: usize,
 }
 
-impl Default for FileAutocompleteState {
-    fn default() -> Self {
-        Self {
-            is_active: false,
-            query: String::new(),
-            trigger_pos: 0,
-            matches: Vec::new(),
-            selected_index: 0,
-        }
-    }
-}
-
 /// Debug log to file (bypasses tracing)
 ///
 /// **DEPRECATED**: This function will be removed in favor of proper tracing.
 /// Use `tracing::debug!` instead.
 #[deprecated(note = "Use tracing::debug! instead")]
+#[allow(dead_code)]
 pub fn debug_log(msg: &str) {
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -72,7 +61,7 @@ mod tests {
     #[test]
     fn test_file_autocomplete_default() {
         let state = FileAutocompleteState::default();
-        assert_eq!(state.is_active, false);
+        assert!(!state.is_active);
         assert_eq!(state.query, "");
         assert_eq!(state.trigger_pos, 0);
         assert_eq!(state.matches.len(), 0);

@@ -77,7 +77,7 @@ impl InputHandler {
         &mut self,
         key: KeyEvent,
         input_text: &str,
-        cursor_pos: usize,
+        _cursor_pos: usize,
         is_busy: bool,
         has_autocomplete: bool,
     ) -> Result<InputAction, CliError> {
