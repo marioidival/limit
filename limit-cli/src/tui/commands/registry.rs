@@ -129,12 +129,13 @@ impl CommandRegistry {
     /// Register a command
     pub fn register(&mut self, command: Box<dyn Command>) {
         let name = command.name().to_string();
+        self.commands.insert(name, command);
+    }
 
-        // Register main name
-        self.commands.insert(name.clone(), command);
-
-        // Note: Aliases would need to be handled differently since we can't
-        // clone Box<dyn Command>. For now, commands handle their own aliases.
+    /// Get all registered commands
+    #[inline]
+    pub fn list_commands(&self) -> Vec<&dyn Command> {
+        self.commands.values().map(|c| c.as_ref()).collect()
     }
 
     /// Parse and execute a command string
@@ -153,7 +154,7 @@ impl CommandRegistry {
         let input = &input[1..]; // Remove /
         let parts: Vec<&str> = input.splitn(2, ' ').collect();
         let cmd_name = parts[0].to_lowercase();
-        let args = parts.get(1).unwrap_or(&"");
+        let args = parts.get(1).copied().unwrap_or("");
 
         // Find command by name or check if command handles it
         for command in self.commands.values() {
@@ -166,11 +167,6 @@ impl CommandRegistry {
         ctx.add_system_message(format!("Unknown command: /{}", cmd_name));
         ctx.add_system_message("Type /help for available commands".to_string());
         Ok(Some(CommandResult::Continue))
-    }
-
-    /// Get all registered commands
-    pub fn list_commands(&self) -> Vec<&dyn Command> {
-        self.commands.values().map(|c| c.as_ref()).collect()
     }
 }
 
