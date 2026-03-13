@@ -28,26 +28,6 @@ pub struct FileAutocompleteState {
     pub selected_index: usize,
 }
 
-/// Debug log to file (bypasses tracing)
-///
-/// **DEPRECATED**: This function will be removed in favor of proper tracing.
-/// Use `tracing::debug!` instead.
-#[deprecated(note = "Use tracing::debug! instead")]
-#[allow(dead_code)]
-pub fn debug_log(msg: &str) {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()) + "/.limit/logs/tui.log")
-    {
-        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-        let _ = writeln!(file, "[{}] {}", timestamp, msg);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
