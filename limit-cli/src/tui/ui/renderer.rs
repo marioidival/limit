@@ -75,7 +75,13 @@ impl UiRenderer {
         chunk_idx += 1;
 
         // Render input area
-        Self::render_input_area(frame, &chunks[chunk_idx], input_text, cursor_pos, cursor_blink_state);
+        Self::render_input_area(
+            frame,
+            &chunks[chunk_idx],
+            input_text,
+            cursor_pos,
+            cursor_blink_state,
+        );
 
         // Render autocomplete popup
         if let Some(ref ac) = file_autocomplete {
@@ -101,7 +107,11 @@ impl UiRenderer {
         let chat_block = Block::default()
             .borders(Borders::ALL)
             .title(title)
-            .title_style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+            .title_style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            );
 
         frame.render_widget(&*chat, chat_block.inner(*area));
         frame.render_widget(chat_block, *area);
@@ -110,7 +120,9 @@ impl UiRenderer {
     /// Render activity feed
     fn render_activity_feed(frame: &mut Frame, area: &Rect, tui_bridge: &TuiBridge) {
         let activity_feed = tui_bridge.activity_feed().lock().unwrap();
-        let activity_block = Block::default().borders(Borders::NONE).style(Style::default().bg(Color::Reset));
+        let activity_block = Block::default()
+            .borders(Borders::NONE)
+            .style(Style::default().bg(Color::Reset));
 
         let activity_inner = activity_block.inner(*area);
         frame.render_widget(activity_block, *area);
@@ -118,7 +130,12 @@ impl UiRenderer {
     }
 
     /// Render status bar
-    fn render_status_bar(frame: &mut Frame, area: &Rect, status_message: &str, status_is_error: bool) {
+    fn render_status_bar(
+        frame: &mut Frame,
+        area: &Rect,
+        status_message: &str,
+        status_is_error: bool,
+    ) {
         let status_style = if status_is_error {
             Style::default().fg(Color::Red).bg(Color::Reset)
         } else {
@@ -155,7 +172,8 @@ impl UiRenderer {
                 Style::default().fg(Color::DarkGray),
             )])
         } else {
-            let (before_cursor, at_cursor, after_cursor) = split_text_at_cursor(input_text, cursor_pos);
+            let (before_cursor, at_cursor, after_cursor) =
+                split_text_at_cursor(input_text, cursor_pos);
 
             let cursor_style = if cursor_blink_state {
                 Style::default().bg(Color::White).fg(Color::Black)
@@ -170,11 +188,18 @@ impl UiRenderer {
             ])
         };
 
-        frame.render_widget(Paragraph::new(input_line).wrap(Wrap { trim: false }), input_inner);
+        frame.render_widget(
+            Paragraph::new(input_line).wrap(Wrap { trim: false }),
+            input_inner,
+        );
     }
 
     /// Render autocomplete popup
-    fn render_autocomplete_popup(frame: &mut Frame, input_area: &Rect, autocomplete: &FileAutocompleteState) {
+    fn render_autocomplete_popup(
+        frame: &mut Frame,
+        input_area: &Rect,
+        autocomplete: &FileAutocompleteState,
+    ) {
         let popup_area = calculate_popup_area(*input_area, autocomplete.matches.len());
 
         let widget = FileAutocompleteWidget::new(
