@@ -3,7 +3,8 @@ use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
 use crate::file_finder::FileFinder;
 use crate::session::SessionManager;
-use crate::tui::{debug_log, FileAutocompleteState, TuiState, MAX_PASTE_SIZE};
+use crate::tui::ui::UiRenderer;
+use crate::tui::{debug_log, FileAutocompleteState, InputHandler, TuiState, MAX_PASTE_SIZE};
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
@@ -463,8 +464,6 @@ pub struct TuiApp {
     cursor_pos: usize,
     status_message: String,
     status_is_error: bool,
-    cursor_blink_state: bool,
-    cursor_blink_timer: std::time::Instant,
     /// Mouse selection state
     mouse_selection_start: Option<(u16, u16)>,
     /// Clipboard manager
@@ -473,10 +472,10 @@ pub struct TuiApp {
     file_autocomplete: Option<FileAutocompleteState>,
     /// File finder instance
     file_finder: FileFinder,
-    /// Last ESC press time for double-ESC detection
-    last_esc_time: Option<std::time::Instant>,
     /// Cancellation token for current LLM operation
     cancellation_token: Option<tokio_util::sync::CancellationToken>,
+    /// Input handler for keyboard/mouse events
+    input_handler: InputHandler,
 }
 
 impl TuiApp {
@@ -514,14 +513,12 @@ impl TuiApp {
             cursor_pos: 0,
             status_message: "Ready - Type a message and press Enter".to_string(),
             status_is_error: false,
-            cursor_blink_state: true,
-            cursor_blink_timer: std::time::Instant::now(),
             mouse_selection_start: None,
             clipboard,
             file_autocomplete: None,
             file_finder,
-            last_esc_time: None,
             cancellation_token: None,
+            input_handler: InputHandler::new(),
         })
     }
 
@@ -761,11 +758,8 @@ impl TuiApp {
     }
 
     fn tick_cursor_blink(&mut self) {
-        // Blink every 500ms for standard terminal cursor behavior
-        if self.cursor_blink_timer.elapsed().as_millis() > 500 {
-            self.cursor_blink_state = !self.cursor_blink_state;
-            self.cursor_blink_timer = std::time::Instant::now();
-        }
+        // Delegate to InputHandler
+        self.input_handler.tick_cursor_blink();
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), CliError> {
@@ -901,7 +895,8 @@ impl TuiApp {
             } else if self.tui_bridge.is_busy() {
                 // Double-ESC to cancel current operation
                 let now = std::time::Instant::now();
-                let should_cancel = if let Some(last_esc) = self.last_esc_time {
+                let last_esc_time = self.input_handler.last_esc_time();
+                let should_cancel = if let Some(last_esc) = last_esc_time {
                     now.duration_since(last_esc) < std::time::Duration::from_millis(1000)
                 } else {
                     false
@@ -913,7 +908,7 @@ impl TuiApp {
                     // First ESC - show feedback
                     self.status_message = "Press ESC again to cancel".to_string();
                     self.status_is_error = false;
-                    self.last_esc_time = Some(now);
+                    self.input_handler.set_last_esc_time(now);
                 }
             } else {
                 debug_log("Esc pressed, exiting");
@@ -1488,7 +1483,8 @@ impl TuiApp {
                 .add_message(cancel_msg);
         }
         self.cancellation_token = None;
-        self.last_esc_time = None;
+        // Reset ESC time via input_handler
+        self.input_handler.reset_esc_time();
     }
 
     /// Handle /session list command
@@ -1891,7 +1887,7 @@ impl TuiApp {
         let cursor_pos = self.cursor_pos;
         let status_message = self.status_message.clone();
         let status_is_error = self.status_is_error;
-        let cursor_blink_state = self.cursor_blink_state;
+        let cursor_blink_state = self.input_handler.cursor_blink_state();
         let tui_bridge = &self.tui_bridge;
         let file_autocomplete = self.file_autocomplete.clone();
 
