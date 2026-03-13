@@ -86,10 +86,10 @@ impl FileAutocompleteManager {
             // First update query
             state.query.clear();
             state.query.push_str(query);
-            
+
             // Get matches separately to avoid borrow conflicts
             let matches = self.get_matches(query);
-            
+
             // Update state
             if let Some(ref mut state) = self.state {
                 state.matches = matches;
@@ -103,9 +103,9 @@ impl FileAutocompleteManager {
         if let Some(ref mut state) = self.state {
             state.query.push(c);
             let query = state.query.clone();
-            
+
             let matches = self.get_matches(&query);
-            
+
             if let Some(ref mut state) = self.state {
                 state.matches = matches;
                 state.selected_index = 0;
@@ -115,7 +115,11 @@ impl FileAutocompleteManager {
 
     /// Remove last character from query
     pub fn backspace(&mut self) -> bool {
-        let should_close = self.state.as_ref().map(|s| s.query.is_empty()).unwrap_or(false);
+        let should_close = self
+            .state
+            .as_ref()
+            .map(|s| s.query.is_empty())
+            .unwrap_or(false);
 
         if should_close {
             return true;
@@ -124,9 +128,9 @@ impl FileAutocompleteManager {
         if let Some(ref mut state) = self.state {
             state.query.pop();
             let query = state.query.clone();
-            
+
             let matches = self.get_matches(&query);
-            
+
             if let Some(ref mut state) = self.state {
                 state.matches = matches;
                 state.selected_index = 0;
@@ -148,14 +152,20 @@ impl FileAutocompleteManager {
     pub fn navigate_down(&mut self) {
         if let Some(ref mut state) = self.state {
             let max_idx = state.matches.len().saturating_sub(1);
-            state.selected_index = state.selected_index.min(max_idx).saturating_add(1).min(max_idx);
+            state.selected_index = state
+                .selected_index
+                .min(max_idx)
+                .saturating_add(1)
+                .min(max_idx);
         }
     }
 
     /// Get selected match
     #[inline]
     pub fn selected_match(&self) -> Option<&FileMatchData> {
-        self.state.as_ref().and_then(|s| s.matches.get(s.selected_index))
+        self.state
+            .as_ref()
+            .and_then(|s| s.matches.get(s.selected_index))
     }
 
     /// Get trigger position
@@ -172,7 +182,7 @@ impl FileAutocompleteManager {
         let mut result = String::with_capacity(selected.path.len() + 1);
         result.push_str(&selected.path);
         result.push(' ');
-        
+
         self.state = None;
         Some(result)
     }
@@ -181,17 +191,18 @@ impl FileAutocompleteManager {
     fn get_matches(&mut self, query: &str) -> Vec<FileMatchData> {
         // Clear buffer for reuse
         self.matches_buffer.clear();
-        
+
         // Scan files and clone to avoid holding borrow
         let files = self.file_finder.scan_files().clone();
-        
+
         // Filter files (now we don't hold the borrow)
         let matches = self.file_finder.filter_files(&files, query);
 
-        self.matches_buffer.extend(matches.into_iter().map(|m| FileMatchData {
-            path: m.path.to_string_lossy().to_string(),
-            is_dir: m.is_dir,
-        }));
+        self.matches_buffer
+            .extend(matches.into_iter().map(|m| FileMatchData {
+                path: m.path.to_string_lossy().to_string(),
+                is_dir: m.is_dir,
+            }));
 
         // Clone the buffer to return (matches_buffer is reused next call)
         self.matches_buffer.clone()
@@ -199,13 +210,15 @@ impl FileAutocompleteManager {
 
     /// Convert to legacy FileAutocompleteState for rendering
     pub fn to_legacy_state(&self) -> Option<crate::tui::FileAutocompleteState> {
-        self.state.as_ref().map(|s| crate::tui::FileAutocompleteState {
-            is_active: s.is_active,
-            query: s.query.clone(),
-            trigger_pos: s.trigger_pos,
-            matches: s.matches.clone(),
-            selected_index: s.selected_index,
-        })
+        self.state
+            .as_ref()
+            .map(|s| crate::tui::FileAutocompleteState {
+                is_active: s.is_active,
+                query: s.query.clone(),
+                trigger_pos: s.trigger_pos,
+                matches: s.matches.clone(),
+                selected_index: s.selected_index,
+            })
     }
 }
 
@@ -304,7 +317,10 @@ mod tests {
         assert!(should_close, "Should close when query is empty");
 
         manager.append_char('C');
-        assert!(!manager.backspace(), "Should not close when query has content");
+        assert!(
+            !manager.backspace(),
+            "Should not close when query has content"
+        );
 
         let state = manager.state().unwrap();
         assert_eq!(state.query, "");
@@ -340,7 +356,10 @@ mod tests {
 
         let state = manager.state().unwrap();
         assert_eq!(state.query, "Cargo");
-        assert_eq!(state.selected_index, 0, "Should reset selection on query update");
+        assert_eq!(
+            state.selected_index, 0,
+            "Should reset selection on query update"
+        );
     }
 
     #[test]
