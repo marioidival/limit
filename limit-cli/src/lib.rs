@@ -22,4 +22,5 @@ pub use session::SessionManager;
 pub use session_share::{ExportFormat, SessionExport, SessionShare};
 pub use syntax::SyntaxHighlighter;
 pub use tui::{debug_log, FileAutocompleteState, TuiState};
+// Legacy re-exports from tui_bridge module (deprecated, will be removed)
 pub use tui_bridge::{TuiApp, TuiBridge};
