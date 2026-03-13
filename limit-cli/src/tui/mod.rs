@@ -32,6 +32,7 @@
 
 mod state;
 
+pub mod commands;
 pub mod input;
 
 // Re-export public API
