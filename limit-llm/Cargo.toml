@@ -1,6 +1,6 @@
 [package]
 name = "limit-llm"
-version = "0.0.24"
+version = "0.0.25"
 edition = "2021"
 description = "Multi-provider LLM client for Rust with streaming support. Supports Anthropic Claude, OpenAI, and z.ai."
 authors = ["Mário Idival <marioidival@gmail.com>"]

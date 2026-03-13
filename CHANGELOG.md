@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.25] - 2026-03-13
+
+### 🚀 Features
+
+- Add operation cancellation support with double ESC
+
+
+### 🧪 Testing
+
+- Update tests for operation_id in AgentEvent
+
+## [0.0.25] - 2026-03-13
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.24] - 2026-03-12
 
 ### 🚀 Features
