@@ -34,6 +34,7 @@ mod state;
 
 pub mod commands;
 pub mod input;
+pub mod ui;
 
 // Re-export public API
 pub use state::{debug_log, FileAutocompleteState, TuiState, MAX_PASTE_SIZE};
