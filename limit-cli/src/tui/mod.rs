@@ -9,6 +9,7 @@
 //! - **State**: Core state types (`TuiState`, `FileAutocompleteState`)
 //! - **Bridge**: Connection between agent and UI (`TuiBridge`)
 //! - **App**: Main application loop (`TuiApp`)
+//! - **Input**: Input handling (`InputHandler`, `ClipboardHandler`)
 //! 
 //! # Example
 //! 
@@ -30,6 +31,8 @@
 //! ```
 
 mod state;
+
+pub mod input;
 
 // Re-export public API
 pub use state::{debug_log, FileAutocompleteState, TuiState, MAX_PASTE_SIZE};
