@@ -5,10 +5,11 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
 use crate::session::SessionManager;
-use crate::tui::{debug_log, TuiState};
+use crate::tui::{activity::format_activity_message, TuiState};
 use limit_tui::components::{ActivityFeed, ChatView, Message, Spinner};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+use tracing::debug;
 
 /// Bridge connecting limit-cli REPL to limit-tui components
 pub struct TuiBridge {
@@ -169,37 +170,35 @@ impl TuiBridge {
                 AgentEvent::TokenUsage { operation_id, .. } => *operation_id,
             };
 
-            debug_log(&format!(
+            debug!(
                 "process_events: event_op_id={}, current_op_id={}, event={:?}",
                 event_op_id,
                 current_op_id,
                 std::mem::discriminant(&event)
-            ));
+            );
 
             // Ignore events from old operations
             if event_op_id != current_op_id {
-                debug_log(&format!(
+                debug!(
                     "process_events: Ignoring event from old operation {} (current: {})",
                     event_op_id, current_op_id
-                ));
+                );
                 continue;
             }
 
             match event {
                 AgentEvent::Thinking { operation_id: _ } => {
-                    debug_log(
-                        "process_events: Thinking event received - setting state to Thinking",
-                    );
+                    debug!("process_events: Thinking event received - setting state to Thinking",);
                     *self.state.lock().unwrap() = TuiState::Thinking;
-                    debug_log(&format!("process_events: state is now {:?}", self.state()));
+                    debug!("process_events: state is now {:?}", self.state());
                 }
                 AgentEvent::ToolStart {
                     operation_id: _,
                     name,
                     args,
                 } => {
-                    debug_log(&format!("process_events: ToolStart event - {}", name));
-                    let activity_msg = Self::format_activity_message(&name, &args);
+                    debug!("process_events: ToolStart event - {}", name);
+                    let activity_msg = format_activity_message(&name, &args);
                     // Add to activity feed instead of changing state
                     self.activity_feed.lock().unwrap().add(activity_msg, true);
                 }
@@ -208,7 +207,7 @@ impl TuiBridge {
                     name: _,
                     result: _,
                 } => {
-                    debug_log("process_events: ToolComplete event");
+                    debug!("process_events: ToolComplete event");
                     // Mark current activity as complete
                     self.activity_feed.lock().unwrap().complete_current();
                 }
@@ -216,23 +215,20 @@ impl TuiBridge {
                     operation_id: _,
                     chunk,
                 } => {
-                    debug_log(&format!(
-                        "process_events: ContentChunk event ({} chars)",
-                        chunk.len()
-                    ));
+                    debug!("process_events: ContentChunk event ({} chars)", chunk.len());
                     self.chat_view
                         .lock()
                         .unwrap()
                         .append_to_last_assistant(&chunk);
                 }
                 AgentEvent::Done { operation_id: _ } => {
-                    debug_log("process_events: Done event received");
+                    debug!("process_events: Done event received");
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Mark all activities as complete when LLM finishes
                     self.activity_feed.lock().unwrap().complete_all();
                 }
                 AgentEvent::Cancelled { operation_id: _ } => {
-                    debug_log("process_events: Cancelled event received");
+                    debug!("process_events: Cancelled event received");
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Mark all activities as complete
                     self.activity_feed.lock().unwrap().complete_all();
@@ -241,7 +237,7 @@ impl TuiBridge {
                     operation_id: _,
                     message,
                 } => {
-                    debug_log(&format!("process_events: Error event - {}", message));
+                    debug!("process_events: Error event - {}", message);
                     // Reset state to Idle so user can continue
                     *self.state.lock().unwrap() = TuiState::Idle;
                     let chat_msg = Message::system(format!("Error: {}", message));
@@ -252,10 +248,10 @@ impl TuiBridge {
                     input_tokens,
                     output_tokens,
                 } => {
-                    debug_log(&format!(
+                    debug!(
                         "process_events: TokenUsage event - in={}, out={}",
                         input_tokens, output_tokens
-                    ));
+                    );
                     // Accumulate token counts for display
                     *self.total_input_tokens.lock().unwrap() += input_tokens;
                     *self.total_output_tokens.lock().unwrap() += output_tokens;
@@ -263,78 +259,9 @@ impl TuiBridge {
             }
         }
         if event_count > 0 {
-            debug_log(&format!("process_events: processed {} events", event_count));
+            debug!("process_events: processed {} events", event_count);
         }
         Ok(())
-    }
-
-    fn format_activity_message(tool_name: &str, args: &serde_json::Value) -> String {
-        match tool_name {
-            "file_read" => args
-                .get("path")
-                .and_then(|p| p.as_str())
-                .map(|p| format!("Reading {}...", Self::truncate_path(p, 40)))
-                .unwrap_or_else(|| "Reading file...".to_string()),
-            "file_write" => args
-                .get("path")
-                .and_then(|p| p.as_str())
-                .map(|p| format!("Writing {}...", Self::truncate_path(p, 40)))
-                .unwrap_or_else(|| "Writing file...".to_string()),
-            "file_edit" => args
-                .get("path")
-                .and_then(|p| p.as_str())
-                .map(|p| format!("Editing {}...", Self::truncate_path(p, 40)))
-                .unwrap_or_else(|| "Editing file...".to_string()),
-            "bash" => args
-                .get("command")
-                .and_then(|c| c.as_str())
-                .map(|c| format!("Running {}...", Self::truncate_command(c, 30)))
-                .unwrap_or_else(|| "Executing command...".to_string()),
-            "git_status" => "Checking git status...".to_string(),
-            "git_diff" => "Checking git diff...".to_string(),
-            "git_log" => "Checking git log...".to_string(),
-            "git_add" => "Staging files...".to_string(),
-            "git_commit" => "Creating commit...".to_string(),
-            "git_push" => "Pushing to remote...".to_string(),
-            "git_pull" => "Pulling from remote...".to_string(),
-            "git_clone" => args
-                .get("url")
-                .and_then(|u| u.as_str())
-                .map(|u| format!("Cloning {}...", Self::truncate_path(u, 40)))
-                .unwrap_or_else(|| "Cloning repository...".to_string()),
-            "grep" => args
-                .get("pattern")
-                .and_then(|p| p.as_str())
-                .map(|p| format!("Searching for '{}'...", Self::truncate_command(p, 30)))
-                .unwrap_or_else(|| "Searching...".to_string()),
-            "ast_grep" => args
-                .get("pattern")
-                .and_then(|p| p.as_str())
-                .map(|p| format!("AST searching '{}'...", Self::truncate_command(p, 25)))
-                .unwrap_or_else(|| "AST searching...".to_string()),
-            "lsp" => args
-                .get("command")
-                .and_then(|c| c.as_str())
-                .map(|c| format!("Running LSP {}...", c))
-                .unwrap_or_else(|| "Running LSP...".to_string()),
-            _ => format!("Executing {}...", tool_name),
-        }
-    }
-
-    fn truncate_path(s: &str, max_len: usize) -> String {
-        if s.len() <= max_len {
-            s.to_string()
-        } else {
-            format!("...{}", &s[s.len().saturating_sub(max_len - 3)..])
-        }
-    }
-
-    fn truncate_command(s: &str, max_len: usize) -> String {
-        if s.len() <= max_len {
-            s.to_string()
-        } else {
-            format!("{}...", &s[..max_len.saturating_sub(3)])
-        }
     }
 
     /// Add a user message to the chat
@@ -547,10 +474,6 @@ mod tests {
         let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
         tui_bridge.add_user_message("Hello".to_string());
-        assert_eq!(
-            tui_bridge.chat_view().lock().unwrap().message_count(),
-            3
-        ); // 1 user + 2 system (welcome + model)
+        assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 3); // 1 user + 2 system (welcome + model)
     }
 }
-
