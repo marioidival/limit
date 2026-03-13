@@ -281,34 +281,28 @@ impl TuiBridge {
     }
 
     /// Get current operation ID
+    #[inline]
     pub fn operation_id(&self) -> u64 {
-        self.operation_id.lock().map(|id| *id).unwrap_or(0)
+        *self.operation_id.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Increment and get new operation ID
     pub fn next_operation_id(&self) -> u64 {
-        if let Ok(mut id) = self.operation_id.lock() {
-            *id += 1;
-            *id
-        } else {
-            0
-        }
+        let mut id = self.operation_id.lock().unwrap_or_else(|e| e.into_inner());
+        *id += 1;
+        *id
     }
 
     /// Get total input tokens for the session
+    #[inline]
     pub fn total_input_tokens(&self) -> u64 {
-        self.total_input_tokens
-            .lock()
-            .map(|guard| *guard)
-            .unwrap_or(0)
+        *self.total_input_tokens.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get total output tokens for the session
+    #[inline]
     pub fn total_output_tokens(&self) -> u64 {
-        self.total_output_tokens
-            .lock()
-            .map(|guard| *guard)
-            .unwrap_or(0)
+        *self.total_output_tokens.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get the current session ID
