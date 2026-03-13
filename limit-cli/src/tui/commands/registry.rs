@@ -20,6 +20,12 @@ pub enum CommandResult {
     ClearChat,
     /// Add a message to the chat
     Message(String),
+    /// Create a new session (returned by /session new)
+    NewSession,
+    /// Load a session (returned by /session load)
+    LoadSession(String),
+    /// Share/export session
+    Share(String),
 }
 
 /// Context provided to commands for execution
@@ -32,21 +38,38 @@ pub struct CommandContext {
     pub session_id: String,
     /// Current TUI state
     pub state: Arc<Mutex<TuiState>>,
+    /// Conversation messages (LLM format)
+    pub messages: Arc<Mutex<Vec<limit_llm::Message>>>,
+    /// Total input tokens
+    pub total_input_tokens: Arc<Mutex<u64>>,
+    /// Total output tokens
+    pub total_output_tokens: Arc<Mutex<u64>>,
+    /// Clipboard manager (optional)
+    pub clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
 }
 
 impl CommandContext {
     /// Create a new command context
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chat_view: Arc<Mutex<ChatView>>,
         session_manager: Arc<Mutex<SessionManager>>,
         session_id: String,
         state: Arc<Mutex<TuiState>>,
+        messages: Arc<Mutex<Vec<limit_llm::Message>>>,
+        total_input_tokens: Arc<Mutex<u64>>,
+        total_output_tokens: Arc<Mutex<u64>>,
+        clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
     ) -> Self {
         Self {
             chat_view,
             session_manager,
             session_id,
             state,
+            messages,
+            total_input_tokens,
+            total_output_tokens,
+            clipboard,
         }
     }
 
@@ -72,20 +95,20 @@ impl CommandContext {
 pub trait Command: Send + Sync {
     /// Get the command name (e.g., "help", "session")
     fn name(&self) -> &str;
-    
+
     /// Get command aliases (e.g., ["?", "h"] for help)
     fn aliases(&self) -> Vec<&str> {
         vec![]
     }
-    
+
     /// Get command description for help text
     fn description(&self) -> &str;
-    
+
     /// Get usage examples
     fn usage(&self) -> Vec<&str> {
         vec![]
     }
-    
+
     /// Execute the command
     fn execute(&self, args: &str, ctx: &mut CommandContext) -> Result<CommandResult, CliError>;
 }
@@ -106,10 +129,10 @@ impl CommandRegistry {
     /// Register a command
     pub fn register(&mut self, command: Box<dyn Command>) {
         let name = command.name().to_string();
-        
+
         // Register main name
         self.commands.insert(name.clone(), command);
-        
+
         // Note: Aliases would need to be handled differently since we can't
         // clone Box<dyn Command>. For now, commands handle their own aliases.
     }
@@ -121,24 +144,24 @@ impl CommandRegistry {
         ctx: &mut CommandContext,
     ) -> Result<Option<CommandResult>, CliError> {
         let input = input.trim();
-        
+
         // Must start with /
         if !input.starts_with('/') {
             return Ok(None);
         }
-        
+
         let input = &input[1..]; // Remove /
         let parts: Vec<&str> = input.splitn(2, ' ').collect();
         let cmd_name = parts[0].to_lowercase();
         let args = parts.get(1).unwrap_or(&"");
-        
+
         // Find command by name or check if command handles it
         for command in self.commands.values() {
             if command.name() == cmd_name || command.aliases().contains(&cmd_name.as_str()) {
                 return Ok(Some(command.execute(args, ctx)?));
             }
         }
-        
+
         // Unknown command
         ctx.add_system_message(format!("Unknown command: /{}", cmd_name));
         ctx.add_system_message("Type /help for available commands".to_string());

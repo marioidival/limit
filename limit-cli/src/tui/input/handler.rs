@@ -4,7 +4,9 @@
 
 use crate::error::CliError;
 use crate::tui::MAX_PASTE_SIZE;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use std::time::Instant;
 
 /// Actions that can result from input handling
@@ -126,7 +128,7 @@ impl InputHandler {
                 };
 
                 self.last_esc_time = Some(now);
-                
+
                 if should_cancel {
                     return Ok(InputAction::Cancel);
                 }
@@ -163,7 +165,9 @@ impl InputHandler {
                     Ok(InputAction::Submit(text))
                 }
             }
-            KeyCode::Char(c) if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT => {
+            KeyCode::Char(c)
+                if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
+            {
                 if c == '@' {
                     Ok(InputAction::StartAutocomplete)
                 } else if has_autocomplete {
@@ -183,18 +187,10 @@ impl InputHandler {
                 tracing::trace!("MouseDown at ({}, {})", mouse.column, mouse.row);
                 Ok(true)
             }
-            MouseEventKind::Drag(MouseButton::Left) => {
-                Ok(true)
-            }
-            MouseEventKind::Up(MouseButton::Left) => {
-                Ok(true)
-            }
-            MouseEventKind::ScrollUp => {
-                Ok(true)
-            }
-            MouseEventKind::ScrollDown => {
-                Ok(true)
-            }
+            MouseEventKind::Drag(MouseButton::Left) => Ok(true),
+            MouseEventKind::Up(MouseButton::Left) => Ok(true),
+            MouseEventKind::ScrollUp => Ok(true),
+            MouseEventKind::ScrollDown => Ok(true),
             _ => Ok(false),
         }
     }
@@ -283,12 +279,12 @@ mod tests {
     #[test]
     fn test_truncate_paste() {
         let handler = InputHandler::new();
-        
+
         // Small paste
         let (text, truncated) = handler.truncate_paste("hello");
         assert_eq!(text, "hello");
         assert!(!truncated);
-        
+
         // Large paste
         let large_text = "x".repeat(200 * 1024);
         let (text, truncated) = handler.truncate_paste(&large_text);
@@ -300,7 +296,7 @@ mod tests {
     fn test_cursor_blink() {
         let mut handler = InputHandler::new();
         let initial_state = handler.cursor_blink_state();
-        
+
         // Blink should not change immediately
         handler.tick_cursor_blink();
         assert_eq!(handler.cursor_blink_state(), initial_state);

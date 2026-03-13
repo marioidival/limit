@@ -41,14 +41,14 @@ impl Default for FileAutocompleteState {
 }
 
 /// Debug log to file (bypasses tracing)
-/// 
+///
 /// **DEPRECATED**: This function will be removed in favor of proper tracing.
 /// Use `tracing::debug!` instead.
 #[deprecated(note = "Use tracing::debug! instead")]
 pub fn debug_log(msg: &str) {
     use std::fs::OpenOptions;
     use std::io::Write;
-    
+
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)

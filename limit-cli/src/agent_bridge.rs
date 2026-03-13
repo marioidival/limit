@@ -263,7 +263,10 @@ impl AgentBridge {
             debug!("Agent loop iteration {}", iteration);
 
             // Send thinking event
-            debug!("Sending Thinking event with operation_id={}", self.operation_id);
+            debug!(
+                "Sending Thinking event with operation_id={}",
+                self.operation_id
+            );
             self.send_event(AgentEvent::Thinking {
                 operation_id: self.operation_id,
             });

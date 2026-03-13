@@ -15,12 +15,12 @@ pub use share::ShareCommand;
 /// Create the default command registry with all built-in commands
 pub fn create_default_registry() -> CommandRegistry {
     let mut registry = CommandRegistry::new();
-    
+
     registry.register(Box::new(HelpCommand));
     registry.register(Box::new(ClearCommand));
     registry.register(Box::new(ExitCommand));
     registry.register(Box::new(SessionCommand::new()));
     registry.register(Box::new(ShareCommand::new()));
-    
+
     registry
 }

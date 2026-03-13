@@ -46,7 +46,7 @@ impl Command for HelpCommand {
             // Help for specific command (future enhancement)
             ctx.add_system_message(format!("Help for command: {}", args));
         }
-        
+
         Ok(CommandResult::Continue)
     }
 }

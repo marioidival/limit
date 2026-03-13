@@ -74,7 +74,9 @@ fn test_tui_bridge_event_ordering() {
 
     // Simulate event sequence: Thinking -> ToolStart -> ToolComplete -> Done
     let events = vec![
-        limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID },
+        limit_cli::AgentEvent::Thinking {
+            operation_id: TEST_OP_ID,
+        },
         limit_cli::AgentEvent::ToolStart {
             operation_id: TEST_OP_ID,
             name: "file_read".to_string(),
@@ -85,7 +87,9 @@ fn test_tui_bridge_event_ordering() {
             name: "file_read".to_string(),
             result: "Hello, World!".to_string(),
         },
-        limit_cli::AgentEvent::Done { operation_id: TEST_OP_ID },
+        limit_cli::AgentEvent::Done {
+            operation_id: TEST_OP_ID,
+        },
     ];
 
     for event in events {
@@ -229,7 +233,10 @@ fn test_tui_bridge_spinner_animation() {
     let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
     // Send thinking event
-    tx.send(limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID }).unwrap();
+    tx.send(limit_cli::AgentEvent::Thinking {
+        operation_id: TEST_OP_ID,
+    })
+    .unwrap();
 
     let mut tui_bridge_mut = tui_bridge;
     tui_bridge_mut.process_events().unwrap();

@@ -208,7 +208,10 @@ fn test_e2e_tui_rendering_components() {
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
     // Test thinking state
-    tx.send(limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID }).unwrap();
+    tx.send(limit_cli::AgentEvent::Thinking {
+        operation_id: TEST_OP_ID,
+    })
+    .unwrap();
     tui_bridge.process_events().unwrap();
     assert!(matches!(tui_bridge.state(), TuiState::Thinking));
 
@@ -233,7 +236,10 @@ fn test_e2e_tui_rendering_components() {
     .unwrap();
     tui_bridge.process_events().unwrap();
     // Done event resets Thinking state to Idle
-    tx.send(limit_cli::AgentEvent::Done { operation_id: TEST_OP_ID }).unwrap();
+    tx.send(limit_cli::AgentEvent::Done {
+        operation_id: TEST_OP_ID,
+    })
+    .unwrap();
     tui_bridge.process_events().unwrap();
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
@@ -308,7 +314,9 @@ fn test_e2e_event_ordering() {
 
     // Simulate a complete conversation flow
     let events = vec![
-        limit_cli::AgentEvent::Thinking { operation_id: TEST_OP_ID },
+        limit_cli::AgentEvent::Thinking {
+            operation_id: TEST_OP_ID,
+        },
         limit_cli::AgentEvent::ContentChunk {
             operation_id: TEST_OP_ID,
             chunk: "Hello".to_string(),
@@ -327,7 +335,9 @@ fn test_e2e_event_ordering() {
             name: "file_read".to_string(),
             result: "content".to_string(),
         },
-        limit_cli::AgentEvent::Done { operation_id: TEST_OP_ID },
+        limit_cli::AgentEvent::Done {
+            operation_id: TEST_OP_ID,
+        },
     ];
 
     for event in events {
