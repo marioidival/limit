@@ -622,19 +622,33 @@ impl TuiApp {
     fn accept_file_completion(&mut self) {
         if let Some(completion) = self.autocomplete_manager.accept_completion() {
             let trigger_pos = self.autocomplete_manager.trigger_pos().unwrap_or(0);
-            let cursor_pos = self.input_editor.cursor();
+            let current_cursor = self.input_editor.cursor();
 
-            // Remove the query part (keep the @)
-            self.input_editor
-                .text_mut()
-                .drain(trigger_pos + 1..cursor_pos);
+            // Calculate how much to remove: from @+1 to current cursor
+            let remove_start = trigger_pos + 1;
+            let remove_end = current_cursor;
+
+            tracing::debug!(
+                "accept_file_completion: trigger_pos={}, cursor={}, removing {}..{}",
+                trigger_pos,
+                current_cursor,
+                remove_start,
+                remove_end
+            );
+
+            // Only drain if there's something to remove
+            if remove_end > remove_start {
+                self.input_editor.text_mut().drain(remove_start..remove_end);
+            }
+
+            // Move cursor to right after @
             self.input_editor.set_cursor(trigger_pos + 1);
 
             // Insert the selected path
             self.input_editor.insert_str(&completion);
 
             tracing::debug!(
-                "Accepted completion: {} -> input now: {:?}",
+                "Accepted completion: '{}' -> input now: {:?}",
                 completion,
                 self.input_editor.text()
             );
