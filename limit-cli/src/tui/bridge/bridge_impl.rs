@@ -296,13 +296,19 @@ impl TuiBridge {
     /// Get total input tokens for the session
     #[inline]
     pub fn total_input_tokens(&self) -> u64 {
-        *self.total_input_tokens.lock().unwrap_or_else(|e| e.into_inner())
+        *self
+            .total_input_tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get total output tokens for the session
     #[inline]
     pub fn total_output_tokens(&self) -> u64 {
-        *self.total_output_tokens.lock().unwrap_or_else(|e| e.into_inner())
+        *self
+            .total_output_tokens
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get the current session ID
