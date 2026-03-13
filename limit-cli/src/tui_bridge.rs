@@ -3,6 +3,7 @@ use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
 use crate::file_finder::FileFinder;
 use crate::session::SessionManager;
+use crate::tui::{debug_log, FileAutocompleteState, TuiState, MAX_PASTE_SIZE};
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
@@ -24,45 +25,6 @@ use ratatui::{
 use std::io;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-
-/// Maximum paste size to prevent memory issues (100KB)
-const MAX_PASTE_SIZE: usize = 100 * 1024;
-
-/// State for file autocomplete popup
-#[derive(Debug, Clone)]
-pub struct FileAutocompleteState {
-    /// Whether autocomplete popup is visible
-    pub is_active: bool,
-    /// Query typed after @ (e.g., "Cargo" in "@Cargo")
-    pub query: String,
-    /// Start position of @ in input_text
-    pub trigger_pos: usize,
-    /// List of matching files
-    pub matches: Vec<FileMatchData>,
-    /// Currently selected index in matches
-    pub selected_index: usize,
-}
-
-/// Debug log to file (bypasses tracing)
-fn debug_log(msg: &str) {
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()) + "/.limit/logs/tui.log")
-    {
-        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
-        let _ = writeln!(file, "[{}] {}", timestamp, msg);
-    }
-}
-/// TUI state for displaying agent events
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum TuiState {
-    #[default]
-    Idle,
-    Thinking,
-}
 
 /// Bridge connecting limit-cli REPL to limit-tui components
 pub struct TuiBridge {

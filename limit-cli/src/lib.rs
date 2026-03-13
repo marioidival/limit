@@ -10,6 +10,7 @@ pub mod render;
 pub mod session;
 pub mod syntax;
 pub mod tools;
+pub mod tui;
 pub mod tui_bridge;
 
 pub use agent_bridge::{AgentBridge, AgentEvent};
@@ -20,4 +21,5 @@ pub use render::MarkdownRenderer;
 pub use session::SessionManager;
 pub use session_share::{ExportFormat, SessionExport, SessionShare};
 pub use syntax::SyntaxHighlighter;
-pub use tui_bridge::{TuiApp, TuiBridge, TuiState};
+pub use tui::{debug_log, FileAutocompleteState, TuiState};
+pub use tui_bridge::{TuiApp, TuiBridge};
