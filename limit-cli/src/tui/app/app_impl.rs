@@ -4,11 +4,11 @@
 
 use crate::clipboard::ClipboardManager;
 use crate::error::CliError;
+use crate::tui::autocomplete::FileAutocompleteManager;
 use crate::tui::bridge::TuiBridge;
-use crate::tui::{
-    autocomplete::FileAutocompleteManager, input::InputEditor, ui::UiRenderer, InputHandler,
-    TuiState,
-};
+use crate::tui::input::{InputEditor, InputHandler};
+use crate::tui::ui::UiRenderer;
+use crate::tui::TuiState;
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
@@ -18,6 +18,7 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use limit_tui::components::Message;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::time::{Duration, Instant};
 
 pub struct TuiApp {
     tui_bridge: TuiBridge,
@@ -133,7 +134,7 @@ impl TuiApp {
             self.update_status();
 
             // Handle user input with poll timeout
-            if crossterm::event::poll(std::time::Duration::from_millis(100))
+            if event::poll(Duration::from_millis(100))
                 .map_err(|e| CliError::IoError(io::Error::other(e)))?
             {
                 match event::read().map_err(|e| CliError::IoError(io::Error::other(e)))? {
@@ -440,10 +441,10 @@ impl TuiApp {
                 self.autocomplete_manager.deactivate();
             } else if self.tui_bridge.is_busy() {
                 // Double-ESC to cancel current operation
-                let now = std::time::Instant::now();
+                let now = Instant::now();
                 let last_esc_time = self.input_handler.last_esc_time();
                 let should_cancel = if let Some(last_esc) = last_esc_time {
-                    now.duration_since(last_esc) < std::time::Duration::from_millis(1000)
+                    now.duration_since(last_esc) < Duration::from_millis(1000)
                 } else {
                     false
                 };
@@ -628,7 +629,7 @@ impl TuiApp {
         // Get the selected match WITHOUT using accept_completion()
         // We do this manually to avoid the trailing space issue
         let selected = self.autocomplete_manager.selected_match().cloned();
-        
+
         if let Some(selected) = selected {
             let trigger_pos = self.autocomplete_manager.trigger_pos().unwrap_or(0);
             let current_cursor = self.input_editor.cursor();
@@ -648,13 +649,15 @@ impl TuiApp {
                 "🎯 REMOVE RANGE: {}..{} = '{}'",
                 remove_start,
                 remove_end,
-                &self.input_editor.text()[remove_start..remove_end.min(self.input_editor.text().len())]
+                &self.input_editor.text()
+                    [remove_start..remove_end.min(self.input_editor.text().len())]
             );
 
             // Use replace_range to atomically replace the query with the completion
             // Use selected.path WITHOUT trailing space
             if remove_end > remove_start {
-                self.input_editor.replace_range(remove_start, remove_end, &selected.path);
+                self.input_editor
+                    .replace_range(remove_start, remove_end, &selected.path);
             } else {
                 // Nothing to remove, just insert after @
                 self.input_editor.set_cursor(remove_start);
@@ -670,7 +673,7 @@ impl TuiApp {
                 self.input_editor.cursor()
             );
         }
-        
+
         // Close autocomplete
         self.autocomplete_manager.deactivate();
     }
@@ -971,10 +974,7 @@ impl TuiApp {
 
     fn draw(&mut self) -> Result<(), CliError> {
         let chat_view = self.tui_bridge.chat_view().clone();
-        let input_text = self.input_editor.text().to_string();
         let cursor_pos = self.input_editor.cursor();
-        let status_message = self.status_message.clone();
-        let status_is_error = self.status_is_error;
         let cursor_blink_state = self.input_handler.cursor_blink_state();
         let tui_bridge = &self.tui_bridge;
         let file_autocomplete = self.autocomplete_manager.to_legacy_state();
@@ -985,10 +985,10 @@ impl TuiApp {
                     f,
                     f.area(),
                     &chat_view,
-                    &input_text,
+                    self.input_editor.text(),
                     cursor_pos,
-                    &status_message,
-                    status_is_error,
+                    &self.status_message,
+                    self.status_is_error,
                     cursor_blink_state,
                     tui_bridge,
                     &file_autocomplete,
