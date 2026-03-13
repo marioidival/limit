@@ -38,6 +38,7 @@ pub mod ui;
 
 // Re-export public API
 pub use state::{debug_log, FileAutocompleteState, TuiState, MAX_PASTE_SIZE};
+pub use input::InputHandler;
 
 // The main TuiBridge and TuiApp are still in tui_bridge.rs for now
 // They will be refactored into separate modules in subsequent phases

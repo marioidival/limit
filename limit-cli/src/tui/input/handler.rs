@@ -4,7 +4,7 @@
 
 use crate::error::CliError;
 use crate::tui::MAX_PASTE_SIZE;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use std::time::Instant;
 
 /// Actions that can result from input handling
@@ -230,6 +230,16 @@ impl InputHandler {
     /// Reset last ESC time (call when ESC is consumed)
     pub fn reset_esc_time(&mut self) {
         self.last_esc_time = None;
+    }
+
+    /// Get last ESC time
+    pub fn last_esc_time(&self) -> Option<Instant> {
+        self.last_esc_time
+    }
+
+    /// Set last ESC time
+    pub fn set_last_esc_time(&mut self, time: Instant) {
+        self.last_esc_time = Some(time);
     }
 
     /// Enforce paste size limit
