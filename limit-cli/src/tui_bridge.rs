@@ -89,6 +89,8 @@ pub struct TuiBridge {
     session_manager: Arc<Mutex<SessionManager>>,
     /// Current session ID
     session_id: Arc<Mutex<String>>,
+    /// Current operation ID (to ignore events from old operations)
+    operation_id: Arc<Mutex<u64>>,
 }
 
 impl TuiBridge {
@@ -166,6 +168,7 @@ impl TuiBridge {
             total_output_tokens: Arc::new(Mutex::new(initial_output)),
             session_manager: Arc::new(Mutex::new(session_manager)),
             session_id: Arc::new(Mutex::new(session_id)),
+            operation_id: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -203,25 +206,66 @@ impl TuiBridge {
     /// Process events from the agent and update TUI state
     pub fn process_events(&mut self) -> Result<(), CliError> {
         let mut event_count = 0;
+        let current_op_id = self.operation_id();
+
         while let Ok(event) = self.event_rx.try_recv() {
             event_count += 1;
+
+            // Get operation_id from event
+            let event_op_id = match &event {
+                AgentEvent::Thinking { operation_id } => *operation_id,
+                AgentEvent::ToolStart { operation_id, .. } => *operation_id,
+                AgentEvent::ToolComplete { operation_id, .. } => *operation_id,
+                AgentEvent::ContentChunk { operation_id, .. } => *operation_id,
+                AgentEvent::Done { operation_id } => *operation_id,
+                AgentEvent::Cancelled { operation_id } => *operation_id,
+                AgentEvent::Error { operation_id, .. } => *operation_id,
+                AgentEvent::TokenUsage { operation_id, .. } => *operation_id,
+            };
+
+            debug_log(&format!(
+                "process_events: event_op_id={}, current_op_id={}, event={:?}",
+                event_op_id, current_op_id, std::mem::discriminant(&event)
+            ));
+
+            // Ignore events from old operations
+            if event_op_id != current_op_id {
+                debug_log(&format!(
+                    "process_events: Ignoring event from old operation {} (current: {})",
+                    event_op_id, current_op_id
+                ));
+                continue;
+            }
+
             match event {
-                AgentEvent::Thinking => {
-                    debug_log("process_events: Thinking event received");
+                AgentEvent::Thinking { operation_id: _ } => {
+                    debug_log("process_events: Thinking event received - setting state to Thinking");
                     *self.state.lock().unwrap() = TuiState::Thinking;
+                    debug_log(&format!("process_events: state is now {:?}", self.state()));
                 }
-                AgentEvent::ToolStart { name, args } => {
+                AgentEvent::ToolStart {
+                    operation_id: _,
+                    name,
+                    args,
+                } => {
                     debug_log(&format!("process_events: ToolStart event - {}", name));
                     let activity_msg = Self::format_activity_message(&name, &args);
                     // Add to activity feed instead of changing state
                     self.activity_feed.lock().unwrap().add(activity_msg, true);
                 }
-                AgentEvent::ToolComplete { name: _, result: _ } => {
+                AgentEvent::ToolComplete {
+                    operation_id: _,
+                    name: _,
+                    result: _,
+                } => {
                     debug_log("process_events: ToolComplete event");
                     // Mark current activity as complete
                     self.activity_feed.lock().unwrap().complete_current();
                 }
-                AgentEvent::ContentChunk(chunk) => {
+                AgentEvent::ContentChunk {
+                    operation_id: _,
+                    chunk,
+                } => {
                     debug_log(&format!(
                         "process_events: ContentChunk event ({} chars)",
                         chunk.len()
@@ -231,20 +275,30 @@ impl TuiBridge {
                         .unwrap()
                         .append_to_last_assistant(&chunk);
                 }
-                AgentEvent::Done => {
+                AgentEvent::Done { operation_id: _ } => {
                     debug_log("process_events: Done event received");
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Mark all activities as complete when LLM finishes
                     self.activity_feed.lock().unwrap().complete_all();
                 }
-                AgentEvent::Error(err) => {
-                    debug_log(&format!("process_events: Error event - {}", err));
+                AgentEvent::Cancelled { operation_id: _ } => {
+                    debug_log("process_events: Cancelled event received");
+                    *self.state.lock().unwrap() = TuiState::Idle;
+                    // Mark all activities as complete
+                    self.activity_feed.lock().unwrap().complete_all();
+                }
+                AgentEvent::Error {
+                    operation_id: _,
+                    message,
+                } => {
+                    debug_log(&format!("process_events: Error event - {}", message));
                     // Reset state to Idle so user can continue
                     *self.state.lock().unwrap() = TuiState::Idle;
-                    let chat_msg = Message::system(format!("Error: {}", err));
+                    let chat_msg = Message::system(format!("Error: {}", message));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
                 AgentEvent::TokenUsage {
+                    operation_id: _,
                     input_tokens,
                     output_tokens,
                 } => {
@@ -349,6 +403,21 @@ impl TuiBridge {
         !matches!(self.state(), TuiState::Idle)
     }
 
+    /// Get current operation ID
+    pub fn operation_id(&self) -> u64 {
+        self.operation_id.lock().map(|id| *id).unwrap_or(0)
+    }
+
+    /// Increment and get new operation ID
+    pub fn next_operation_id(&self) -> u64 {
+        if let Ok(mut id) = self.operation_id.lock() {
+            *id += 1;
+            *id
+        } else {
+            0
+        }
+    }
+
     /// Get total input tokens for the session
     pub fn total_input_tokens(&self) -> u64 {
         self.total_input_tokens
@@ -442,6 +511,10 @@ pub struct TuiApp {
     file_autocomplete: Option<FileAutocompleteState>,
     /// File finder instance
     file_finder: FileFinder,
+    /// Last ESC press time for double-ESC detection
+    last_esc_time: Option<std::time::Instant>,
+    /// Cancellation token for current LLM operation
+    cancellation_token: Option<tokio_util::sync::CancellationToken>,
 }
 
 impl TuiApp {
@@ -485,6 +558,8 @@ impl TuiApp {
             clipboard,
             file_autocomplete: None,
             file_finder,
+            last_esc_time: None,
+            cancellation_token: None,
         })
     }
 
@@ -856,6 +931,35 @@ impl TuiApp {
             }
         }
 
+        // Handle ESC for cancellation (must be before is_busy check)
+        if key.code == KeyCode::Esc {
+            // If autocomplete is active, cancel it
+            if self.file_autocomplete.is_some() {
+                self.file_autocomplete = None;
+            } else if self.tui_bridge.is_busy() {
+                // Double-ESC to cancel current operation
+                let now = std::time::Instant::now();
+                let should_cancel = if let Some(last_esc) = self.last_esc_time {
+                    now.duration_since(last_esc) < std::time::Duration::from_millis(1000)
+                } else {
+                    false
+                };
+
+                if should_cancel {
+                    self.cancel_current_operation();
+                } else {
+                    // First ESC - show feedback
+                    self.status_message = "Press ESC again to cancel".to_string();
+                    self.status_is_error = false;
+                    self.last_esc_time = Some(now);
+                }
+            } else {
+                debug_log("Esc pressed, exiting");
+                self.running = false;
+            }
+            return Ok(());
+        }
+
         // Allow scrolling even when agent is busy
         // Calculate actual viewport height dynamically
         let term_height = self.terminal.size().map(|s| s.height).unwrap_or(24);
@@ -926,15 +1030,6 @@ impl TuiApp {
             KeyCode::Enter => {
                 // If autocomplete is active, it's already handled above
                 self.handle_enter()?;
-            }
-            KeyCode::Esc => {
-                // If autocomplete is active, cancel it
-                if self.file_autocomplete.is_some() {
-                    self.file_autocomplete = None;
-                } else {
-                    debug_log("Esc pressed, exiting");
-                    self.running = false;
-                }
             }
             // Regular character input (including UTF-8)
             KeyCode::Char(c)
@@ -1255,6 +1350,15 @@ impl TuiApp {
         // Add user message to chat immediately for visual feedback
         self.tui_bridge.add_user_message(text.clone());
 
+        // Get new operation ID and ensure state is Idle
+        let operation_id = self.tui_bridge.next_operation_id();
+        debug_log(&format!("handle_enter: new operation_id={}", operation_id));
+        *self.tui_bridge.state.lock().unwrap() = TuiState::Idle;
+
+        // Create cancellation token for this operation
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        self.cancellation_token = Some(cancel_token.clone());
+
         // Clone Arcs for the spawned thread
         let messages = self.tui_bridge.messages.clone();
         let agent_bridge = self.tui_bridge.agent_bridge_arc();
@@ -1273,8 +1377,75 @@ impl TuiApp {
             // Safe: we're in a dedicated thread, this won't cause issues
             #[allow(clippy::await_holding_lock)]
             rt.block_on(async {
-                let mut messages_guard = messages.lock().unwrap();
-                let mut bridge = agent_bridge.lock().unwrap();
+                // Check for cancellation BEFORE acquiring locks
+                if cancel_token.is_cancelled() {
+                    tracing::debug!("Operation cancelled before acquiring locks");
+                    return;
+                }
+
+                // Try to acquire locks with timeout to avoid blocking indefinitely
+                let messages_guard = {
+                    let mut attempts = 0;
+                    loop {
+                        if cancel_token.is_cancelled() {
+                            tracing::debug!("Operation cancelled while waiting for messages lock");
+                            return;
+                        }
+                        match messages.try_lock() {
+                            Ok(guard) => break guard,
+                            Err(std::sync::TryLockError::WouldBlock) => {
+                                attempts += 1;
+                                if attempts > 50 {
+                                    tracing::error!("Timeout waiting for messages lock");
+                                    return;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to lock messages: {}", e);
+                                return;
+                            }
+                        }
+                    }
+                };
+
+                let mut messages_guard = messages_guard;
+
+                // Check cancellation again before acquiring bridge lock
+                if cancel_token.is_cancelled() {
+                    tracing::debug!("Operation cancelled before acquiring bridge lock");
+                    return;
+                }
+
+                let bridge_guard = {
+                    let mut attempts = 0;
+                    loop {
+                        if cancel_token.is_cancelled() {
+                            tracing::debug!("Operation cancelled while waiting for bridge lock");
+                            return;
+                        }
+                        match agent_bridge.try_lock() {
+                            Ok(guard) => break guard,
+                            Err(std::sync::TryLockError::WouldBlock) => {
+                                attempts += 1;
+                                if attempts > 50 {
+                                    tracing::error!("Timeout waiting for bridge lock");
+                                    return;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to lock agent_bridge: {}", e);
+                                return;
+                            }
+                        }
+                    }
+                };
+
+                let mut bridge = bridge_guard;
+
+                // Set cancellation token and operation ID
+                bridge.set_cancellation_token(cancel_token.clone(), operation_id);
 
                 match bridge.process_message(&text, &mut messages_guard).await {
                     Ok(_response) => {
@@ -1305,13 +1476,57 @@ impl TuiApp {
                         }
                     }
                     Err(e) => {
-                        tracing::error!("LLM error: {}", e);
+                        // Check if it was a cancellation
+                        let error_msg = e.to_string();
+                        if error_msg.contains("cancelled") {
+                            tracing::info!("Request cancelled by user");
+                        } else {
+                            tracing::error!("LLM error: {}", e);
+                        }
                     }
                 }
+
+                // Clear cancellation token
+                bridge.clear_cancellation_token();
             });
         });
 
         Ok(())
+    }
+
+    /// Cancel current LLM operation
+    fn cancel_current_operation(&mut self) {
+        if let Some(ref token) = self.cancellation_token {
+            token.cancel();
+            debug_log("Cancellation token triggered");
+
+            // Increment operation ID to ignore subsequent events from old operation
+            self.tui_bridge.next_operation_id();
+
+            // Force reset TUI state to Idle
+            *self.tui_bridge.state.lock().unwrap() = TuiState::Idle;
+
+            // Update UI state
+            self.status_message = "Operation cancelled".to_string();
+            self.status_is_error = false;
+
+            // Clear activity feed
+            self.tui_bridge
+                .activity_feed()
+                .lock()
+                .unwrap()
+                .complete_all();
+
+            // Add cancellation message to chat
+            let cancel_msg = Message::system("⚠ Operation cancelled by user".to_string());
+            self.tui_bridge
+                .chat_view()
+                .lock()
+                .unwrap()
+                .add_message(cancel_msg);
+        }
+        self.cancellation_token = None;
+        self.last_esc_time = None;
     }
 
     /// Handle /session list command
@@ -1940,11 +2155,12 @@ mod tests {
 
         let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
-        tx.send(AgentEvent::Thinking).unwrap();
+        let op_id = tui_bridge.operation_id();
+        tx.send(AgentEvent::Thinking { operation_id: op_id }).unwrap();
         tui_bridge.process_events().unwrap();
         assert!(matches!(tui_bridge.state(), TuiState::Thinking));
 
-        tx.send(AgentEvent::Done).unwrap();
+        tx.send(AgentEvent::Done { operation_id: op_id }).unwrap();
         tui_bridge.process_events().unwrap();
         assert_eq!(tui_bridge.state(), TuiState::Idle);
     }

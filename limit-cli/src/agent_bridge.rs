@@ -16,25 +16,42 @@ use limit_llm::ProviderResponseChunk;
 use limit_llm::TrackingDb;
 use serde_json::json;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, instrument};
 
 /// Event types for streaming from agent to REPL
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum AgentEvent {
-    Thinking,
+    Thinking {
+        operation_id: u64,
+    },
     ToolStart {
+        operation_id: u64,
         name: String,
         args: serde_json::Value,
     },
     ToolComplete {
+        operation_id: u64,
         name: String,
         result: String,
     },
-    ContentChunk(String),
-    Done,
-    Error(String),
+    ContentChunk {
+        operation_id: u64,
+        chunk: String,
+    },
+    Done {
+        operation_id: u64,
+    },
+    Cancelled {
+        operation_id: u64,
+    },
+    Error {
+        operation_id: u64,
+        message: String,
+    },
     TokenUsage {
+        operation_id: u64,
         input_tokens: u64,
         output_tokens: u64,
     },
@@ -54,6 +71,10 @@ pub struct AgentBridge {
     event_tx: Option<mpsc::UnboundedSender<AgentEvent>>,
     /// Token usage tracking database
     tracking_db: TrackingDb,
+    /// Cancellation token for aborting current operation
+    cancellation_token: Option<CancellationToken>,
+    /// Current operation ID for event tracking
+    operation_id: u64,
 }
 
 impl AgentBridge {
@@ -102,12 +123,26 @@ impl AgentBridge {
             config,
             event_tx: None,
             tracking_db: TrackingDb::new().map_err(|e| CliError::ConfigError(e.to_string()))?,
+            cancellation_token: None,
+            operation_id: 0,
         })
     }
 
     /// Set the event channel sender for streaming events
     pub fn set_event_tx(&mut self, tx: mpsc::UnboundedSender<AgentEvent>) {
         self.event_tx = Some(tx);
+    }
+
+    /// Set the cancellation token and operation ID for this operation
+    pub fn set_cancellation_token(&mut self, token: CancellationToken, operation_id: u64) {
+        debug!("set_cancellation_token: operation_id={}", operation_id);
+        self.cancellation_token = Some(token);
+        self.operation_id = operation_id;
+    }
+
+    /// Clear the cancellation token
+    pub fn clear_cancellation_token(&mut self) {
+        self.cancellation_token = None;
     }
 
     /// Register all CLI tools into the tool registry
@@ -228,7 +263,10 @@ impl AgentBridge {
             debug!("Agent loop iteration {}", iteration);
 
             // Send thinking event
-            self.send_event(AgentEvent::Thinking);
+            debug!("Sending Thinking event with operation_id={}", self.operation_id);
+            self.send_event(AgentEvent::Thinking {
+                operation_id: self.operation_id,
+            });
 
             // Track timing for token usage
             let request_start = std::time::Instant::now();
@@ -248,8 +286,43 @@ impl AgentBridge {
                 (String, serde_json::Value),
             > = std::collections::HashMap::new();
 
-            // Process stream chunks
-            while let Some(chunk_result) = stream.next().await {
+            // Process stream chunks with cancellation support
+            loop {
+                // Check for cancellation FIRST (before waiting for stream)
+                if let Some(ref token) = self.cancellation_token {
+                    if token.is_cancelled() {
+                        debug!("Operation cancelled by user (pre-stream check)");
+                        self.send_event(AgentEvent::Cancelled {
+                            operation_id: self.operation_id,
+                        });
+                        return Err(CliError::ConfigError(
+                            "Operation cancelled by user".to_string(),
+                        ));
+                    }
+                }
+
+                // Use tokio::select! to check cancellation while waiting for stream
+                // Using cancellation_token.cancelled() for immediate cancellation detection
+                let chunk_result = if let Some(ref token) = self.cancellation_token {
+                    tokio::select! {
+                        chunk = stream.next() => chunk,
+                        _ = token.cancelled() => {
+                            debug!("Operation cancelled via token while waiting for stream");
+                            self.send_event(AgentEvent::Cancelled {
+                                operation_id: self.operation_id,
+                            });
+                            return Err(CliError::ConfigError("Operation cancelled by user".to_string()));
+                        }
+                    }
+                } else {
+                    stream.next().await
+                };
+
+                let Some(chunk_result) = chunk_result else {
+                    // Stream ended
+                    break;
+                };
+
                 match chunk_result {
                     Ok(ProviderResponseChunk::ContentDelta(text)) => {
                         current_content.push_str(&text);
@@ -258,7 +331,10 @@ impl AgentBridge {
                             text.len(),
                             current_content.len()
                         );
-                        self.send_event(AgentEvent::ContentChunk(text));
+                        self.send_event(AgentEvent::ContentChunk {
+                            operation_id: self.operation_id,
+                            chunk: text,
+                        });
                     }
                     Ok(ProviderResponseChunk::ReasoningDelta(_)) => {
                         // Ignore reasoning chunks for now
@@ -291,6 +367,7 @@ impl AgentBridge {
                         );
                         // Emit token usage event for TUI display
                         self.send_event(AgentEvent::TokenUsage {
+                            operation_id: self.operation_id,
                             input_tokens: usage.input_tokens,
                             output_tokens: usage.output_tokens,
                         });
@@ -298,7 +375,10 @@ impl AgentBridge {
                     }
                     Err(e) => {
                         let error_msg = format!("LLM error: {}", e);
-                        self.send_event(AgentEvent::Error(error_msg.clone()));
+                        self.send_event(AgentEvent::Error {
+                            operation_id: self.operation_id,
+                            message: error_msg.clone(),
+                        });
                         return Err(CliError::ConfigError(error_msg));
                     }
                 }
@@ -368,6 +448,7 @@ impl AgentBridge {
                 let args: serde_json::Value =
                     serde_json::from_str(&tc.function.arguments).unwrap_or_default();
                 self.send_event(AgentEvent::ToolStart {
+                    operation_id: self.operation_id,
                     name: tc.function.name.clone(),
                     args,
                 });
@@ -387,6 +468,7 @@ impl AgentBridge {
                     };
 
                     self.send_event(AgentEvent::ToolComplete {
+                        operation_id: self.operation_id,
                         name: tool_call.function.name.clone(),
                         result: output_json.clone(),
                     });
@@ -433,11 +515,49 @@ impl AgentBridge {
 
             // BUG FIX: Replace full_response instead of appending
             full_response.clear();
-            while let Some(chunk_result) = stream.next().await {
+            loop {
+                // Check for cancellation FIRST (before waiting for stream)
+                if let Some(ref token) = self.cancellation_token {
+                    if token.is_cancelled() {
+                        debug!("Operation cancelled by user in final loop (pre-stream check)");
+                        self.send_event(AgentEvent::Cancelled {
+                            operation_id: self.operation_id,
+                        });
+                        return Err(CliError::ConfigError(
+                            "Operation cancelled by user".to_string(),
+                        ));
+                    }
+                }
+
+                // Use tokio::select! to check cancellation while waiting for stream
+                // Using cancellation_token.cancelled() for immediate cancellation detection
+                let chunk_result = if let Some(ref token) = self.cancellation_token {
+                    tokio::select! {
+                        chunk = stream.next() => chunk,
+                        _ = token.cancelled() => {
+                            debug!("Operation cancelled via token while waiting for stream");
+                            self.send_event(AgentEvent::Cancelled {
+                                operation_id: self.operation_id,
+                            });
+                            return Err(CliError::ConfigError("Operation cancelled by user".to_string()));
+                        }
+                    }
+                } else {
+                    stream.next().await
+                };
+
+                let Some(chunk_result) = chunk_result else {
+                    // Stream ended
+                    break;
+                };
+
                 match chunk_result {
                     Ok(ProviderResponseChunk::ContentDelta(text)) => {
                         full_response.push_str(&text);
-                        self.send_event(AgentEvent::ContentChunk(text));
+                        self.send_event(AgentEvent::ContentChunk {
+                            operation_id: self.operation_id,
+                            chunk: text,
+                        });
                     }
                     Ok(ProviderResponseChunk::Done(_)) => {
                         break;
@@ -498,7 +618,9 @@ impl AgentBridge {
             }
         }
 
-        self.send_event(AgentEvent::Done);
+        self.send_event(AgentEvent::Done {
+            operation_id: self.operation_id,
+        });
         Ok(full_response)
     }
 
