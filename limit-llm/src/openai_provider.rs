@@ -61,14 +61,12 @@ impl LlmProvider for OpenAiProvider {
         let base_url = self.base_url.clone();
         let model = self.model.clone();
         let max_tokens = self.max_tokens;
-        let messages_cloned = messages.clone();
-        let tools_cloned = tools.clone();
         let client_clone = self.client.clone();
 
         Ok(Box::pin(stream! {
             info!("OpenAI API request: model={}, max_tokens={}", self.model, self.max_tokens);
 
-            let request_body = match build_request_body(&messages_cloned, &tools_cloned, &model, max_tokens, None) {
+            let request_body = match build_request_body(&messages, &tools, &model, max_tokens, None) {
                 Ok(body) => body,
                 Err(e) => {
                     error!("OpenAI API error: {}", e);
