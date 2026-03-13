@@ -1,0 +1,218 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    PRÓXIMOS PASSOS - REFACTORING TUI                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Data: 2025-01-13
+Status: Refatoração Fase 1 CONCLUÍDA ✅
+Linhas reduzidas: 4,056 → 3,861 (-195 linhas, -4.8%)
+Testes: 153/153 passing
+Clippy: 0 warnings, 0 errors
+
+═══════════════════════════════════════════════════════════════════════════════
+📁 FASE 2: LIMPEZA E CONSOLIDAÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 1. REMOVER CÓDIGO DEPRECATADO
+    ├─ Remover função debug_log() completamente de tui/state.rs
+    ├─ Remover re-exports de debug_log de todos os módulos
+    ├─ Verificar se há outros usos escondidos com: grep -r "debug_log"
+    └─ Commit: "refactor: remove deprecated debug_log function"
+
+[ ] 2. CONSOLIDAR IMPORTS
+    ├─ Revisar imports duplicados em app_impl.rs
+    ├─ Usar imports mais específicos (evitar use crate::tui::*)
+    └─ Commit: "refactor: consolidate and cleanup imports"
+
+[ ] 3. REMOVER CÓDIGO NÃO UTILIZADO
+    ├─ Executar: cargo clippy -- -W dead_code
+    ├─ Remover funções/structs não utilizados
+    ├─ Verificar campos de struct não utilizados
+    └─ Commit: "refactor: remove dead code"
+
+═══════════════════════════════════════════════════════════════════════════════
+🧪 FASE 3: MELHORAR COBERTURA DE TESTES
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 4. TESTES PARA InputEditor
+    ├─ Testar edge cases de UTF-8 (emojis, caracteres multibyte)
+    ├─ Testar paste com limites de tamanho
+    ├─ Testar navegação com texto vazio
+    ├─ Testar replace_range com ranges inválidos
+    └─ Commit: "test: add comprehensive InputEditor tests"
+
+[ ] 5. TESTES PARA FileAutocompleteManager
+    ├─ Testar navegação com lista vazia
+    ├─ Testar aceitação de completion
+    ├─ Testar backspace em diferentes estados
+    ├─ Testar to_legacy_state()
+    └─ Commit: "test: add FileAutocompleteManager tests"
+
+[ ] 6. TESTES DE INTEGRAÇÃO
+    ├─ Testar fluxo completo: input → autocomplete → submit
+    ├─ Testar fluxo: copy → paste → edit → submit
+    ├─ Testar handling de caracteres especiais
+    └─ Commit: "test: add integration tests for input handling"
+
+═══════════════════════════════════════════════════════════════════════════════
+⚡ FASE 4: OTIMIZAÇÕES DE PERFORMANCE
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 7. OTIMIZAR CLONES DESNECESSÁRIOS
+    ├─ Usar Cow<str> em vez de String onde possível
+    ├─ Usar &str em vez de clones em draw()
+    ├─ Verificar clones em hot paths (event handling)
+    └─ Commit: "perf: reduce unnecessary clones"
+
+[ ] 8. OTIMIZAR alocações
+    ├─ Usar String::with_capacity() quando tamanho é conhecido
+    ├─ Reutilizar buffers em loops
+    ├─ Considerar use de smallvec para vetores pequenos
+    └─ Commit: "perf: optimize allocations"
+
+[ ] 9. PROFILE E BENCHMARK
+    ├─ Criar benchmarks com criterion
+    ├─ Identificar hot paths com cargo flamegraph
+    ├─ Medir tempo de renderização
+    └─ Documentar descobertas
+
+═══════════════════════════════════════════════════════════════════════════════
+🏗️ FASE 5: EXTRAÇÕES ADICIONAIS (OPCIONAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 10. EXTRAIR ClipboardHandler Integration
+    ├─ Criar módulo tui/clipboard_manager.rs
+    ├─ Encapsular lógica de copy/paste
+    ├─ Integrar com InputEditor
+    └─ Commit: "refactor: extract clipboard manager"
+
+[ ] 11. EXTRAIR Status Bar Manager
+    ├─ Criar módulo tui/status.rs
+    ├─ Encapsular lógica de update_status()
+    ├─ Suporte a múltiplos tipos de status
+    └─ Commit: "refactor: extract status bar manager"
+
+[ ] 12. EXTRAIR Event Handler
+    ├─ Criar módulo tui/event_handler.rs
+    ├─ Separar event handling de TuiApp
+    ├─ Usar pattern matching mais idiomático
+    └─ Commit: "refactor: extract event handler"
+
+═══════════════════════════════════════════════════════════════════════════════
+📚 FASE 6: DOCUMENTAÇÃO
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 13. DOCUMENTAÇÃO DE ARQUITETURA
+    ├─ Criar docs/tui-architecture.md
+    ├─ Diagrama de fluxo de dados
+    ├─ Explicar separação de responsabilidades
+    └─ Exemplos de uso de cada componente
+
+[ ] 14. DOCUMENTAÇÃO DE API
+    ├─ Adicionar exemplos em rustdoc para cada módulo
+    ├─ Documentar invariantes e contratos
+    ├─ Adicionar badges de cobertura de teste
+    └─ Commit: "docs: improve API documentation"
+
+[ ] 15. GUIA DE CONTRIBUTING
+    ├─ Criar docs/tui-contributing.md
+    ├─ Padrões de código específicos para TUI
+    ├─ Como adicionar novos comandos
+    └─ Checklist de code review
+
+═══════════════════════════════════════════════════════════════════════════════
+🔧 FASE 7: MELHORIAS DE UX
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 16. MELHORAR AUTOCOMPLETE
+    ├─ Adicionar histórico de arquivos usados
+    ├─ Suporte a fuzzy matching
+    ├─ Mostrar ícones diferentes para arquivos/diretórios
+    ├─ Cache de resultados
+    └─ Commit: "feat: improve autocomplete UX"
+
+[ ] 17. MELHORAR FEEDBACK VISUAL
+    ├─ Animar transições de estado
+    ├─ Adicionar timestamps nas mensagens
+    ├─ Suporte a temas de cores
+    └─ Commit: "feat: improve visual feedback"
+
+[ ] 18. ACESSIBILIDADE
+    ├─ Suporte a screen readers
+    ├─ Opções de alto contraste
+    ├─ Navegação por teclado aprimorada
+    └─ Commit: "feat: add accessibility features"
+
+═══════════════════════════════════════════════════════════════════════════════
+🐛 FASE 8: BUG FIXES CONHECIDOS
+═══════════════════════════════════════════════════════════════════════════════
+
+[ ] 19. INVESTIGAR E CORRIGIR
+    ├─ Verificar race conditions em event handling
+    ├─ Validar UTF-8 em todos os inputs
+    ├─ Testar edge cases de scroll
+    └─ Documentar bugs encontrados
+
+═══════════════════════════════════════════════════════════════════════════════
+📊 MÉTRICAS DE SUCESSO
+═══════════════════════════════════════════════════════════════════════════════
+
+Meta após Fase 2:
+  [x] Build: 0 errors
+  [x] Clippy: 0 warnings  
+  [x] Tests: 100% passing
+  [ ] Coverage: >80% (atual: ~70%)
+  [ ] Lines: <3,800 (atual: 3,861)
+
+Meta após Fase 4:
+  [ ] Performance: <16ms frame time
+  [ ] Memory: Sem leaks
+  [ ] Binary size: <10MB
+
+═══════════════════════════════════════════════════════════════════════════════
+🎯 PRIORIDADE SUGERIDA
+═══════════════════════════════════════════════════════════════════════════════
+
+ALTA PRIORIDADE (Fazer primeiro):
+  1. Item 1 - Remover debug_log
+  2. Item 4 - Testes InputEditor  
+  3. Item 7 - Otimizar clones
+
+MÉDIA PRIORIDADE:
+  4. Item 13 - Documentação arquitetura
+  5. Item 16 - Melhorar autocomplete
+  6. Item 10 - Extrair clipboard
+
+BAIXA PRIORIDADE (Fazer depois):
+  7. Item 17 - Melhorar feedback visual
+  8. Item 18 - Acessibilidade
+  9. Item 9 - Profile/benchmark
+
+═══════════════════════════════════════════════════════════════════════════════
+📝 NOTAS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Cada item deve ter seu próprio commit atômico
+- Manter testes passando após cada mudança
+- Executar clippy após cada commit
+- Atualizar este arquivo conforme progresso
+- Documentar blockers e decisões de design
+
+═══════════════════════════════════════════════════════════════════════════════
+🔗 LINKS ÚTEIS
+═══════════════════════════════════════════════════════════════════════════════
+
+- Rust API Guidelines: https://rust-lang.github.io/api-guidelines/
+- Clippy Lints: https://rust-lang.github.io/rust-clippy/master/
+- Ratatui Docs: https://docs.rs/ratatui/
+- Testing in Rust: https://doc.rust-lang.org/book/ch11-00-testing.html
+
+═══════════════════════════════════════════════════════════════════════════════
+✅ PROGRESSO
+═══════════════════════════════════════════════════════════════════════════════
+
+[##########----------] 50% - Fase 1 Completa
+
+Próximo milestone: Fase 2 completa (60%)
+Meta final: Todas as fases (100%)
+
+═══════════════════════════════════════════════════════════════════════════════

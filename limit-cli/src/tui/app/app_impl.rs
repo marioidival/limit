@@ -615,7 +615,12 @@ impl TuiApp {
         let trigger_pos = self.input_editor.cursor() - 1; // Position of @
         self.autocomplete_manager.activate(trigger_pos);
 
-        tracing::debug!("Activated autocomplete at pos {}", trigger_pos);
+        tracing::info!(
+            "🔍 ACTIVATED AUTOCOMPLETE: trigger_pos={}, cursor={}, text='{}'",
+            trigger_pos,
+            self.input_editor.cursor(),
+            self.input_editor.text()
+        );
     }
 
     /// Accept selected file completion
@@ -624,31 +629,28 @@ impl TuiApp {
             let trigger_pos = self.autocomplete_manager.trigger_pos().unwrap_or(0);
             let current_cursor = self.input_editor.cursor();
 
-            // Calculate how much to remove: from @+1 to current cursor
+            tracing::debug!(
+                "accept_file_completion: trigger_pos={}, cursor={}, text='{}'",
+                trigger_pos,
+                current_cursor,
+                self.input_editor.text()
+            );
+
+            // Calculate what to remove: from @+1 to current cursor
             let remove_start = trigger_pos + 1;
             let remove_end = current_cursor;
 
-            tracing::debug!(
-                "accept_file_completion: trigger_pos={}, cursor={}, removing {}..{}",
-                trigger_pos,
-                current_cursor,
-                remove_start,
-                remove_end
-            );
-
-            // Only drain if there's something to remove
+            // Use replace_range to atomically replace the query with the completion
             if remove_end > remove_start {
-                self.input_editor.text_mut().drain(remove_start..remove_end);
+                self.input_editor.replace_range(remove_start, remove_end, &completion);
+            } else {
+                // Nothing to remove, just insert after @
+                self.input_editor.set_cursor(remove_start);
+                self.input_editor.insert_str(&completion);
             }
 
-            // Move cursor to right after @
-            self.input_editor.set_cursor(trigger_pos + 1);
-
-            // Insert the selected path
-            self.input_editor.insert_str(&completion);
-
             tracing::debug!(
-                "Accepted completion: '{}' -> input now: {:?}",
+                "Accepted completion: '{}' -> input now: '{}'",
                 completion,
                 self.input_editor.text()
             );
