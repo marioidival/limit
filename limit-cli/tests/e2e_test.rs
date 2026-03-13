@@ -16,9 +16,6 @@ use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
-/// Test operation ID for events
-const TEST_OP_ID: u64 = 1;
-
 fn create_test_config() -> LlmConfig {
     let mut providers = HashMap::new();
     providers.insert(
@@ -207,9 +204,12 @@ fn test_e2e_tui_rendering_components() {
     // Test initial state
     assert_eq!(tui_bridge.state(), TuiState::Idle);
 
+    // Get the current operation ID from the bridge (needed for event filtering)
+    let op_id = tui_bridge.operation_id();
+
     // Test thinking state
     tx.send(limit_cli::AgentEvent::Thinking {
-        operation_id: TEST_OP_ID,
+        operation_id: op_id,
     })
     .unwrap();
     tui_bridge.process_events().unwrap();
@@ -217,7 +217,7 @@ fn test_e2e_tui_rendering_components() {
 
     // Test tool execution state
     tx.send(limit_cli::AgentEvent::ToolStart {
-        operation_id: TEST_OP_ID,
+        operation_id: op_id,
         name: "file_read".to_string(),
         args: serde_json::json!({"path": "/tmp/test.txt"}),
     })
@@ -229,7 +229,7 @@ fn test_e2e_tui_rendering_components() {
 
     // Test completion
     tx.send(limit_cli::AgentEvent::ToolComplete {
-        operation_id: TEST_OP_ID,
+        operation_id: op_id,
         name: "file_read".to_string(),
         result: "File content here".to_string(),
     })
@@ -237,7 +237,7 @@ fn test_e2e_tui_rendering_components() {
     tui_bridge.process_events().unwrap();
     // Done event resets Thinking state to Idle
     tx.send(limit_cli::AgentEvent::Done {
-        operation_id: TEST_OP_ID,
+        operation_id: op_id,
     })
     .unwrap();
     tui_bridge.process_events().unwrap();
@@ -245,7 +245,7 @@ fn test_e2e_tui_rendering_components() {
 
     // Test error handling - errors reset state to Idle
     tx.send(limit_cli::AgentEvent::Error {
-        operation_id: TEST_OP_ID,
+        operation_id: op_id,
         message: "Test error".to_string(),
     })
     .unwrap();
@@ -312,31 +312,34 @@ fn test_e2e_event_ordering() {
     let (tx, rx) = mpsc::unbounded_channel();
     let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
+    // Get the current operation ID
+    let op_id = tui_bridge.operation_id();
+
     // Simulate a complete conversation flow
     let events = vec![
         limit_cli::AgentEvent::Thinking {
-            operation_id: TEST_OP_ID,
+            operation_id: op_id,
         },
         limit_cli::AgentEvent::ContentChunk {
-            operation_id: TEST_OP_ID,
+            operation_id: op_id,
             chunk: "Hello".to_string(),
         },
         limit_cli::AgentEvent::ContentChunk {
-            operation_id: TEST_OP_ID,
+            operation_id: op_id,
             chunk: " World".to_string(),
         },
         limit_cli::AgentEvent::ToolStart {
-            operation_id: TEST_OP_ID,
+            operation_id: op_id,
             name: "file_read".to_string(),
             args: serde_json::json!({"path": "/test.txt"}),
         },
         limit_cli::AgentEvent::ToolComplete {
-            operation_id: TEST_OP_ID,
+            operation_id: op_id,
             name: "file_read".to_string(),
             result: "content".to_string(),
         },
         limit_cli::AgentEvent::Done {
-            operation_id: TEST_OP_ID,
+            operation_id: op_id,
         },
     ];
 

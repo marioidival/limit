@@ -9,9 +9,6 @@ use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// Test operation ID for events
-const TEST_OP_ID: u64 = 1;
-
 #[test]
 fn test_tui_integration_full_conversation() {
     // Create a config with an API key (even if invalid, we just test the flow)
@@ -75,20 +72,20 @@ fn test_tui_bridge_event_ordering() {
     // Simulate event sequence: Thinking -> ToolStart -> ToolComplete -> Done
     let events = vec![
         limit_cli::AgentEvent::Thinking {
-            operation_id: TEST_OP_ID,
+            operation_id: tui_bridge.operation_id(),
         },
         limit_cli::AgentEvent::ToolStart {
-            operation_id: TEST_OP_ID,
+            operation_id: tui_bridge.operation_id(),
             name: "file_read".to_string(),
             args: serde_json::json!({"path": "/tmp/test.txt"}),
         },
         limit_cli::AgentEvent::ToolComplete {
-            operation_id: TEST_OP_ID,
+            operation_id: tui_bridge.operation_id(),
             name: "file_read".to_string(),
             result: "Hello, World!".to_string(),
         },
         limit_cli::AgentEvent::Done {
-            operation_id: TEST_OP_ID,
+            operation_id: tui_bridge.operation_id(),
         },
     ];
 
@@ -137,7 +134,7 @@ fn test_tui_bridge_tool_execution_display() {
 
     // Send tool events
     tx.send(limit_cli::AgentEvent::ToolStart {
-        operation_id: TEST_OP_ID,
+        operation_id: tui_bridge.operation_id(),
         name: "file_read".to_string(),
         args: serde_json::json!({"path": "/tmp/test.txt"}),
     })
@@ -150,7 +147,7 @@ fn test_tui_bridge_tool_execution_display() {
 
     // Send tool complete event
     tx.send(limit_cli::AgentEvent::ToolComplete {
-        operation_id: TEST_OP_ID,
+        operation_id: tui_bridge.operation_id(),
         name: "file_read".to_string(),
         result: "File content here".to_string(),
     })
@@ -194,7 +191,7 @@ fn test_tui_bridge_error_handling() {
 
     // Send error event
     tx.send(limit_cli::AgentEvent::Error {
-        operation_id: TEST_OP_ID,
+        operation_id: tui_bridge.operation_id(),
         message: "Tool execution failed".to_string(),
     })
     .unwrap();
@@ -234,7 +231,7 @@ fn test_tui_bridge_spinner_animation() {
 
     // Send thinking event
     tx.send(limit_cli::AgentEvent::Thinking {
-        operation_id: TEST_OP_ID,
+        operation_id: tui_bridge.operation_id(),
     })
     .unwrap();
 
@@ -293,7 +290,7 @@ fn test_tui_bridge_content_streaming() {
     let chunks = ["Hello", " ", "World", "!"];
     for chunk in chunks.iter() {
         tx.send(limit_cli::AgentEvent::ContentChunk {
-            operation_id: TEST_OP_ID,
+            operation_id: tui_bridge.operation_id(),
             chunk: chunk.to_string(),
         })
         .unwrap();
