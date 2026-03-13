@@ -3,7 +3,9 @@
 //! Handles keyboard events, mouse events, and delegates to appropriate handlers.
 
 use crate::error::CliError;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use std::time::Instant;
 
 /// Actions that can result from input handling
@@ -59,7 +61,12 @@ impl InputHandler {
         is_busy: bool,
         has_autocomplete: bool,
     ) -> Result<InputAction, CliError> {
-        tracing::trace!("handle_key: code={:?} mod={:?} kind={:?}", key.code, key.modifiers, key.kind);
+        tracing::trace!(
+            "handle_key: code={:?} mod={:?} kind={:?}",
+            key.code,
+            key.modifiers,
+            key.kind
+        );
 
         if key.kind != KeyEventKind::Press {
             return Ok(InputAction::None);
@@ -115,7 +122,9 @@ impl InputHandler {
                     Ok(InputAction::Submit(text.to_string()))
                 }
             }
-            KeyCode::Char(c) if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT => {
+            KeyCode::Char(c)
+                if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT =>
+            {
                 if c == '@' {
                     Ok(InputAction::StartAutocomplete)
                 } else if has_autocomplete {
@@ -129,22 +138,31 @@ impl InputHandler {
     }
 
     /// Handle ESC key (double-ESC to cancel when busy)
-    fn handle_esc(&mut self, is_busy: bool, has_autocomplete: bool) -> Result<InputAction, CliError> {
+    fn handle_esc(
+        &mut self,
+        is_busy: bool,
+        has_autocomplete: bool,
+    ) -> Result<InputAction, CliError> {
         if has_autocomplete {
             return Ok(InputAction::AutocompleteCancel);
         }
-        
+
         if is_busy {
             let now = Instant::now();
-            let should_cancel = self.last_esc_time
+            let should_cancel = self
+                .last_esc_time
                 .map(|last| now.duration_since(last) < std::time::Duration::from_millis(1000))
                 .unwrap_or(false);
 
             self.last_esc_time = Some(now);
 
-            return Ok(if should_cancel { InputAction::Cancel } else { InputAction::None });
+            return Ok(if should_cancel {
+                InputAction::Cancel
+            } else {
+                InputAction::None
+            });
         }
-        
+
         Ok(InputAction::Exit)
     }
 
