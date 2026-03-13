@@ -2,8 +2,8 @@
 //!
 //! This module contains the core state types used by the TUI system.
 
-/// Maximum paste size to prevent memory issues (100KB)
-pub const MAX_PASTE_SIZE: usize = 100 * 1024;
+/// Maximum paste size to prevent memory issues (300KB)
+pub const MAX_PASTE_SIZE: usize = 300 * 1024;
 
 /// TUI state for displaying agent events
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -50,6 +50,6 @@ mod tests {
 
     #[test]
     fn test_max_paste_size() {
-        assert_eq!(MAX_PASTE_SIZE, 100 * 1024);
+        assert_eq!(MAX_PASTE_SIZE, 300 * 1024);
     }
 }

@@ -28,7 +28,7 @@ pub fn format_activity_message(tool_name: &str, args: &serde_json::Value) -> Str
 fn format_file_read(args: &serde_json::Value) -> String {
     args.get("path")
         .and_then(|p| p.as_str())
-        .map(|p| format!("Reading {}...", truncate_path(p, 40)))
+        .map(|p| format!("Reading {}...", truncate_path(p, 150)))
         .unwrap_or_else(|| "Reading file...".to_string())
 }
 
@@ -36,7 +36,7 @@ fn format_file_read(args: &serde_json::Value) -> String {
 fn format_file_write(args: &serde_json::Value) -> String {
     args.get("path")
         .and_then(|p| p.as_str())
-        .map(|p| format!("Writing {}...", truncate_path(p, 40)))
+        .map(|p| format!("Writing {}...", truncate_path(p, 150)))
         .unwrap_or_else(|| "Writing file...".to_string())
 }
 
@@ -44,7 +44,7 @@ fn format_file_write(args: &serde_json::Value) -> String {
 fn format_file_edit(args: &serde_json::Value) -> String {
     args.get("path")
         .and_then(|p| p.as_str())
-        .map(|p| format!("Editing {}...", truncate_path(p, 40)))
+        .map(|p| format!("Editing {}...", truncate_path(p, 150)))
         .unwrap_or_else(|| "Editing file...".to_string())
 }
 
@@ -52,7 +52,7 @@ fn format_file_edit(args: &serde_json::Value) -> String {
 fn format_bash(args: &serde_json::Value) -> String {
     args.get("command")
         .and_then(|c| c.as_str())
-        .map(|c| format!("Running {}...", truncate_command(c, 30)))
+        .map(|c| format!("Running {}...", truncate_command(c, 150)))
         .unwrap_or_else(|| "Executing command...".to_string())
 }
 
@@ -60,7 +60,7 @@ fn format_bash(args: &serde_json::Value) -> String {
 fn format_git_clone(args: &serde_json::Value) -> String {
     args.get("url")
         .and_then(|u| u.as_str())
-        .map(|u| format!("Cloning {}...", truncate_path(u, 40)))
+        .map(|u| format!("Cloning {}...", truncate_path(u, 150)))
         .unwrap_or_else(|| "Cloning repository...".to_string())
 }
 
@@ -68,7 +68,7 @@ fn format_git_clone(args: &serde_json::Value) -> String {
 fn format_grep(args: &serde_json::Value) -> String {
     args.get("pattern")
         .and_then(|p| p.as_str())
-        .map(|p| format!("Searching for '{}'...", truncate_command(p, 30)))
+        .map(|p| format!("Searching for '{}'...", truncate_command(p, 150)))
         .unwrap_or_else(|| "Searching...".to_string())
 }
 
@@ -76,7 +76,7 @@ fn format_grep(args: &serde_json::Value) -> String {
 fn format_ast_grep(args: &serde_json::Value) -> String {
     args.get("pattern")
         .and_then(|p| p.as_str())
-        .map(|p| format!("AST searching '{}'...", truncate_command(p, 25)))
+        .map(|p| format!("AST searching '{}'...", truncate_command(p, 150)))
         .unwrap_or_else(|| "AST searching...".to_string())
 }
 
