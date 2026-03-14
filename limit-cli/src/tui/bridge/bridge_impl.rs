@@ -50,6 +50,38 @@ impl TuiBridge {
             CliError::ConfigError(format!("Failed to create session manager: {}", e))
         })?;
 
+        Self::with_session_manager(agent_bridge, event_rx, session_manager)
+    }
+
+    /// Create a new TuiBridge for testing with a temporary session manager
+    #[cfg(test)]
+    pub fn new_for_test(
+        agent_bridge: AgentBridge,
+        event_rx: mpsc::UnboundedReceiver<AgentEvent>,
+    ) -> Result<Self, CliError> {
+        use tempfile::TempDir;
+
+        // Create a temporary directory for the test
+        let temp_dir = TempDir::new().map_err(|e| {
+            CliError::ConfigError(format!("Failed to create temp directory: {}", e))
+        })?;
+
+        let db_path = temp_dir.path().join("session.db");
+        let sessions_dir = temp_dir.path().join("sessions");
+
+        let session_manager = SessionManager::with_paths(db_path, sessions_dir).map_err(|e| {
+            CliError::ConfigError(format!("Failed to create session manager: {}", e))
+        })?;
+
+        Self::with_session_manager(agent_bridge, event_rx, session_manager)
+    }
+
+    /// Create a new TuiBridge with a custom session manager
+    pub fn with_session_manager(
+        agent_bridge: AgentBridge,
+        event_rx: mpsc::UnboundedReceiver<AgentEvent>,
+        session_manager: SessionManager,
+    ) -> Result<Self, CliError> {
         // Always create a new session on TUI startup
         let session_id = session_manager
             .create_new_session()

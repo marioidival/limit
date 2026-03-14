@@ -110,6 +110,16 @@ impl SessionManager {
         })?;
 
         let db_path = limit_dir.join("session.db");
+
+        Self::with_paths(db_path, sessions_dir)
+    }
+
+    /// Create SessionManager with custom paths (for testing)
+    pub fn with_paths(db_path: PathBuf, sessions_dir: PathBuf) -> Result<Self, CliError> {
+        fs::create_dir_all(&sessions_dir).map_err(|e| {
+            CliError::ConfigError(format!("Failed to create sessions directory: {}", e))
+        })?;
+
         let session_manager = Self {
             db_path,
             sessions_dir,

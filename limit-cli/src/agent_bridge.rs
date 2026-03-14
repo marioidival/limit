@@ -86,6 +86,23 @@ impl AgentBridge {
     /// # Returns
     /// A new AgentBridge instance or an error if initialization fails
     pub fn new(config: limit_llm::Config) -> Result<Self, CliError> {
+        let tracking_db = TrackingDb::new().map_err(|e| CliError::ConfigError(e.to_string()))?;
+        Self::with_tracking_db(config, tracking_db)
+    }
+
+    /// Create a new AgentBridge for testing with an in-memory tracking database
+    #[cfg(test)]
+    pub fn new_for_test(config: limit_llm::Config) -> Result<Self, CliError> {
+        let tracking_db =
+            TrackingDb::new_in_memory().map_err(|e| CliError::ConfigError(e.to_string()))?;
+        Self::with_tracking_db(config, tracking_db)
+    }
+
+    /// Create a new AgentBridge with a custom tracking database
+    pub fn with_tracking_db(
+        config: limit_llm::Config,
+        tracking_db: TrackingDb,
+    ) -> Result<Self, CliError> {
         let llm_client = ProviderFactory::create_provider(&config)
             .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
@@ -122,7 +139,7 @@ impl AgentBridge {
             tool_names,
             config,
             event_tx: None,
-            tracking_db: TrackingDb::new().map_err(|e| CliError::ConfigError(e.to_string()))?,
+            tracking_db,
             cancellation_token: None,
             operation_id: 0,
         })

@@ -31,7 +31,12 @@ impl TrackingDb {
 
         db_path.push("tracking.db");
 
-        let conn = Connection::open(&db_path)
+        Self::open(&db_path)
+    }
+
+    /// Open tracking database at a specific path (for testing)
+    pub fn open(db_path: &std::path::Path) -> Result<Self, LlmError> {
+        let conn = Connection::open(db_path)
             .map_err(|e| LlmError::PersistenceError(format!("Failed to open database: {}", e)))?;
 
         // Set busy timeout for concurrent access (5 seconds)
@@ -39,6 +44,21 @@ impl TrackingDb {
             .map_err(|e| {
                 LlmError::PersistenceError(format!("Failed to set busy timeout: {}", e))
             })?;
+
+        let db = Self {
+            conn: Arc::new(Mutex::new(conn)),
+        };
+
+        db.init_tables()?;
+
+        Ok(db)
+    }
+
+    /// Create an in-memory database (for testing)
+    pub fn new_in_memory() -> Result<Self, LlmError> {
+        let conn = Connection::open_in_memory().map_err(|e| {
+            LlmError::PersistenceError(format!("Failed to open in-memory database: {}", e))
+        })?;
 
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
