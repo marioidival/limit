@@ -557,9 +557,17 @@ impl TuiApp {
                 }
             }
             KeyCode::Left => {
+                tracing::debug!(
+                    "KeyCode::Left: has_pasted_content={}",
+                    self.input_editor.has_pasted_content()
+                );
                 self.input_editor.move_left();
             }
             KeyCode::Right => {
+                tracing::debug!(
+                    "KeyCode::Right: has_pasted_content={}",
+                    self.input_editor.has_pasted_content()
+                );
                 self.input_editor.move_right();
             }
             KeyCode::Home => {
@@ -1018,6 +1026,7 @@ impl TuiApp {
 
     fn draw(&mut self) -> Result<(), CliError> {
         let chat_view = self.tui_bridge.chat_view().clone();
+        let display_text = self.input_editor.display_text_combined();
         let cursor_pos = self.input_editor.cursor();
         let cursor_blink_state = self.input_handler.cursor_blink_state();
         let tui_bridge = &self.tui_bridge;
@@ -1029,7 +1038,7 @@ impl TuiApp {
                     f,
                     f.area(),
                     &chat_view,
-                    self.input_editor.text(),
+                    &display_text,
                     cursor_pos,
                     &self.status_message,
                     self.status_is_error,
