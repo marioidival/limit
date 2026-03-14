@@ -111,9 +111,10 @@ impl CliExecutor {
             cmd.arg("--engine").arg(self.config.engine.as_arg());
         }
 
-        // Add headless flag
-        if self.config.headless {
-            cmd.arg("--headless");
+        // agent-browser runs headless by default
+        // Use --headed flag to show browser window when headless is false
+        if !self.config.headless {
+            cmd.arg("--headed");
         }
 
         cmd.args(args);

@@ -795,7 +795,13 @@ impl TuiApp {
                 }
                 Err(e) => {
                     tracing::error!("Command error: {}", e);
-                    return Err(e);
+                    // Show error to user instead of crashing
+                    self.tui_bridge
+                        .chat_view()
+                        .lock()
+                        .unwrap()
+                        .add_message(Message::system(format!("Error: {}", e)));
+                    return Ok(());
                 }
             }
         }
