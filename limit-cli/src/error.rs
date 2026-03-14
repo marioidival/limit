@@ -9,4 +9,6 @@ pub enum CliError {
     ConfigError(String),
     #[error("Agent error: {0}")]
     AgentError(#[from] limit_agent::error::AgentError),
+    #[error("{0}")]
+    Other(String),
 }

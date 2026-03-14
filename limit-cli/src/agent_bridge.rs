@@ -1,9 +1,9 @@
 use crate::error::CliError;
 use crate::system_prompt::SYSTEM_PROMPT;
 use crate::tools::{
-    AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool, GitCloneTool,
-    GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool, GrepTool,
-    LspTool, WebFetchTool, WebSearchTool,
+    AstGrepTool, BashTool, BrowserTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool,
+    GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool,
+    GrepTool, LspTool, WebFetchTool, WebSearchTool,
 };
 use chrono::Datelike;
 use futures::StreamExt;
@@ -131,6 +131,7 @@ impl AgentBridge {
             "lsp",
             "web_search",
             "web_fetch",
+            "browser",
         ];
 
         Ok(Self {
@@ -224,6 +225,11 @@ impl AgentBridge {
         registry
             .register(WebFetchTool::new())
             .expect("Failed to register web_fetch");
+
+        // Browser tool
+        registry
+            .register(BrowserTool::new())
+            .expect("Failed to register browser");
     }
 
     /// Process a user message through the LLM and execute any tool calls
@@ -946,6 +952,55 @@ impl AgentBridge {
                     "required": ["url"]
                 }),
             ),
+            "browser" => (
+                "Browser automation for testing, scraping, and screenshots. Use snapshot-ref workflow: open URL, take snapshot, use refs from snapshot for interactions. Supports Chrome and Lightpanda engines.".to_string(),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["open", "close", "snapshot", "click", "fill", "screenshot", "wait", "eval", "get"],
+                            "description": "Browser action to perform"
+                        },
+                        "url": {
+                            "type": "string",
+                            "description": "URL to open (required for 'open' action)"
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "Element selector or ref (required for 'click' and 'fill' actions)"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text to fill (required for 'fill' action)"
+                        },
+                        "path": {
+                            "type": "string",
+                            "description": "File path for screenshot (required for 'screenshot' action)"
+                        },
+                        "wait_for": {
+                            "type": "string",
+                            "description": "Wait condition (required for 'wait' action)"
+                        },
+                        "script": {
+                            "type": "string",
+                            "description": "JavaScript to evaluate (required for 'eval' action)"
+                        },
+                        "get_what": {
+                            "type": "string",
+                            "enum": ["text", "html", "value", "url", "title"],
+                            "description": "What to get (required for 'get' action)"
+                        },
+                        "engine": {
+                            "type": "string",
+                            "enum": ["chrome", "lightpanda"],
+                            "default": "chrome",
+                            "description": "Browser engine to use"
+                        }
+                    },
+                    "required": ["action"]
+                }),
+            ),
             _ => (
                 format!("Tool: {}", name),
                 json!({
@@ -1097,7 +1152,7 @@ mod tests {
         let bridge = AgentBridge::new(config).unwrap();
         let definitions = bridge.get_tool_definitions();
 
-        assert_eq!(definitions.len(), 17);
+        assert_eq!(definitions.len(), 18);
 
         // Check file_read tool definition
         let file_read = definitions
