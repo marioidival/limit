@@ -1,6 +1,7 @@
 use limit_llm::{
     Config, LlmProvider, ProviderConfig, ProviderFactory, ThinkingConfig, ZaiProvider,
 };
+use serial_test::serial;
 use std::env;
 
 #[test]
@@ -90,6 +91,7 @@ model = "glm-4.7"
 }
 
 #[test]
+#[serial]
 fn test_zai_config_validation_with_env_var() {
     env::set_var("ZAI_API_KEY", "test-zai-key");
 
@@ -124,6 +126,7 @@ model = "glm-4.7"
 }
 
 #[test]
+#[serial]
 fn test_zai_api_key_env_var() {
     env::remove_var("ZAI_API_KEY"); // Clean up first
     env::set_var("ZAI_API_KEY", "env-test-key");
@@ -200,6 +203,7 @@ fn test_zai_provider_with_all_params() {
 }
 
 #[test]
+#[serial]
 fn test_zai_config_missing_api_key_no_env() {
     // Ensure no env var is set
     env::remove_var("ZAI_API_KEY");

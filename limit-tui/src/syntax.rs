@@ -72,7 +72,8 @@ impl SyntaxHighlighter {
         let token = match lang_lower.as_str() {
             "rust" | "rs" => "Rust",
             "python" | "py" => "Python",
-            "typescript" | "ts" => "TypeScript",
+            // Note: Default syntect syntax set doesn't have TypeScript, use JavaScript
+            "typescript" | "ts" => "JavaScript",
             "tsx" => "TypeScript JSX",
             "javascript" | "js" => "JavaScript",
             "javascript react" | "jsx" => "JavaScript (Babel)",
@@ -286,7 +287,8 @@ mod tests {
         assert_eq!(highlighter.detect_language("rs").name, "Rust");
         assert_eq!(highlighter.detect_language("py").name, "Python");
         assert_eq!(highlighter.detect_language("js").name, "JavaScript");
-        assert_eq!(highlighter.detect_language("ts").name, "TypeScript");
+        // Note: Default syntect doesn't have TypeScript, so "ts" falls back to JavaScript
+        assert_eq!(highlighter.detect_language("ts").name, "JavaScript");
     }
 
     #[test]
