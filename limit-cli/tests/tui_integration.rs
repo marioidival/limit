@@ -128,9 +128,21 @@ fn test_tui_bridge_tool_execution_display() {
 
     let mut tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
 
+    // TuiBridge::new() adds 2 system messages (welcome + model info)
+    let initial_count = tui_bridge.chat_view().lock().unwrap().message_count();
+    assert!(
+        initial_count >= 2,
+        "Should have at least 2 system messages, got {}",
+        initial_count
+    );
+
     // Add user message
     tui_bridge.add_user_message("Read the file /tmp/test.txt".to_string());
-    assert_eq!(tui_bridge.chat_view().lock().unwrap().message_count(), 1);
+    assert_eq!(
+        tui_bridge.chat_view().lock().unwrap().message_count(),
+        initial_count + 1,
+        "Should have one more message after adding user message"
+    );
 
     // Send tool events
     tx.send(limit_cli::AgentEvent::ToolStart {
@@ -298,11 +310,20 @@ fn test_tui_bridge_content_streaming() {
     }
 
     // Chat should have initial system messages from TuiBridge::new()
-    // ContentChunk accumulates content but doesn't add separate messages per chunk
+    // ContentChunk accumulates content into a single assistant message
+    // Expected: 2 system messages (welcome + model) + 1 assistant message = 3 total
     let chat = tui_bridge.chat_view().lock().unwrap();
-    assert!(chat.message_count() >= 2); // At least 2 system messages
-    let chat = tui_bridge.chat_view().lock().unwrap();
-    assert!(chat.message_count() >= chunks.len());
+    let count = chat.message_count();
+    assert!(
+        count >= 2,
+        "Should have at least 2 system messages, got {}",
+        count
+    );
+    assert!(
+        count >= 3,
+        "Should have at least 3 messages (2 system + 1 assistant), got {}",
+        count
+    );
 }
 
 #[test]
