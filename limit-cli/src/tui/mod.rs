@@ -17,8 +17,25 @@
 //!
 //! ```no_run
 //! use limit_cli::tui::app::{TuiBridge, TuiApp};
-//! use limit_cli::agent_bridge::{AgentBridge, AgentEvent};
+//! use limit_cli::agent_bridge::AgentBridge;
+//! use limit_llm::{Config, ProviderConfig};
 //! use tokio::sync::mpsc;
+//! use std::collections::HashMap;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create config
+//! let mut providers = HashMap::new();
+//! providers.insert("anthropic".to_string(), ProviderConfig {
+//!     api_key: Some("test-key".to_string()),
+//!     model: "claude-3-5-sonnet-20241022".to_string(),
+//!     base_url: None,
+//!     max_tokens: 4096,
+//!     timeout: 60,
+//!     max_iterations: 100,
+//!     thinking_enabled: false,
+//!     clear_thinking: true,
+//! });
+//! let config = Config { provider: "anthropic".to_string(), providers };
 //!
 //! // Create agent bridge and event channel
 //! let (tx, rx) = mpsc::unbounded_channel();
@@ -28,8 +45,10 @@
 //! let tui_bridge = TuiBridge::new(bridge, rx)?;
 //!
 //! // Run TUI app
-//! let app = TuiApp::new(tui_bridge)?;
+//! let mut app = TuiApp::new(tui_bridge)?;
 //! app.run()?;
+//! # Ok(())
+//! # }
 //! ```
 
 mod state;
