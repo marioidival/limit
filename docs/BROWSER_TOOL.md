@@ -2,7 +2,30 @@
 
 Automate browser interactions directly from Limit using the agent-browser CLI.
 
+## Quick Start
+
+```bash
+# 1. Install agent-browser
+npm install -g agent-browser
+
+# 2. Verify installation
+agent-browser --version
+
+# 3. Use in Limit TUI
+lim> /browser open https://example.com
+lim> /browser snapshot
+```
+
+That's it! The browser runs headless by default (no visible window).
+
 ## Prerequisites
+
+### Required
+
+- **agent-browser** - Browser automation CLI
+- **Chrome** - Browser engine (default)
+
+### Install agent-browser
 
 Install agent-browser globally:
 
@@ -115,34 +138,73 @@ Clicked: e4
 
 ## Configuration
 
-### Browser Engine
+### Default Behavior
 
-Two engines are supported:
-
-| Engine | Description | Requirements |
-|--------|-------------|--------------|
-| `chrome` | Google Chrome (default) | Chrome installed |
-| `lightpanda` | Lightweight browser | No external dependencies |
-
-Configure via code:
-
-```rust
-use limit_cli::tools::browser::{BrowserConfig, BrowserEngine};
-
-let config = BrowserConfig::new()
-    .with_engine(BrowserEngine::Lightpanda)
-    .with_headless(true)
-    .with_timeout_ms(60_000);
-```
-
-### Options
+The browser tool works out of the box with default settings:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `engine` | chrome | Browser engine to use |
+| `engine` | chrome | Browser engine (chrome or lightpanda) |
 | `headless` | true | Run without visible window |
-| `timeout_ms` | 30000 | Operation timeout in ms |
-| `binary_path` | agent-browser in PATH | Custom binary location |
+| `timeout_ms` | 30000 | Operation timeout in milliseconds |
+| `binary_path` | `agent-browser` | Binary name (looks in PATH) |
+
+**Default behavior:**
+- Runs in headless mode (no visible browser window)
+- Uses Chrome browser (must be installed)
+- Looks for `agent-browser` in your PATH
+
+### Custom Binary Location
+
+If `agent-browser` is installed in a custom location, create a symlink or add it to your PATH:
+
+```bash
+# Option 1: Add to PATH
+export PATH="$PATH:/path/to/agent-browser-directory"
+
+# Option 2: Create symlink
+ln -s /path/to/agent-browser /usr/local/bin/agent-browser
+```
+
+### Advanced Configuration (Programmatic)
+
+For custom configuration, you can modify the source code or use the Rust API:
+
+```rust
+use limit_cli::tools::browser::{BrowserConfig, BrowserEngine, BrowserClient};
+use std::sync::Arc;
+
+// Create custom config
+let config = BrowserConfig::new()
+    .with_engine(BrowserEngine::Lightpanda)  // Use lightpanda instead of Chrome
+    .with_headless(false)                     // Show browser window
+    .with_timeout_ms(60_000)                  // 60 second timeout
+    .with_binary_path(std::path::PathBuf::from("/custom/path/agent-browser"));
+
+// Use with client
+let executor = Arc::new(limit_cli::tools::browser::executor::CliExecutor::new(config));
+let client = BrowserClient::new(executor);
+```
+
+### Browser Engines
+
+| Engine | Description | Requirements |
+|--------|-------------|--------------|
+| `chrome` | Google Chrome (default) | Chrome must be installed |
+| `lightpanda` | Lightweight browser | No external dependencies |
+
+### Config File Support (Planned)
+
+Future versions will support `~/.limit/config.toml`:
+
+```toml
+# Planned syntax (not yet implemented)
+[browser]
+engine = "chrome"
+headless = true
+timeout_ms = 30000
+# binary_path = "/custom/path/agent-browser"  # optional
+```
 
 ## Architecture
 
