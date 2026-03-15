@@ -40,6 +40,7 @@ pub mod client;
 pub mod client_ext;
 pub mod config;
 pub mod executor;
+pub mod handlers;
 pub mod response;
 pub mod tool;
 pub mod types;
