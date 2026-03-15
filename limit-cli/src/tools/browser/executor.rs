@@ -4,6 +4,7 @@
 
 use super::config::BrowserConfig;
 use async_trait::async_trait;
+use limit_agent::error::AgentError;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -71,6 +72,12 @@ pub enum BrowserError {
     /// Generic error
     #[error("{0}")]
     Other(String),
+}
+
+impl From<BrowserError> for AgentError {
+    fn from(err: BrowserError) -> Self {
+        AgentError::ToolError(err.to_string())
+    }
 }
 
 /// Trait for browser execution backends

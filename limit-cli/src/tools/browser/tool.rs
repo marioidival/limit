@@ -57,7 +57,7 @@ impl BrowserTool {
         self.client
             .open(url)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -70,7 +70,7 @@ impl BrowserTool {
         self.client
             .close()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -84,7 +84,7 @@ impl BrowserTool {
             .client
             .snapshot()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -106,7 +106,7 @@ impl BrowserTool {
         self.client
             .click(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -130,7 +130,7 @@ impl BrowserTool {
         self.client
             .fill(selector, text)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -147,7 +147,7 @@ impl BrowserTool {
         self.client
             .screenshot(path)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -167,7 +167,7 @@ impl BrowserTool {
         self.client
             .wait_for(condition)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -184,7 +184,7 @@ impl BrowserTool {
         self.client
             .wait_for_text(text)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -206,7 +206,7 @@ impl BrowserTool {
         self.client
             .wait_for_url(pattern)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -223,7 +223,7 @@ impl BrowserTool {
         self.client
             .wait_for_load(state)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -239,7 +239,7 @@ impl BrowserTool {
             .client
             .wait_for_download(path)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -257,7 +257,7 @@ impl BrowserTool {
         self.client
             .wait_for_fn(js)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -283,7 +283,7 @@ impl BrowserTool {
         self.client
             .wait_for_state(selector, state)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -301,7 +301,7 @@ impl BrowserTool {
             .client
             .eval(script)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -322,7 +322,7 @@ impl BrowserTool {
             .client
             .get(what)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -347,7 +347,7 @@ impl BrowserTool {
             .client
             .get_attr(selector, attr)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -371,7 +371,7 @@ impl BrowserTool {
             .client
             .get_count(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -393,7 +393,7 @@ impl BrowserTool {
             .client
             .get_box(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -420,7 +420,7 @@ impl BrowserTool {
             .client
             .get_styles(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -438,7 +438,7 @@ impl BrowserTool {
         self.client
             .back()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -451,7 +451,7 @@ impl BrowserTool {
         self.client
             .forward()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -464,7 +464,7 @@ impl BrowserTool {
         self.client
             .reload()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -492,7 +492,7 @@ impl BrowserTool {
         self.client
             .type_text(selector, text)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -509,7 +509,7 @@ impl BrowserTool {
         self.client
             .press(key)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -529,7 +529,7 @@ impl BrowserTool {
         self.client
             .hover(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -553,7 +553,7 @@ impl BrowserTool {
         self.client
             .select_option(selector, value)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -573,7 +573,7 @@ impl BrowserTool {
         self.client
             .dblclick(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -593,7 +593,7 @@ impl BrowserTool {
         self.client
             .focus(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -613,7 +613,7 @@ impl BrowserTool {
         self.client
             .check(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -633,7 +633,7 @@ impl BrowserTool {
         self.client
             .uncheck(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -655,7 +655,7 @@ impl BrowserTool {
         self.client
             .scrollintoview(selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -676,7 +676,7 @@ impl BrowserTool {
         self.client
             .drag(source, target)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -711,7 +711,7 @@ impl BrowserTool {
         self.client
             .upload(selector, &file_paths)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -728,7 +728,7 @@ impl BrowserTool {
         self.client
             .pdf(path)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -763,7 +763,7 @@ impl BrowserTool {
             .client
             .find(locator, value, action, action_value)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -789,7 +789,7 @@ impl BrowserTool {
         self.client
             .scroll(direction, pixels)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -814,7 +814,7 @@ impl BrowserTool {
             .client
             .is_(what, selector)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -844,7 +844,7 @@ impl BrowserTool {
             .client
             .download(selector, path)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -863,7 +863,7 @@ impl BrowserTool {
             .client
             .tab_list()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         let tabs_json: Vec<Value> = tabs
             .iter()
@@ -889,7 +889,7 @@ impl BrowserTool {
         self.client
             .tab_new(url)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -907,7 +907,7 @@ impl BrowserTool {
         self.client
             .tab_close(index)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -924,7 +924,7 @@ impl BrowserTool {
         self.client
             .tab_select(index)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -943,7 +943,7 @@ impl BrowserTool {
         self.client
             .dialog_accept(text)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -956,7 +956,7 @@ impl BrowserTool {
         self.client
             .dialog_dismiss()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -974,7 +974,7 @@ impl BrowserTool {
             .client
             .cookies()
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         let cookies_json: Vec<Value> = cookies
             .iter()
@@ -1006,7 +1006,7 @@ impl BrowserTool {
         self.client
             .cookies_set(name, value)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1031,7 +1031,7 @@ impl BrowserTool {
             .client
             .storage_get(storage_type, key)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1061,7 +1061,7 @@ impl BrowserTool {
         self.client
             .storage_set(storage_type, key, value)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1077,7 +1077,7 @@ impl BrowserTool {
             .client
             .network_requests(filter)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         let requests_json: Vec<Value> = requests
             .iter()
@@ -1115,7 +1115,7 @@ impl BrowserTool {
         self.client
             .set_viewport(width, height, scale)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1132,7 +1132,7 @@ impl BrowserTool {
         self.client
             .set_device(name)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1159,7 +1159,7 @@ impl BrowserTool {
         self.client
             .set_geo(latitude, longitude)
             .await
-            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+            ?;
 
         Ok(serde_json::json!({
             "success": true,
