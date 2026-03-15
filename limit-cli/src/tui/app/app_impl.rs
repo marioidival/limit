@@ -18,6 +18,7 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 use limit_tui::components::Message;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct TuiApp {
@@ -32,8 +33,8 @@ pub struct TuiApp {
     status_is_error: bool,
     /// Mouse selection state
     mouse_selection_start: Option<(u16, u16)>,
-    /// Clipboard manager
-    clipboard: Option<ClipboardManager>,
+    /// Clipboard manager (shared with CommandContext)
+    clipboard: Option<Arc<Mutex<ClipboardManager>>>,
     /// File autocomplete manager
     autocomplete_manager: FileAutocompleteManager,
     /// Cancellation token for current LLM operation
@@ -68,7 +69,7 @@ impl TuiApp {
             Ok(cb) => {
                 tracing::debug!("✓ Clipboard initialized successfully");
                 tracing::info!("Clipboard initialized successfully");
-                Some(cb)
+                Some(Arc::new(Mutex::new(cb)))
             }
             Err(e) => {
                 tracing::debug!("✗ Clipboard initialization failed: {}", e);
@@ -370,7 +371,7 @@ impl TuiApp {
                     if !selected.is_empty() {
                         if let Some(ref clipboard) = self.clipboard {
                             tracing::debug!("Attempting to copy to clipboard...");
-                            match clipboard.set_text(&selected) {
+                            match clipboard.lock().unwrap().set_text(&selected) {
                                 Ok(()) => {
                                     tracing::debug!("✓ Clipboard copy successful");
                                     self.status_message = "Copied to clipboard".to_string();
@@ -405,26 +406,31 @@ impl TuiApp {
         // Paste from clipboard (Ctrl/Cmd+V)
         if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
             tracing::debug!("✓ Paste shortcut CONFIRMED - processing...");
-            if let Some(ref clipboard) = self.clipboard {
+            let clipboard_result = if let Some(ref clipboard) = self.clipboard {
                 tracing::debug!("Attempting to read from clipboard...");
-                match clipboard.get_text() {
-                    Ok(text) if !text.is_empty() => {
-                        tracing::debug!("Read {} chars from clipboard", text.len());
-                        self.insert_paste(&text);
-                    }
-                    Ok(_) => {
-                        tracing::debug!("Clipboard is empty");
-                    } // Empty clipboard
-                    Err(e) => {
-                        tracing::debug!("✗ Failed to read clipboard: {}", e);
-                        self.status_message = format!("Could not read clipboard: {}", e);
-                        self.status_is_error = true;
-                    }
-                }
+                Some(clipboard.lock().unwrap().get_text())
             } else {
-                tracing::debug!("✗ Clipboard not available (None)");
-                self.status_message = "Clipboard not available".to_string();
-                self.status_is_error = true;
+                None
+            };
+
+            match clipboard_result {
+                Some(Ok(text)) if !text.is_empty() => {
+                    tracing::debug!("Read {} chars from clipboard", text.len());
+                    self.insert_paste(&text);
+                }
+                Some(Ok(_)) => {
+                    tracing::debug!("Clipboard is empty");
+                }
+                Some(Err(e)) => {
+                    tracing::debug!("✗ Failed to read clipboard: {}", e);
+                    self.status_message = format!("Could not read clipboard: {}", e);
+                    self.status_is_error = true;
+                }
+                None => {
+                    tracing::debug!("✗ Clipboard not available (None)");
+                    self.status_message = "Clipboard not available".to_string();
+                    self.status_is_error = true;
+                }
             }
             return Ok(());
         }
@@ -742,7 +748,6 @@ impl TuiApp {
         if text.starts_with('/') {
             use crate::tui::commands::{CommandContext, CommandResult};
 
-            // Create command context (clipboard is handled separately for now)
             let mut cmd_ctx = CommandContext::new(
                 self.tui_bridge.chat_view().clone(),
                 self.tui_bridge.session_manager(),
@@ -751,7 +756,7 @@ impl TuiApp {
                 self.tui_bridge.messages(),
                 self.tui_bridge.total_input_tokens_arc(),
                 self.tui_bridge.total_output_tokens_arc(),
-                None, // clipboard handled separately
+                self.clipboard.clone(),
             );
 
             // Execute command via registry
