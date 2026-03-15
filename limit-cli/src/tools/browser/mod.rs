@@ -34,6 +34,7 @@
 //! /browser close
 //! ```
 
+pub mod action;
 pub mod args;
 pub mod client;
 pub mod client_ext;
@@ -43,6 +44,7 @@ pub mod response;
 pub mod tool;
 pub mod types;
 
+pub use action::BrowserAction;
 pub use args::ArgsExt;
 pub use client::BrowserClient;
 pub use config::{BrowserConfig, BrowserEngine};

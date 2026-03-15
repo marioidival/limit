@@ -2,6 +2,7 @@
 //!
 //! Implements the Tool trait for browser automation in the agent system.
 
+use super::action::BrowserAction;
 use super::client::BrowserClient;
 use super::client_ext::{InteractionExt, NavigationExt, QueryExt, StorageExt, TabsExt, WaitingExt};
 use super::config::{BrowserConfig, BrowserEngine};
@@ -10,6 +11,7 @@ use async_trait::async_trait;
 use limit_agent::error::AgentError;
 use limit_agent::Tool;
 use serde_json::Value;
+use std::str::FromStr;
 use std::sync::Arc;
 
 /// Browser automation tool for the LLM agent
@@ -54,10 +56,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'url' argument for open action".to_string())
         })?;
 
-        self.client
-            .open(url)
-            .await
-            ?;
+        self.client.open(url).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -67,10 +66,7 @@ impl BrowserTool {
 
     /// Handle the close action
     async fn handle_close(&self) -> Result<Value, AgentError> {
-        self.client
-            .close()
-            .await
-            ?;
+        self.client.close().await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -80,11 +76,7 @@ impl BrowserTool {
 
     /// Handle the snapshot action
     async fn handle_snapshot(&self) -> Result<Value, AgentError> {
-        let result = self
-            .client
-            .snapshot()
-            .await
-            ?;
+        let result = self.client.snapshot().await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -103,10 +95,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for click action".to_string())
             })?;
 
-        self.client
-            .click(selector)
-            .await
-            ?;
+        self.client.click(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -127,10 +116,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'text' argument for fill action".to_string())
         })?;
 
-        self.client
-            .fill(selector, text)
-            .await
-            ?;
+        self.client.fill(selector, text).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -144,10 +130,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'path' argument for screenshot action".to_string())
         })?;
 
-        self.client
-            .screenshot(path)
-            .await
-            ?;
+        self.client.screenshot(path).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -164,10 +147,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'wait_for' argument for wait action".to_string())
             })?;
 
-        self.client
-            .wait_for(condition)
-            .await
-            ?;
+        self.client.wait_for(condition).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -181,10 +161,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'text' argument for wait_for_text action".to_string())
         })?;
 
-        self.client
-            .wait_for_text(text)
-            .await
-            ?;
+        self.client.wait_for_text(text).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -203,10 +180,7 @@ impl BrowserTool {
                 )
             })?;
 
-        self.client
-            .wait_for_url(pattern)
-            .await
-            ?;
+        self.client.wait_for_url(pattern).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -220,10 +194,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'state' argument for wait_for_load action".to_string())
         })?;
 
-        self.client
-            .wait_for_load(state)
-            .await
-            ?;
+        self.client.wait_for_load(state).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -235,11 +206,7 @@ impl BrowserTool {
     async fn handle_wait_for_download(&self, args: &Value) -> Result<Value, AgentError> {
         let path = args.get("path").and_then(|v| v.as_str());
 
-        let download_path = self
-            .client
-            .wait_for_download(path)
-            .await
-            ?;
+        let download_path = self.client.wait_for_download(path).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -254,10 +221,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'js' argument for wait_for_fn action".to_string())
         })?;
 
-        self.client
-            .wait_for_fn(js)
-            .await
-            ?;
+        self.client.wait_for_fn(js).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -280,10 +244,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'state' argument for wait_for_state action".to_string())
         })?;
 
-        self.client
-            .wait_for_state(selector, state)
-            .await
-            ?;
+        self.client.wait_for_state(selector, state).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -297,11 +258,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'script' argument for eval action".to_string())
         })?;
 
-        let result = self
-            .client
-            .eval(script)
-            .await
-            ?;
+        let result = self.client.eval(script).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -318,11 +275,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'get_what' argument for get action".to_string())
             })?;
 
-        let content = self
-            .client
-            .get(what)
-            .await
-            ?;
+        let content = self.client.get(what).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -343,11 +296,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'attr' argument for get_attr action".to_string())
         })?;
 
-        let value = self
-            .client
-            .get_attr(selector, attr)
-            .await
-            ?;
+        let value = self.client.get_attr(selector, attr).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -367,11 +316,7 @@ impl BrowserTool {
                 )
             })?;
 
-        let count = self
-            .client
-            .get_count(selector)
-            .await
-            ?;
+        let count = self.client.get_count(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -389,11 +334,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for get_box action".to_string())
             })?;
 
-        let bbox = self
-            .client
-            .get_box(selector)
-            .await
-            ?;
+        let bbox = self.client.get_box(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -416,11 +357,7 @@ impl BrowserTool {
                 )
             })?;
 
-        let styles = self
-            .client
-            .get_styles(selector)
-            .await
-            ?;
+        let styles = self.client.get_styles(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -435,10 +372,7 @@ impl BrowserTool {
 
     /// Handle the back action
     async fn handle_back(&self) -> Result<Value, AgentError> {
-        self.client
-            .back()
-            .await
-            ?;
+        self.client.back().await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -448,10 +382,7 @@ impl BrowserTool {
 
     /// Handle the forward action
     async fn handle_forward(&self) -> Result<Value, AgentError> {
-        self.client
-            .forward()
-            .await
-            ?;
+        self.client.forward().await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -461,10 +392,7 @@ impl BrowserTool {
 
     /// Handle the reload action
     async fn handle_reload(&self) -> Result<Value, AgentError> {
-        self.client
-            .reload()
-            .await
-            ?;
+        self.client.reload().await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -489,10 +417,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'text' argument for type action".to_string())
         })?;
 
-        self.client
-            .type_text(selector, text)
-            .await
-            ?;
+        self.client.type_text(selector, text).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -506,10 +431,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'key' argument for press action".to_string())
         })?;
 
-        self.client
-            .press(key)
-            .await
-            ?;
+        self.client.press(key).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -526,10 +448,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for hover action".to_string())
             })?;
 
-        self.client
-            .hover(selector)
-            .await
-            ?;
+        self.client.hover(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -550,10 +469,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'value' argument for select action".to_string())
         })?;
 
-        self.client
-            .select_option(selector, value)
-            .await
-            ?;
+        self.client.select_option(selector, value).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -570,10 +486,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for dblclick action".to_string())
             })?;
 
-        self.client
-            .dblclick(selector)
-            .await
-            ?;
+        self.client.dblclick(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -590,10 +503,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for focus action".to_string())
             })?;
 
-        self.client
-            .focus(selector)
-            .await
-            ?;
+        self.client.focus(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -610,10 +520,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for check action".to_string())
             })?;
 
-        self.client
-            .check(selector)
-            .await
-            ?;
+        self.client.check(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -630,10 +537,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for uncheck action".to_string())
             })?;
 
-        self.client
-            .uncheck(selector)
-            .await
-            ?;
+        self.client.uncheck(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -652,10 +556,7 @@ impl BrowserTool {
                 )
             })?;
 
-        self.client
-            .scrollintoview(selector)
-            .await
-            ?;
+        self.client.scrollintoview(selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -673,10 +574,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'target' argument for drag action".to_string())
         })?;
 
-        self.client
-            .drag(source, target)
-            .await
-            ?;
+        self.client.drag(source, target).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -708,10 +606,7 @@ impl BrowserTool {
             ));
         }
 
-        self.client
-            .upload(selector, &file_paths)
-            .await
-            ?;
+        self.client.upload(selector, &file_paths).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -725,10 +620,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'path' argument for pdf action".to_string())
         })?;
 
-        self.client
-            .pdf(path)
-            .await
-            ?;
+        self.client.pdf(path).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -762,8 +654,7 @@ impl BrowserTool {
         let result = self
             .client
             .find(locator, value, action, action_value)
-            .await
-            ?;
+            .await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -786,10 +677,7 @@ impl BrowserTool {
             .and_then(|v| v.as_u64())
             .map(|p| p as u32);
 
-        self.client
-            .scroll(direction, pixels)
-            .await
-            ?;
+        self.client.scroll(direction, pixels).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -810,11 +698,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'selector' argument for is action".to_string())
             })?;
 
-        let result = self
-            .client
-            .is_(what, selector)
-            .await
-            ?;
+        let result = self.client.is_(what, selector).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -840,11 +724,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'path' argument for download action".to_string())
         })?;
 
-        let download_path = self
-            .client
-            .download(selector, path)
-            .await
-            ?;
+        let download_path = self.client.download(selector, path).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -859,11 +739,7 @@ impl BrowserTool {
 
     /// Handle the tab_list action
     async fn handle_tab_list(&self) -> Result<Value, AgentError> {
-        let tabs = self
-            .client
-            .tab_list()
-            .await
-            ?;
+        let tabs = self.client.tab_list().await?;
 
         let tabs_json: Vec<Value> = tabs
             .iter()
@@ -886,10 +762,7 @@ impl BrowserTool {
     async fn handle_tab_new(&self, args: &Value) -> Result<Value, AgentError> {
         let url = args.get("url").and_then(|v| v.as_str());
 
-        self.client
-            .tab_new(url)
-            .await
-            ?;
+        self.client.tab_new(url).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -904,10 +777,7 @@ impl BrowserTool {
             .and_then(|v| v.as_u64())
             .map(|i| i as usize);
 
-        self.client
-            .tab_close(index)
-            .await
-            ?;
+        self.client.tab_close(index).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -921,10 +791,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'index' argument for tab_select action".to_string())
         })? as usize;
 
-        self.client
-            .tab_select(index)
-            .await
-            ?;
+        self.client.tab_select(index).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -940,10 +807,7 @@ impl BrowserTool {
     async fn handle_dialog_accept(&self, args: &Value) -> Result<Value, AgentError> {
         let text = args.get("text").and_then(|v| v.as_str());
 
-        self.client
-            .dialog_accept(text)
-            .await
-            ?;
+        self.client.dialog_accept(text).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -953,10 +817,7 @@ impl BrowserTool {
 
     /// Handle the dialog_dismiss action
     async fn handle_dialog_dismiss(&self) -> Result<Value, AgentError> {
-        self.client
-            .dialog_dismiss()
-            .await
-            ?;
+        self.client.dialog_dismiss().await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -970,11 +831,7 @@ impl BrowserTool {
 
     /// Handle the cookies action
     async fn handle_cookies(&self) -> Result<Value, AgentError> {
-        let cookies = self
-            .client
-            .cookies()
-            .await
-            ?;
+        let cookies = self.client.cookies().await?;
 
         let cookies_json: Vec<Value> = cookies
             .iter()
@@ -1003,10 +860,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'value' argument for cookies_set action".to_string())
         })?;
 
-        self.client
-            .cookies_set(name, value)
-            .await
-            ?;
+        self.client.cookies_set(name, value).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1027,11 +881,7 @@ impl BrowserTool {
 
         let key = args.get("key").and_then(|v| v.as_str());
 
-        let value = self
-            .client
-            .storage_get(storage_type, key)
-            .await
-            ?;
+        let value = self.client.storage_get(storage_type, key).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1058,10 +908,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'value' argument for storage_set action".to_string())
         })?;
 
-        self.client
-            .storage_set(storage_type, key, value)
-            .await
-            ?;
+        self.client.storage_set(storage_type, key, value).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1073,11 +920,7 @@ impl BrowserTool {
     async fn handle_network_requests(&self, args: &Value) -> Result<Value, AgentError> {
         let filter = args.get("filter").and_then(|v| v.as_str());
 
-        let requests = self
-            .client
-            .network_requests(filter)
-            .await
-            ?;
+        let requests = self.client.network_requests(filter).await?;
 
         let requests_json: Vec<Value> = requests
             .iter()
@@ -1112,10 +955,7 @@ impl BrowserTool {
 
         let scale = args.get("scale").and_then(|v| v.as_f64()).map(|s| s as f32);
 
-        self.client
-            .set_viewport(width, height, scale)
-            .await
-            ?;
+        self.client.set_viewport(width, height, scale).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1129,10 +969,7 @@ impl BrowserTool {
             AgentError::ToolError("Missing 'name' argument for set_device action".to_string())
         })?;
 
-        self.client
-            .set_device(name)
-            .await
-            ?;
+        self.client.set_device(name).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1156,10 +993,7 @@ impl BrowserTool {
                 AgentError::ToolError("Missing 'longitude' argument for set_geo action".to_string())
             })?;
 
-        self.client
-            .set_geo(latitude, longitude)
-            .await
-            ?;
+        self.client.set_geo(latitude, longitude).await?;
 
         Ok(serde_json::json!({
             "success": true,
@@ -1187,77 +1021,64 @@ impl Tool for BrowserTool {
     }
 
     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
-        // Extract action from arguments
         let action = args
             .get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| AgentError::ToolError("Missing 'action' argument".to_string()))?;
 
-        match action {
-            "open" => self.handle_open(&args).await,
-            "close" => self.handle_close().await,
-            "snapshot" => self.handle_snapshot().await,
-            "click" => self.handle_click(&args).await,
-            "fill" => self.handle_fill(&args).await,
-            "screenshot" => self.handle_screenshot(&args).await,
-            "wait" => self.handle_wait(&args).await,
-            "wait_for_text" => self.handle_wait_for_text(&args).await,
-            "wait_for_url" => self.handle_wait_for_url(&args).await,
-            "wait_for_load" => self.handle_wait_for_load(&args).await,
-            "wait_for_download" => self.handle_wait_for_download(&args).await,
-            "wait_for_fn" => self.handle_wait_for_fn(&args).await,
-            "wait_for_state" => self.handle_wait_for_state(&args).await,
-            "eval" => self.handle_eval(&args).await,
-            "get" => self.handle_get(&args).await,
-            "get_attr" => self.handle_get_attr(&args).await,
-            "get_count" => self.handle_get_count(&args).await,
-            "get_box" => self.handle_get_box(&args).await,
-            "get_styles" => self.handle_get_styles(&args).await,
-            // Navigation
-            "back" => self.handle_back().await,
-            "forward" => self.handle_forward().await,
-            "reload" => self.handle_reload().await,
-            // Input
-            "type" => self.handle_type(&args).await,
-            "press" => self.handle_press(&args).await,
-            "hover" => self.handle_hover(&args).await,
-            "select" => self.handle_select(&args).await,
-            "dblclick" => self.handle_dblclick(&args).await,
-            "focus" => self.handle_focus(&args).await,
-            "check" => self.handle_check(&args).await,
-            "uncheck" => self.handle_uncheck(&args).await,
-            "scrollintoview" => self.handle_scrollintoview(&args).await,
-            "drag" => self.handle_drag(&args).await,
-            "upload" => self.handle_upload(&args).await,
-            "pdf" => self.handle_pdf(&args).await,
-            // State
-            "find" => self.handle_find(&args).await,
-            "scroll" => self.handle_scroll(&args).await,
-            "is" => self.handle_is(&args).await,
-            // Downloads
-            "download" => self.handle_download(&args).await,
-            // Tabs
-            "tab_list" => self.handle_tab_list().await,
-            "tab_new" => self.handle_tab_new(&args).await,
-            "tab_close" => self.handle_tab_close(&args).await,
-            "tab_select" => self.handle_tab_select(&args).await,
-            // Dialogs
-            "dialog_accept" => self.handle_dialog_accept(&args).await,
-            "dialog_dismiss" => self.handle_dialog_dismiss().await,
-            // Storage & Network
-            "cookies" => self.handle_cookies().await,
-            "cookies_set" => self.handle_cookies_set(&args).await,
-            "storage_get" => self.handle_storage_get(&args).await,
-            "storage_set" => self.handle_storage_set(&args).await,
-            "network_requests" => self.handle_network_requests(&args).await,
-            // Settings
-            "set_viewport" => self.handle_set_viewport(&args).await,
-            "set_device" => self.handle_set_device(&args).await,
-            "set_geo" => self.handle_set_geo(&args).await,
-            _ => Err(AgentError::ToolError(format!(
-                "Unknown browser action: {}. Valid actions: open, close, snapshot, click, fill, screenshot, wait, wait_for_text, wait_for_url, wait_for_load, wait_for_download, wait_for_fn, wait_for_state, eval, get, get_attr, get_count, get_box, get_styles, back, forward, reload, type, press, hover, select, dblclick, focus, check, uncheck, scrollintoview, drag, upload, pdf, find, scroll, is, download, tab_list, tab_new, tab_close, tab_select, dialog_accept, dialog_dismiss, cookies, cookies_set, storage_get, storage_set, network_requests, set_viewport, set_device, set_geo",
-                action
-            ))),
+        match BrowserAction::from_str(action)? {
+            BrowserAction::Open => self.handle_open(&args).await,
+            BrowserAction::Close => self.handle_close().await,
+            BrowserAction::Snapshot => self.handle_snapshot().await,
+            BrowserAction::Screenshot => self.handle_screenshot(&args).await,
+            BrowserAction::Back => self.handle_back().await,
+            BrowserAction::Forward => self.handle_forward().await,
+            BrowserAction::Reload => self.handle_reload().await,
+            BrowserAction::Click => self.handle_click(&args).await,
+            BrowserAction::Fill => self.handle_fill(&args).await,
+            BrowserAction::Type => self.handle_type(&args).await,
+            BrowserAction::Press => self.handle_press(&args).await,
+            BrowserAction::Hover => self.handle_hover(&args).await,
+            BrowserAction::Select => self.handle_select(&args).await,
+            BrowserAction::Dblclick => self.handle_dblclick(&args).await,
+            BrowserAction::Focus => self.handle_focus(&args).await,
+            BrowserAction::Check => self.handle_check(&args).await,
+            BrowserAction::Uncheck => self.handle_uncheck(&args).await,
+            BrowserAction::Scrollintoview => self.handle_scrollintoview(&args).await,
+            BrowserAction::Drag => self.handle_drag(&args).await,
+            BrowserAction::Upload => self.handle_upload(&args).await,
+            BrowserAction::Pdf => self.handle_pdf(&args).await,
+            BrowserAction::Get => self.handle_get(&args).await,
+            BrowserAction::GetAttr => self.handle_get_attr(&args).await,
+            BrowserAction::GetCount => self.handle_get_count(&args).await,
+            BrowserAction::GetBox => self.handle_get_box(&args).await,
+            BrowserAction::GetStyles => self.handle_get_styles(&args).await,
+            BrowserAction::Wait => self.handle_wait(&args).await,
+            BrowserAction::WaitForText => self.handle_wait_for_text(&args).await,
+            BrowserAction::WaitForUrl => self.handle_wait_for_url(&args).await,
+            BrowserAction::WaitForLoad => self.handle_wait_for_load(&args).await,
+            BrowserAction::WaitForDownload => self.handle_wait_for_download(&args).await,
+            BrowserAction::WaitForFn => self.handle_wait_for_fn(&args).await,
+            BrowserAction::WaitForState => self.handle_wait_for_state(&args).await,
+            BrowserAction::Find => self.handle_find(&args).await,
+            BrowserAction::Scroll => self.handle_scroll(&args).await,
+            BrowserAction::Is => self.handle_is(&args).await,
+            BrowserAction::Download => self.handle_download(&args).await,
+            BrowserAction::TabList => self.handle_tab_list().await,
+            BrowserAction::TabNew => self.handle_tab_new(&args).await,
+            BrowserAction::TabClose => self.handle_tab_close(&args).await,
+            BrowserAction::TabSelect => self.handle_tab_select(&args).await,
+            BrowserAction::DialogAccept => self.handle_dialog_accept(&args).await,
+            BrowserAction::DialogDismiss => self.handle_dialog_dismiss().await,
+            BrowserAction::Cookies => self.handle_cookies().await,
+            BrowserAction::CookiesSet => self.handle_cookies_set(&args).await,
+            BrowserAction::StorageGet => self.handle_storage_get(&args).await,
+            BrowserAction::StorageSet => self.handle_storage_set(&args).await,
+            BrowserAction::NetworkRequests => self.handle_network_requests(&args).await,
+            BrowserAction::SetViewport => self.handle_set_viewport(&args).await,
+            BrowserAction::SetDevice => self.handle_set_device(&args).await,
+            BrowserAction::SetGeo => self.handle_set_geo(&args).await,
+            BrowserAction::Eval => self.handle_eval(&args).await,
         }
     }
 }
