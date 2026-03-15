@@ -4,9 +4,7 @@
 
 use super::{Command, CommandContext, CommandResult};
 use crate::error::CliError;
-use crate::tools::browser::client_ext::{
-    InteractionExt, NavigationExt, QueryExt, StorageExt, TabsExt, WaitingExt,
-};
+use crate::tools::browser::client_ext::{InteractionExt, NavigationExt, QueryExt};
 use crate::tools::browser::{BrowserClient, BrowserConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;

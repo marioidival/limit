@@ -217,7 +217,10 @@ impl InteractionExt for super::super::BrowserClient {
             ));
         }
 
-        let output = self.executor().execute(&["select", selector, value]).await?;
+        let output = self
+            .executor()
+            .execute(&["select", selector, value])
+            .await?;
 
         if output.success {
             Ok(())
@@ -293,7 +296,10 @@ impl InteractionExt for super::super::BrowserClient {
             ));
         }
 
-        let output = self.executor().execute(&["scrollintoview", selector]).await?;
+        let output = self
+            .executor()
+            .execute(&["scrollintoview", selector])
+            .await?;
 
         if output.success {
             Ok(())

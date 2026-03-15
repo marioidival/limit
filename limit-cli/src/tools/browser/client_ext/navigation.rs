@@ -1,7 +1,6 @@
 //! Navigation operations
 
 use crate::tools::browser::executor::BrowserError;
-use crate::tools::browser::executor::BrowserExecutor;
 
 /// Navigation operations for browser client
 pub trait NavigationExt {

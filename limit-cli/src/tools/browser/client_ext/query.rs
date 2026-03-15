@@ -19,10 +19,8 @@ pub trait QueryExt {
     ) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 
     /// Save page as PDF
-    fn pdf(
-        &self,
-        path: &str,
-    ) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
+    fn pdf(&self, path: &str)
+        -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 
     /// Evaluate JavaScript in the browser
     fn eval(
@@ -266,9 +264,9 @@ impl QueryExt for super::super::BrowserClient {
                     width: parts[2]
                         .parse()
                         .map_err(|_| BrowserError::ParseError("Invalid width value".to_string()))?,
-                    height: parts[3]
-                        .parse()
-                        .map_err(|_| BrowserError::ParseError("Invalid height value".to_string()))?,
+                    height: parts[3].parse().map_err(|_| {
+                        BrowserError::ParseError("Invalid height value".to_string())
+                    })?,
                 })
             } else {
                 Err(BrowserError::ParseError(
@@ -290,7 +288,10 @@ impl QueryExt for super::super::BrowserClient {
             ));
         }
 
-        let output = self.executor().execute(&["get", "styles", selector]).await?;
+        let output = self
+            .executor()
+            .execute(&["get", "styles", selector])
+            .await?;
 
         if output.success {
             let mut styles = HashMap::new();
@@ -316,7 +317,15 @@ impl QueryExt for super::super::BrowserClient {
         action_value: Option<&str>,
     ) -> Result<String, BrowserError> {
         let valid_locators = [
-            "role", "text", "label", "placeholder", "alt", "title", "testid", "css", "xpath",
+            "role",
+            "text",
+            "label",
+            "placeholder",
+            "alt",
+            "title",
+            "testid",
+            "css",
+            "xpath",
         ];
         if !valid_locators.contains(&locator_type) {
             return Err(BrowserError::InvalidArguments(format!(
@@ -400,7 +409,10 @@ impl QueryExt for super::super::BrowserClient {
             ));
         }
 
-        let output = self.executor().execute(&["download", selector, path]).await?;
+        let output = self
+            .executor()
+            .execute(&["download", selector, path])
+            .await?;
 
         if output.success {
             Ok(output.stdout.trim().to_string())

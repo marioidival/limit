@@ -42,7 +42,7 @@ pub mod tool;
 pub mod types;
 
 pub use client::BrowserClient;
-pub use types::{BoundingBox, Cookie, Request, SnapshotResult, TabInfo};
 pub use config::{BrowserConfig, BrowserEngine};
 pub use executor::{BrowserError, BrowserExecutor, BrowserOutput, CliExecutor};
 pub use tool::BrowserTool;
+pub use types::{BoundingBox, Cookie, Request, SnapshotResult, TabInfo};

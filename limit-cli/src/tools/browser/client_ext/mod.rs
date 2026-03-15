@@ -4,16 +4,16 @@
 //! into logical groups. Each trait is implemented in its own file for
 //! better compile times and maintainability.
 
-mod navigation;
-mod waiting;
 mod interaction;
+mod navigation;
 mod query;
-mod tabs;
 mod storage;
+mod tabs;
+mod waiting;
 
-pub use navigation::NavigationExt;
-pub use waiting::WaitingExt;
 pub use interaction::InteractionExt;
+pub use navigation::NavigationExt;
 pub use query::QueryExt;
-pub use tabs::TabsExt;
 pub use storage::StorageExt;
+pub use tabs::TabsExt;
+pub use waiting::WaitingExt;

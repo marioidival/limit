@@ -7,7 +7,9 @@ use serde_json::Value as JsonValue;
 /// Storage, cookies, network, and device operations for browser client
 pub trait StorageExt {
     /// Get all cookies
-    fn cookies(&self) -> impl std::future::Future<Output = Result<Vec<Cookie>, BrowserError>> + Send;
+    fn cookies(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<Cookie>, BrowserError>> + Send;
 
     /// Set a cookie
     fn cookies_set(
@@ -235,7 +237,9 @@ impl StorageExt for super::super::BrowserClient {
                 .execute(&["set", "viewport", &w, &h, &s_str])
                 .await?
         } else {
-            self.executor().execute(&["set", "viewport", &w, &h]).await?
+            self.executor()
+                .execute(&["set", "viewport", &w, &h])
+                .await?
         };
 
         if output.success {
