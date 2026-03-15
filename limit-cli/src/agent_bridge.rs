@@ -954,43 +954,49 @@ impl AgentBridge {
                 }),
             ),
             "browser" => (
-                "Browser automation for testing, scraping, and screenshots. Use snapshot-ref workflow: open URL, take snapshot, use refs from snapshot for interactions. Supports Chrome and Lightpanda engines.".to_string(),
+                "Browser automation for testing, scraping, and web interaction. Use snapshot-ref workflow: open URL, take snapshot, use refs from snapshot for interactions. Supports Chrome and Lightpanda engines.".to_string(),
                 json!({
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["open", "close", "snapshot", "click", "fill", "screenshot", "wait", "eval", "get", "back", "forward", "reload", "type", "press", "hover", "select", "scroll", "is"],
+                            "enum": [
+                                // Core
+                                "open", "close", "snapshot",
+                                // Interaction
+                                "click", "dblclick", "fill", "type", "press", "hover", "select",
+                                "focus", "check", "uncheck", "scrollintoview", "drag", "upload",
+                                // Navigation
+                                "back", "forward", "reload",
+                                // Query
+                                "screenshot", "pdf", "eval", "get", "get_attr", "get_count", "get_box", "get_styles",
+                                "find", "is", "download",
+                                // Waiting
+                                "wait", "wait_for_text", "wait_for_url", "wait_for_load", "wait_for_download", "wait_for_fn", "wait_for_state",
+                                // Tabs & Dialogs
+                                "tab_list", "tab_new", "tab_close", "tab_select", "dialog_accept", "dialog_dismiss",
+                                // Storage & Network
+                                "cookies", "cookies_set", "storage_get", "storage_set", "network_requests",
+                                // Settings
+                                "set_viewport", "set_device", "set_geo",
+                                // State
+                                "scroll"
+                            ],
                             "description": "Browser action to perform"
                         },
+                        // Core
                         "url": {
                             "type": "string",
                             "description": "URL to open (required for 'open' action)"
                         },
+                        // Interaction
                         "selector": {
                             "type": "string",
-                            "description": "Element selector or ref (required for click, fill, type, hover, select, is actions)"
+                            "description": "Element selector or ref (for click, fill, type, hover, select, focus, check, uncheck, scrollintoview, get_attr, get_count, get_box, get_styles, is, download, upload)"
                         },
                         "text": {
                             "type": "string",
-                            "description": "Text to input (required for fill and type actions)"
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "File path for screenshot (required for 'screenshot' action)"
-                        },
-                        "wait_for": {
-                            "type": "string",
-                            "description": "Wait condition (required for 'wait' action)"
-                        },
-                        "script": {
-                            "type": "string",
-                            "description": "JavaScript to evaluate (required for 'eval' action)"
-                        },
-                        "get_what": {
-                            "type": "string",
-                            "enum": ["text", "html", "value", "url", "title"],
-                            "description": "What to get (required for 'get' action)"
+                            "description": "Text to input (for fill, type actions)"
                         },
                         "key": {
                             "type": "string",
@@ -998,22 +1004,136 @@ impl AgentBridge {
                         },
                         "value": {
                             "type": "string",
-                            "description": "Value to select (required for 'select' action)"
+                            "description": "Value (for select, cookies_set, storage_set)"
                         },
-                        "direction": {
+                        "target": {
                             "type": "string",
-                            "enum": ["up", "down", "left", "right"],
-                            "description": "Scroll direction (required for 'scroll' action)"
+                            "description": "Target selector (for drag action)"
                         },
-                        "pixels": {
-                            "type": "integer",
-                            "description": "Pixels to scroll (optional for 'scroll' action)"
+                        "files": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "File paths to upload (for upload action)"
                         },
+                        // Query
+                        "path": {
+                            "type": "string",
+                            "description": "File path (for screenshot, pdf, download actions)"
+                        },
+                        "script": {
+                            "type": "string",
+                            "description": "JavaScript to evaluate (required for 'eval' and 'wait_for_fn' actions)"
+                        },
+                        "get_what": {
+                            "type": "string",
+                            "enum": ["text", "html", "value", "url", "title"],
+                            "description": "What to get (required for 'get' action)"
+                        },
+                        "attr": {
+                            "type": "string",
+                            "description": "Attribute name (for get_attr action)"
+                        },
+                        // Find
+                        "locator_type": {
+                            "type": "string",
+                            "enum": ["role", "text", "label", "placeholder", "alt", "title", "testid", "css", "xpath"],
+                            "description": "Locator strategy (for find action)"
+                        },
+                        "locator_value": {
+                            "type": "string",
+                            "description": "Locator value (for find action)"
+                        },
+                        "find_action": {
+                            "type": "string",
+                            "enum": ["click", "fill", "text", "count", "first", "last", "nth", "hover", "focus", "check", "uncheck"],
+                            "description": "Action to perform on found element (for find action)"
+                        },
+                        "action_value": {
+                            "type": "string",
+                            "description": "Value for find action (optional)"
+                        },
+                        // Waiting
+                        "wait_for": {
+                            "type": "string",
+                            "description": "Wait condition (for wait action)"
+                        },
+                        "state": {
+                            "type": "string",
+                            "enum": ["visible", "hidden", "attached", "detached", "enabled", "disabled", "networkidle", "domcontentloaded", "load"],
+                            "description": "State to wait for (for wait_for_state, wait_for_load actions)"
+                        },
+                        // State check
                         "what": {
                             "type": "string",
                             "enum": ["visible", "hidden", "enabled", "disabled", "editable"],
                             "description": "State to check (required for 'is' action)"
                         },
+                        // Scroll
+                        "direction": {
+                            "type": "string",
+                            "enum": ["up", "down", "left", "right"],
+                            "description": "Scroll direction (for scroll action)"
+                        },
+                        "pixels": {
+                            "type": "integer",
+                            "description": "Pixels to scroll (optional for scroll action)"
+                        },
+                        // Tabs
+                        "index": {
+                            "type": "integer",
+                            "description": "Tab index (for tab_close, tab_select actions)"
+                        },
+                        // Dialogs
+                        "dialog_text": {
+                            "type": "string",
+                            "description": "Text for prompt dialog (for dialog_accept action)"
+                        },
+                        // Storage
+                        "storage_type": {
+                            "type": "string",
+                            "enum": ["local", "session"],
+                            "description": "Storage type (for storage_get, storage_set actions)"
+                        },
+                        "key_name": {
+                            "type": "string",
+                            "description": "Storage key name (for storage_get, storage_set actions)"
+                        },
+                        // Network
+                        "filter": {
+                            "type": "string",
+                            "description": "Network request filter (optional for network_requests action)"
+                        },
+                        // Settings
+                        "width": {
+                            "type": "integer",
+                            "description": "Viewport width (for set_viewport action)"
+                        },
+                        "height": {
+                            "type": "integer",
+                            "description": "Viewport height (for set_viewport action)"
+                        },
+                        "scale": {
+                            "type": "number",
+                            "description": "Device scale factor (optional for set_viewport action)"
+                        },
+                        "device_name": {
+                            "type": "string",
+                            "description": "Device name to emulate (for set_device action)"
+                        },
+                        "latitude": {
+                            "type": "number",
+                            "description": "Latitude (for set_geo action)"
+                        },
+                        "longitude": {
+                            "type": "number",
+                            "description": "Longitude (for set_geo action)"
+                        },
+                        // Cookie
+                        "name": {
+                            "type": "string",
+                            "description": "Cookie name (for cookies_set action)"
+                        },
+                        // Engine
                         "engine": {
                             "type": "string",
                             "enum": ["chrome", "lightpanda"],
