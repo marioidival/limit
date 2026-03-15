@@ -6,18 +6,23 @@
 
 **Multi-provider LLM client for Rust with streaming support.**
 
-Unified API for Anthropic Claude, OpenAI, and z.ai models with built-in token tracking, state persistence, and automatic model handoff.
+Unified API for Anthropic Claude, OpenAI, z.ai, and local LLMs with built-in token tracking, state persistence, and automatic model handoff.
 
 Part of the [Limit](https://github.com/marioidival/limit) ecosystem.
 
+## Why This Exists
+
+Building AI applications shouldn't require learning different APIs for each LLM provider. `limit-llm` provides a single, consistent interface that works across Anthropic Claude, OpenAI GPT, z.ai GLM, and local models—so you can switch providers without rewriting code.
+
 ## Features
 
-- **Multi-provider support**: Anthropic Claude, OpenAI GPT, z.ai
-- **Streaming responses**: Async streaming with `futures::Stream`
-- **Token tracking**: SQLite-based usage tracking and cost estimation
-- **State persistence**: Serialize/restore conversation state
-- **Model handoff**: Automatic fallback between providers
-- **Tool calling**: Full function/tool support for supported providers
+- **Multi-provider support**: Anthropic Claude, OpenAI GPT, z.ai GLM, and local LLMs (Ollama, LM Studio, vLLM)
+- **Streaming responses**: Async streaming with `futures::Stream` for real-time output
+- **Token tracking**: SQLite-based usage tracking with cost estimation
+- **State persistence**: Serialize/restore conversation state with bincode
+- **Model handoff**: Automatic fallback between providers on failure
+- **Tool calling**: Full function/tool support for all compatible providers
+- **Thinking mode**: Extended reasoning support (Claude, z.ai)
 - **Type-safe**: Full Rust type system with serde integration
 
 ## Installation
@@ -26,132 +31,200 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-limit-llm = "0.0.25"
+limit-llm = "0.0.27"
 ```
+
+**Requirements**: Rust 1.70+, tokio runtime
 
 ## Quick Start
 
-```rust
-use limit_llm::{AnthropicClient, Message, Role};
+### Basic Usage
+
+```rust,no_run
+use limit_llm::{AnthropicClient, Message, Role, LlmProvider};
+use futures::StreamExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = AnthropicClient::from_env()?;
+    let client = AnthropicClient::new(
+        std::env::var("ANTHROPIC_API_KEY")?,
+        None,  // default base URL
+        60,    // timeout in seconds
+        "claude-sonnet-4-6-20260217",
+        4096,  // max tokens
+    );
     
     let messages = vec![
         Message {
             role: Role::User,
-            content: "Hello, Claude!".to_string(),
-            ..Default::default()
+            content: Some("Hello, Claude!".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
         }
     ];
     
-    let response = client.complete(messages).await?;
-    println!("{}", response.content);
+    // Stream the response
+    let mut stream = client.send(messages, vec![]).await?;
+    
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(limit_llm::ProviderResponseChunk::ContentDelta(text)) => print!("{}", text),
+            Ok(limit_llm::ProviderResponseChunk::Done(usage)) => {
+                println!("\nTokens: {} in, {} out", usage.input_tokens, usage.output_tokens);
+            }
+            Err(e) => eprintln!("Error: {}", e),
+            _ => {}
+        }
+    }
     
     Ok(())
 }
 ```
 
-### Streaming
+### With Configuration File
 
-```rust
-use futures::StreamExt;
+```rust,no_run
+use limit_llm::{Config, ProviderFactory, LlmProvider};
 
-let mut stream = client.complete_stream(messages).await?;
+// Load from ~/.limit/config.toml
+let config = Config::load()?;
 
-while let Some(chunk) = stream.next().await {
-    match chunk {
-        Ok(ProviderResponseChunk::Text(text)) => print!("{}", text),
-        Ok(ProviderResponseChunk::Thinking(thought)) => eprintln!("[thinking] {}", thought),
-        Err(e) => eprintln!("Error: {}", e),
-        _ => {}
-    }
-}
+// Create provider from config
+let provider = ProviderFactory::from_config(&config)?;
+
+// Use the provider
+let stream = provider.send(vec![], vec![]).await?;
 ```
 
-### Tool Calling
-
-```rust
-use limit_llm::{Tool, ToolFunction, FunctionCall};
-
-let tools = vec![Tool {
-    name: "get_weather".to_string(),
-    description: Some("Get current weather".to_string()),
-    input_schema: json!({
-        "type": "object",
-        "properties": {
-            "location": {"type": "string"}
-        },
-        "required": ["location"]
-    }),
-}];
-
-let response = client.complete_with_tools(messages, tools).await?;
-```
-
-## API
-
-### Providers
+## Providers
 
 | Provider | Client | Streaming | Tools | Thinking |
 |----------|--------|-----------|-------|----------|
 | Anthropic Claude | `AnthropicClient` | ✓ | ✓ | ✓ |
-| OpenAI | `OpenAiProvider` | ✓ | ✓ | — |
-| z.ai | `ZaiProvider` | ✓ | ✓ | ✓ |
+| OpenAI GPT | `OpenAiProvider` | ✓ | ✓ | — |
+| z.ai GLM | `ZaiProvider` | ✓ | ✓ | ✓ |
 | Local/Ollama | `LocalProvider` | ✓ | — | — |
 
-### Core Types
+### Provider Configuration
 
-- `Message` — Chat message with role, content, and tool calls
-- `Role` — User, Assistant, or System
-- `Tool` / `ToolCall` — Function calling definitions
-- `Usage` — Token counting for prompt/completion
-- `Response` — Complete response with content and metadata
+```toml
+# ~/.limit/config.toml
+provider = "anthropic"
 
-### Advanced Features
-
-```rust
-use limit_llm::{ModelHandoff, TrackingDb, StatePersistence};
-
-// Track usage across sessions
-let tracking = TrackingDb::new("~/.limit/tracking.db")?;
-tracking.record_usage("claude-3-5-sonnet", &usage)?;
-
-// Persist conversation state
-let persistence = StatePersistence::new("~/.limit/state/")?;
-persistence.save("session-1", &messages)?;
-
-// Automatic model fallback
-let handoff = ModelHandoff::new()
-    .with_primary("claude-3-5-sonnet")
-    .with_fallback("gpt-4o");
+[providers.anthropic]
+model = "claude-sonnet-4-6-20260217"
+max_tokens = 4096
+timeout = 60
 ```
 
-## Configuration
+### Environment Variables
 
-Environment variables:
+| Variable | Provider |
+|----------|----------|
+| `ANTHROPIC_API_KEY` | Anthropic Claude |
+| `OPENAI_API_KEY` | OpenAI |
+| `ZAI_API_KEY` | z.ai |
+
+## Tool Calling
+
+```rust,no_run
+use limit_llm::{Tool, ToolFunction, Message, Role, AnthropicClient, LlmProvider};
+use serde_json::json;
+
+let tools = vec![Tool {
+    tool_type: "function".to_string(),
+    function: ToolFunction {
+        name: "get_weather".to_string(),
+        description: "Get current weather for a location".to_string(),
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "location": {"type": "string"}
+            },
+            "required": ["location"]
+        }),
+    },
+}];
+
+let messages = vec![Message {
+    role: Role::User,
+    content: Some("What's the weather in Tokyo?".to_string()),
+    tool_calls: None,
+    tool_call_id: None,
+}];
+
+let client = AnthropicClient::from_env()?;
+let stream = client.send(messages, tools).await?;
+```
+
+## Token Tracking
+
+```rust,no_run
+use limit_llm::TrackingDb;
+
+let tracking = TrackingDb::new("~/.limit/tracking.db")?;
+
+// Record usage (automatically done by clients)
+tracking.record_usage("claude-sonnet-4-6-20260217", 100, 50)?;
+
+// Get statistics
+let stats = tracking.get_stats()?;
+println!("Total cost: ${:.4}", stats.total_cost);
+```
+
+## State Persistence
+
+```rust,no_run
+use limit_llm::{StatePersistence, Message};
+
+let persistence = StatePersistence::new("~/.limit/state/")?;
+
+// Save conversation
+persistence.save("session-123", &messages)?;
+
+// Restore later
+let restored = persistence.load::<Vec<Message>>("session-123")?;
+```
+
+## Model Handoff
+
+Automatic fallback between providers:
+
+```rust,no_run
+use limit_llm::ModelHandoff;
+
+let handoff = ModelHandoff::new()
+    .with_primary("claude-sonnet-4-6-20260217")
+    .with_fallback("gpt-5.4")
+    .with_fallback("glm-5");
+
+// Automatically falls back if primary fails
+let response = handoff.complete(messages).await?;
+```
+
+## Core Types
+
+| Type | Description |
+|------|-------------|
+| `Message` | Chat message with role, content, and tool calls |
+| `Role` | User, Assistant, System, or Tool |
+| `Tool` / `ToolCall` | Function calling definitions |
+| `Usage` | Token counting for prompt/completion |
+| `Response` | Complete response with content and metadata |
+
+## API Reference
+
+See [docs.rs/limit-llm](https://docs.rs/limit-llm) for full API documentation.
+
+## Examples
 
 ```bash
-ANTHROPIC_API_KEY=your-key      # For Claude
-OPENAI_API_KEY=your-key          # For GPT
-ZAI_API_KEY=your-key             # For z.ai
-```
-
-Or use `Config` for programmatic configuration:
-
-```rust
-use limit_llm::{Config, ProviderConfig};
-
-let config = Config {
-    provider: ProviderConfig::Anthropic {
-        api_key: "your-key".to_string(),
-        model: "claude-3-5-sonnet".to_string(),
-    },
-    ..Default::default()
-};
+# Run examples
+cargo run --example basic
+cargo run --example streaming
+cargo run --example tool_calling
 ```
 
 ## License
 
-MIT
+MIT © [Mário Idival](https://github.com/marioidival)
