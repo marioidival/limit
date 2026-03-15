@@ -212,6 +212,193 @@ impl BrowserTool {
             "content": content
         }))
     }
+
+    // ========================================
+    // Navigation handlers
+    // ========================================
+
+    /// Handle the back action
+    async fn handle_back(&self) -> Result<Value, AgentError> {
+        self.client
+            .back()
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": "Navigated back"
+        }))
+    }
+
+    /// Handle the forward action
+    async fn handle_forward(&self) -> Result<Value, AgentError> {
+        self.client
+            .forward()
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": "Navigated forward"
+        }))
+    }
+
+    /// Handle the reload action
+    async fn handle_reload(&self) -> Result<Value, AgentError> {
+        self.client
+            .reload()
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": "Page reloaded"
+        }))
+    }
+
+    // ========================================
+    // Input handlers
+    // ========================================
+
+    /// Handle the type action
+    async fn handle_type(&self, args: &Value) -> Result<Value, AgentError> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AgentError::ToolError("Missing 'selector' argument for type action".to_string())
+            })?;
+
+        let text = args.get("text").and_then(|v| v.as_str()).ok_or_else(|| {
+            AgentError::ToolError("Missing 'text' argument for type action".to_string())
+        })?;
+
+        self.client
+            .type_text(selector, text)
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": format!("Typed text into element: {}", selector)
+        }))
+    }
+
+    /// Handle the press action
+    async fn handle_press(&self, args: &Value) -> Result<Value, AgentError> {
+        let key = args.get("key").and_then(|v| v.as_str()).ok_or_else(|| {
+            AgentError::ToolError("Missing 'key' argument for press action".to_string())
+        })?;
+
+        self.client
+            .press(key)
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": format!("Pressed key: {}", key)
+        }))
+    }
+
+    /// Handle the hover action
+    async fn handle_hover(&self, args: &Value) -> Result<Value, AgentError> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AgentError::ToolError("Missing 'selector' argument for hover action".to_string())
+            })?;
+
+        self.client
+            .hover(selector)
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": format!("Hovered over element: {}", selector)
+        }))
+    }
+
+    /// Handle the select action
+    async fn handle_select(&self, args: &Value) -> Result<Value, AgentError> {
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AgentError::ToolError("Missing 'selector' argument for select action".to_string())
+            })?;
+
+        let value = args.get("value").and_then(|v| v.as_str()).ok_or_else(|| {
+            AgentError::ToolError("Missing 'value' argument for select action".to_string())
+        })?;
+
+        self.client
+            .select_option(selector, value)
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": format!("Selected option '{}' in element: {}", value, selector)
+        }))
+    }
+
+    // ========================================
+    // State handlers
+    // ========================================
+
+    /// Handle the scroll action
+    async fn handle_scroll(&self, args: &Value) -> Result<Value, AgentError> {
+        let direction = args
+            .get("direction")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AgentError::ToolError("Missing 'direction' argument for scroll action".to_string())
+            })?;
+
+        let pixels = args
+            .get("pixels")
+            .and_then(|v| v.as_u64())
+            .map(|p| p as u32);
+
+        self.client
+            .scroll(direction, pixels)
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "message": format!("Scrolled {}", direction)
+        }))
+    }
+
+    /// Handle the is action
+    async fn handle_is(&self, args: &Value) -> Result<Value, AgentError> {
+        let what = args.get("what").and_then(|v| v.as_str()).ok_or_else(|| {
+            AgentError::ToolError("Missing 'what' argument for is action".to_string())
+        })?;
+
+        let selector = args
+            .get("selector")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                AgentError::ToolError("Missing 'selector' argument for is action".to_string())
+            })?;
+
+        let result = self
+            .client
+            .is_(what, selector)
+            .await
+            .map_err(|e| AgentError::ToolError(e.to_string()))?;
+
+        Ok(serde_json::json!({
+            "success": true,
+            "result": result,
+            "message": format!("Element {} is {}: {}", selector, what, result)
+        }))
+    }
 }
 
 impl Default for BrowserTool {
@@ -249,8 +436,20 @@ impl Tool for BrowserTool {
             "wait" => self.handle_wait(&args).await,
             "eval" => self.handle_eval(&args).await,
             "get" => self.handle_get(&args).await,
+            // Navigation
+            "back" => self.handle_back().await,
+            "forward" => self.handle_forward().await,
+            "reload" => self.handle_reload().await,
+            // Input
+            "type" => self.handle_type(&args).await,
+            "press" => self.handle_press(&args).await,
+            "hover" => self.handle_hover(&args).await,
+            "select" => self.handle_select(&args).await,
+            // State
+            "scroll" => self.handle_scroll(&args).await,
+            "is" => self.handle_is(&args).await,
             _ => Err(AgentError::ToolError(format!(
-                "Unknown browser action: {}. Valid actions: open, close, snapshot, click, fill, screenshot, wait, eval, get",
+                "Unknown browser action: {}. Valid actions: open, close, snapshot, click, fill, screenshot, wait, eval, get, back, forward, reload, type, press, hover, select, scroll, is",
                 action
             ))),
         }

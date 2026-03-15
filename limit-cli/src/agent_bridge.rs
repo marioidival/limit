@@ -107,7 +107,7 @@ impl AgentBridge {
             .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
         let mut tool_registry = ToolRegistry::new();
-        Self::register_tools(&mut tool_registry);
+        Self::register_tools(&mut tool_registry, &config);
 
         // Create executor (which takes ownership of registry as Arc)
         let executor = ToolExecutor::new(tool_registry);
@@ -164,7 +164,7 @@ impl AgentBridge {
     }
 
     /// Register all CLI tools into the tool registry
-    fn register_tools(registry: &mut ToolRegistry) {
+    fn register_tools(registry: &mut ToolRegistry, config: &limit_llm::Config) {
         // File tools
         registry
             .register(FileReadTool::new())
@@ -226,9 +226,10 @@ impl AgentBridge {
             .register(WebFetchTool::new())
             .expect("Failed to register web_fetch");
 
-        // Browser tool
+        // Browser tool with config
+        let browser_config = crate::tools::browser::BrowserConfig::from(&config.browser);
         registry
-            .register(BrowserTool::new())
+            .register(BrowserTool::with_config(browser_config))
             .expect("Failed to register browser");
     }
 
@@ -959,7 +960,7 @@ impl AgentBridge {
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["open", "close", "snapshot", "click", "fill", "screenshot", "wait", "eval", "get"],
+                            "enum": ["open", "close", "snapshot", "click", "fill", "screenshot", "wait", "eval", "get", "back", "forward", "reload", "type", "press", "hover", "select", "scroll", "is"],
                             "description": "Browser action to perform"
                         },
                         "url": {
@@ -968,11 +969,11 @@ impl AgentBridge {
                         },
                         "selector": {
                             "type": "string",
-                            "description": "Element selector or ref (required for 'click' and 'fill' actions)"
+                            "description": "Element selector or ref (required for click, fill, type, hover, select, is actions)"
                         },
                         "text": {
                             "type": "string",
-                            "description": "Text to fill (required for 'fill' action)"
+                            "description": "Text to input (required for fill and type actions)"
                         },
                         "path": {
                             "type": "string",
@@ -990,6 +991,28 @@ impl AgentBridge {
                             "type": "string",
                             "enum": ["text", "html", "value", "url", "title"],
                             "description": "What to get (required for 'get' action)"
+                        },
+                        "key": {
+                            "type": "string",
+                            "description": "Key to press (required for 'press' action)"
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": "Value to select (required for 'select' action)"
+                        },
+                        "direction": {
+                            "type": "string",
+                            "enum": ["up", "down", "left", "right"],
+                            "description": "Scroll direction (required for 'scroll' action)"
+                        },
+                        "pixels": {
+                            "type": "integer",
+                            "description": "Pixels to scroll (optional for 'scroll' action)"
+                        },
+                        "what": {
+                            "type": "string",
+                            "enum": ["visible", "hidden", "enabled", "disabled", "editable"],
+                            "description": "State to check (required for 'is' action)"
                         },
                         "engine": {
                             "type": "string",
@@ -1075,7 +1098,7 @@ fn calculate_cost(model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use limit_llm::{Config as LlmConfig, ProviderConfig};
+    use limit_llm::{BrowserConfigSection, Config as LlmConfig, ProviderConfig};
     use std::collections::HashMap;
 
     #[tokio::test]
@@ -1097,6 +1120,7 @@ mod tests {
         let config = LlmConfig {
             provider: "anthropic".to_string(),
             providers,
+            browser: BrowserConfigSection::default(),
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1122,6 +1146,7 @@ mod tests {
         let config = LlmConfig {
             provider: "anthropic".to_string(),
             providers,
+            browser: BrowserConfigSection::default(),
         };
 
         let result = AgentBridge::new(config);
@@ -1147,6 +1172,7 @@ mod tests {
         let config = LlmConfig {
             provider: "anthropic".to_string(),
             providers,
+            browser: BrowserConfigSection::default(),
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1212,6 +1238,7 @@ mod tests {
         let config_with_key = LlmConfig {
             provider: "anthropic".to_string(),
             providers,
+            browser: BrowserConfigSection::default(),
         };
 
         let bridge = AgentBridge::new(config_with_key).unwrap();

@@ -222,6 +222,202 @@ impl BrowserClient {
         }
     }
 
+    // ========================================
+    // Navigation methods
+    // ========================================
+
+    /// Navigate back in browser history
+    pub async fn back(&self) -> Result<(), BrowserError> {
+        let output = self.executor.execute(&["back"]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to navigate back: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    /// Navigate forward in browser history
+    pub async fn forward(&self) -> Result<(), BrowserError> {
+        let output = self.executor.execute(&["forward"]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to navigate forward: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    /// Reload the current page
+    pub async fn reload(&self) -> Result<(), BrowserError> {
+        let output = self.executor.execute(&["reload"]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to reload page: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    // ========================================
+    // Input methods
+    // ========================================
+
+    /// Type text into an element (character by character)
+    pub async fn type_text(&self, selector: &str, text: &str) -> Result<(), BrowserError> {
+        if selector.is_empty() {
+            return Err(BrowserError::InvalidArguments(
+                "Selector cannot be empty".to_string(),
+            ));
+        }
+
+        let output = self.executor.execute(&["type", selector, text]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to type text: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    /// Press a keyboard key
+    pub async fn press(&self, key: &str) -> Result<(), BrowserError> {
+        if key.is_empty() {
+            return Err(BrowserError::InvalidArguments(
+                "Key cannot be empty".to_string(),
+            ));
+        }
+
+        let output = self.executor.execute(&["press", key]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to press key: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    /// Hover over an element
+    pub async fn hover(&self, selector: &str) -> Result<(), BrowserError> {
+        if selector.is_empty() {
+            return Err(BrowserError::InvalidArguments(
+                "Selector cannot be empty".to_string(),
+            ));
+        }
+
+        let output = self.executor.execute(&["hover", selector]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to hover: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    /// Select an option in a dropdown
+    pub async fn select_option(&self, selector: &str, value: &str) -> Result<(), BrowserError> {
+        if selector.is_empty() {
+            return Err(BrowserError::InvalidArguments(
+                "Selector cannot be empty".to_string(),
+            ));
+        }
+
+        let output = self.executor.execute(&["select", selector, value]).await?;
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to select option: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    // ========================================
+    // State methods
+    // ========================================
+
+    /// Scroll the page (up, down, left, right) with optional pixel amount
+    pub async fn scroll(&self, direction: &str, pixels: Option<u32>) -> Result<(), BrowserError> {
+        let valid_directions = ["up", "down", "left", "right"];
+        if !valid_directions.contains(&direction) {
+            return Err(BrowserError::InvalidArguments(format!(
+                "Invalid scroll direction '{}'. Valid directions: {}",
+                direction,
+                valid_directions.join(", ")
+            )));
+        }
+
+        let output = match pixels {
+            Some(px) => {
+                let px_str = px.to_string();
+                self.executor
+                    .execute(&["scroll", direction, &px_str])
+                    .await?
+            }
+            None => self.executor.execute(&["scroll", direction]).await?,
+        };
+
+        if output.success {
+            Ok(())
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to scroll: {}",
+                output.stderr
+            )))
+        }
+    }
+
+    /// Check element state (visible, hidden, enabled, disabled, editable)
+    pub async fn is_(&self, what: &str, selector: &str) -> Result<bool, BrowserError> {
+        let valid_states = ["visible", "hidden", "enabled", "disabled", "editable"];
+        if !valid_states.contains(&what) {
+            return Err(BrowserError::InvalidArguments(format!(
+                "Invalid state check '{}'. Valid states: {}",
+                what,
+                valid_states.join(", ")
+            )));
+        }
+
+        if selector.is_empty() {
+            return Err(BrowserError::InvalidArguments(
+                "Selector cannot be empty".to_string(),
+            ));
+        }
+
+        let output = self.executor.execute(&["is", what, selector]).await?;
+
+        if output.success {
+            // Parse boolean from output
+            let result = output.stdout.trim().to_lowercase();
+            Ok(result == "true" || result == "yes" || result == "1")
+        } else {
+            Err(BrowserError::Other(format!(
+                "Failed to check state: {}",
+                output.stderr
+            )))
+        }
+    }
+
     /// Check if browser daemon is running
     pub fn is_daemon_running(&self) -> bool {
         self.executor.is_daemon_running()

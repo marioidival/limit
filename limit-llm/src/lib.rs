@@ -14,7 +14,7 @@ pub mod types;
 pub mod zai_provider;
 
 pub use client::AnthropicClient;
-pub use config::{Config, ProviderConfig};
+pub use config::{BrowserConfigSection, Config, ProviderConfig};
 pub use handoff::ModelHandoff;
 pub use local_provider::LocalProvider;
 pub use openai_provider::OpenAiProvider;

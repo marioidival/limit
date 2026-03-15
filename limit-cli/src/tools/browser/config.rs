@@ -2,10 +2,11 @@
 //!
 //! Provides configuration options for browser automation.
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Supported browser engines
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BrowserEngine {
     /// Google Chrome (default)
     #[default]
@@ -25,7 +26,7 @@ impl BrowserEngine {
 }
 
 /// Configuration for browser automation
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BrowserConfig {
     /// Path to agent-browser binary (defaults to "agent-browser" in PATH)
     pub binary_path: Option<PathBuf>,
@@ -35,6 +36,23 @@ pub struct BrowserConfig {
     pub headless: bool,
     /// Timeout for operations in milliseconds
     pub timeout_ms: u64,
+}
+
+/// Convert from config file section to BrowserConfig
+impl From<&limit_llm::BrowserConfigSection> for BrowserConfig {
+    fn from(section: &limit_llm::BrowserConfigSection) -> Self {
+        let engine = match section.engine.to_lowercase().as_str() {
+            "lightpanda" => BrowserEngine::Lightpanda,
+            _ => BrowserEngine::Chrome,
+        };
+
+        Self {
+            binary_path: section.binary_path.clone(),
+            engine,
+            headless: section.headless,
+            timeout_ms: section.timeout_ms,
+        }
+    }
 }
 
 impl Default for BrowserConfig {
@@ -134,5 +152,35 @@ mod tests {
             config.binary().to_str().unwrap(),
             "/usr/local/bin/agent-browser"
         );
+    }
+
+    #[test]
+    fn test_from_browser_config_section() {
+        let section = limit_llm::BrowserConfigSection {
+            enabled: true,
+            binary_path: Some(PathBuf::from("/custom/agent-browser")),
+            engine: "lightpanda".to_string(),
+            headless: false,
+            timeout_ms: 60_000,
+        };
+
+        let config = BrowserConfig::from(&section);
+        assert_eq!(
+            config.binary_path,
+            Some(PathBuf::from("/custom/agent-browser"))
+        );
+        assert_eq!(config.engine, BrowserEngine::Lightpanda);
+        assert!(!config.headless);
+        assert_eq!(config.timeout_ms, 60_000);
+    }
+
+    #[test]
+    fn test_from_browser_config_section_default() {
+        let section = limit_llm::BrowserConfigSection::default();
+        let config = BrowserConfig::from(&section);
+        assert!(config.binary_path.is_none());
+        assert_eq!(config.engine, BrowserEngine::Chrome);
+        assert!(config.headless);
+        assert_eq!(config.timeout_ms, 30_000);
     }
 }

@@ -1,4 +1,4 @@
-use limit_llm::{Config, ProviderConfig, ProviderFactory};
+use limit_llm::{BrowserConfigSection, Config, ProviderConfig, ProviderFactory};
 use std::collections::HashMap;
 
 #[test]
@@ -20,6 +20,7 @@ fn test_anthropic_provider_creation() {
     let config = Config {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let provider = ProviderFactory::create_provider(&config).unwrap();
@@ -45,6 +46,7 @@ fn test_openai_provider_creation() {
     let config = Config {
         provider: "openai".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let provider = ProviderFactory::create_provider(&config).unwrap();

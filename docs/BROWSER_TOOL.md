@@ -45,14 +45,32 @@ agent-browser --version
 
 Use the `/browser` command in the Limit TUI:
 
+**Navigation:**
 ```
 /browser open <url>        Open a URL in the browser
-/browser close             Close the browser
+/browser back              Navigate back in history
+/browser forward           Navigate forward in history
+/browser reload            Reload the current page
+```
+
+**Page Interaction:**
+```
 /browser snapshot          Take an accessibility snapshot
 /browser click <selector>  Click an element
-/browser fill <sel> <text> Fill a form field
+/browser fill <sel> <text> Fill a form field (instant)
+/browser type <sel> <text> Type text character by character
+/browser hover <selector>  Hover over an element
+/browser select <sel> <val> Select option in dropdown
+/browser press <key>       Press a keyboard key
+```
+
+**State & Info:**
+```
 /browser screenshot <path> Save a screenshot
 /browser get <what>        Get page content (text, html, url, title)
+/browser scroll <dir> [px] Scroll page (up/down/left/right)
+/browser is <what> <sel>   Check element state (visible, enabled, etc.)
+/browser close             Close the browser
 /browser help              Show help
 ```
 
@@ -73,11 +91,29 @@ Use the `/browser` command in the Limit TUI:
 # Fill a form field
 /browser fill "input[name=email]" "test@example.com"
 
+# Type text character by character (triggers key events)
+/browser type "input[name=password]" "secret"
+
+# Hover over an element
+/browser hover "@e5"
+
+# Press a keyboard key
+/browser press Enter
+
+# Scroll down 100 pixels
+/browser scroll down 100
+
+# Check if element is visible
+/browser is visible "@e3"
+
 # Take a screenshot
 /browser screenshot /tmp/page.png
 
 # Get page title
 /browser get title
+
+# Navigate back
+/browser back
 
 # Close the browser
 /browser close
@@ -101,11 +137,20 @@ The LLM can use the browser tool automatically. Just ask:
 | `close` | Close the browser | none |
 | `snapshot` | Get accessibility tree | none |
 | `click` | Click an element | `selector` |
-| `fill` | Fill a form field | `selector`, `text` |
+| `fill` | Fill a form field (instant) | `selector`, `text` |
+| `type` | Type text character by character | `selector`, `text` |
+| `press` | Press a keyboard key | `key` |
+| `hover` | Hover over an element | `selector` |
+| `select` | Select option in dropdown | `selector`, `value` |
 | `screenshot` | Save screenshot | `path` |
 | `wait` | Wait for condition | `wait_for` |
 | `eval` | Execute JavaScript | `script` |
 | `get` | Get page content | `get_what` (text/html/value/url/title) |
+| `back` | Navigate back in history | none |
+| `forward` | Navigate forward in history | none |
+| `reload` | Reload the current page | none |
+| `scroll` | Scroll the page | `direction` (up/down/left/right), optional `pixels` |
+| `is` | Check element state | `what` (visible/hidden/enabled/disabled/editable), `selector` |
 
 ### Workflow: Snapshot-Ref Pattern
 
@@ -193,18 +238,33 @@ let client = BrowserClient::new(executor);
 | `chrome` | Google Chrome (default) | Chrome must be installed |
 | `lightpanda` | Lightweight browser | No external dependencies |
 
-### Config File Support (Planned)
+### Config File Support
 
-Future versions will support `~/.limit/config.toml`:
+Configure browser settings in `~/.limit/config.toml`:
 
 ```toml
-# Planned syntax (not yet implemented)
+provider = "anthropic"
+
 [browser]
-engine = "chrome"
-headless = true
-timeout_ms = 30000
+enabled = true
+engine = "chrome"           # or "lightpanda"
+headless = true             # set to false to see the browser
+timeout_ms = 30000          # operation timeout
 # binary_path = "/custom/path/agent-browser"  # optional
+
+[providers.anthropic]
+model = "claude-3-5-sonnet-20241022"
 ```
+
+**Config options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | false | Enable browser tool |
+| `engine` | string | "chrome" | Browser engine (chrome or lightpanda) |
+| `headless` | bool | true | Run without visible window |
+| `timeout_ms` | number | 30000 | Operation timeout in milliseconds |
+| `binary_path` | string | - | Custom path to agent-browser binary |
 
 ## Architecture
 

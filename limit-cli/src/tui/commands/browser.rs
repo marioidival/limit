@@ -4,7 +4,7 @@
 
 use super::{Command, CommandContext, CommandResult};
 use crate::error::CliError;
-use crate::tools::browser::BrowserClient;
+use crate::tools::browser::{BrowserClient, BrowserConfig};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -23,9 +23,10 @@ impl BrowserCommand {
     }
 
     /// Create a browser command with custom config
-    #[allow(dead_code)]
-    pub fn with_config(_config: crate::tools::browser::BrowserConfig) -> Self {
-        let client = BrowserClient::with_default_config();
+    pub fn with_config(config: BrowserConfig) -> Self {
+        use crate::tools::browser::executor::CliExecutor;
+        let executor = Arc::new(CliExecutor::new(config));
+        let client = BrowserClient::new(executor);
         Self {
             client: Arc::new(Mutex::new(client)),
         }
@@ -35,13 +36,27 @@ impl BrowserCommand {
     fn show_help(&self, ctx: &mut CommandContext) -> CommandResult {
         let help_text = r#"Browser automation commands:
 
+Navigation:
   /browser open <url>        Open a URL in the browser
-  /browser close             Close the browser
+  /browser back              Navigate back in history
+  /browser forward           Navigate forward in history
+  /browser reload            Reload the current page
+
+Page Interaction:
   /browser snapshot          Take an accessibility snapshot
   /browser click <selector>  Click an element
-  /browser fill <sel> <text> Fill a form field
+  /browser fill <sel> <text> Fill a form field (instant)
+  /browser type <sel> <text> Type text character by character
+  /browser hover <selector>  Hover over an element
+  /browser select <sel> <val> Select option in dropdown
+  /browser press <key>       Press a keyboard key
+
+State & Info:
   /browser screenshot <path> Save a screenshot
   /browser get <what>        Get page content (text, html, url, title)
+  /browser scroll <dir> [px] Scroll page (up/down/left/right)
+  /browser is <what> <sel>   Check element state (visible, enabled, etc.)
+  /browser close             Close the browser
   /browser help              Show this help
 
 Examples:
@@ -49,6 +64,11 @@ Examples:
   /browser snapshot
   /browser click "button.submit"
   /browser fill "input[name=email]" "test@example.com"
+  /browser type "input[name=password]" "secret"
+  /browser hover "@e5"
+  /browser press Enter
+  /browser scroll down 100
+  /browser is visible "@e3"
   /browser screenshot /tmp/page.png
   /browser get title"#;
 
@@ -120,8 +140,17 @@ impl Command for BrowserCommand {
             "/browser snapshot",
             "/browser click <selector>",
             "/browser fill <selector> <text>",
+            "/browser type <selector> <text>",
+            "/browser hover <selector>",
+            "/browser press <key>",
+            "/browser select <selector> <value>",
             "/browser screenshot <path>",
             "/browser get <text|html|url|title>",
+            "/browser back",
+            "/browser forward",
+            "/browser reload",
+            "/browser scroll <up|down|left|right> [pixels]",
+            "/browser is <visible|hidden|enabled|disabled|editable> <selector>",
         ]
     }
 
@@ -248,6 +277,128 @@ impl Command for BrowserCommand {
                         .await
                         .map_err(|e| CliError::Other(format!("Failed to get {}: {}", what, e)))?;
                     ctx.add_system_message(format!("{}: {}", what, content));
+                    Ok(CommandResult::Continue)
+                }
+
+                // Navigation commands
+                "back" => {
+                    client
+                        .back()
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to navigate back: {}", e)))?;
+                    ctx.add_system_message("Navigated back".to_string());
+                    Ok(CommandResult::Continue)
+                }
+
+                "forward" => {
+                    client
+                        .forward()
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to navigate forward: {}", e)))?;
+                    ctx.add_system_message("Navigated forward".to_string());
+                    Ok(CommandResult::Continue)
+                }
+
+                "reload" => {
+                    client
+                        .reload()
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to reload: {}", e)))?;
+                    ctx.add_system_message("Page reloaded".to_string());
+                    Ok(CommandResult::Continue)
+                }
+
+                // Input commands
+                "type" => {
+                    if parsed.len() < 3 {
+                        return Err(CliError::Other(
+                            "Usage: /browser type <selector> <text>".to_string(),
+                        ));
+                    }
+                    let selector = &parsed[1];
+                    let text = &parsed[2];
+                    client
+                        .type_text(selector, text)
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to type: {}", e)))?;
+                    ctx.add_system_message(format!("Typed text into {}", selector));
+                    Ok(CommandResult::Continue)
+                }
+
+                "press" => {
+                    if parsed.len() < 2 {
+                        return Err(CliError::Other("Usage: /browser press <key>".to_string()));
+                    }
+                    let key = &parsed[1];
+                    client
+                        .press(key)
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to press key: {}", e)))?;
+                    ctx.add_system_message(format!("Pressed: {}", key));
+                    Ok(CommandResult::Continue)
+                }
+
+                "hover" => {
+                    if parsed.len() < 2 {
+                        return Err(CliError::Other(
+                            "Usage: /browser hover <selector>".to_string(),
+                        ));
+                    }
+                    let selector = &parsed[1];
+                    client
+                        .hover(selector)
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to hover: {}", e)))?;
+                    ctx.add_system_message(format!("Hovered over: {}", selector));
+                    Ok(CommandResult::Continue)
+                }
+
+                "select" => {
+                    if parsed.len() < 3 {
+                        return Err(CliError::Other(
+                            "Usage: /browser select <selector> <value>".to_string(),
+                        ));
+                    }
+                    let selector = &parsed[1];
+                    let value = &parsed[2];
+                    client
+                        .select_option(selector, value)
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to select: {}", e)))?;
+                    ctx.add_system_message(format!("Selected '{}' in {}", value, selector));
+                    Ok(CommandResult::Continue)
+                }
+
+                // State commands
+                "scroll" => {
+                    if parsed.len() < 2 {
+                        return Err(CliError::Other(
+                            "Usage: /browser scroll <up|down|left|right> [pixels]".to_string(),
+                        ));
+                    }
+                    let direction = &parsed[1];
+                    let pixels = parsed.get(2).and_then(|s| s.parse::<u32>().ok());
+                    client
+                        .scroll(direction, pixels)
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to scroll: {}", e)))?;
+                    ctx.add_system_message(format!("Scrolled {}", direction));
+                    Ok(CommandResult::Continue)
+                }
+
+                "is" => {
+                    if parsed.len() < 3 {
+                        return Err(CliError::Other(
+                            "Usage: /browser is <visible|hidden|enabled|disabled|editable> <selector>".to_string(),
+                        ));
+                    }
+                    let what = &parsed[1];
+                    let selector = &parsed[2];
+                    let result = client
+                        .is_(what, selector)
+                        .await
+                        .map_err(|e| CliError::Other(format!("Failed to check state: {}", e)))?;
+                    ctx.add_system_message(format!("Element {} is {}: {}", selector, what, result));
                     Ok(CommandResult::Continue)
                 }
 
