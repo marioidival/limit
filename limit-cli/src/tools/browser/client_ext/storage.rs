@@ -59,7 +59,7 @@ pub trait StorageExt {
     ) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 }
 
-impl StorageExt for super::BrowserClient {
+impl StorageExt for super::super::BrowserClient {
     async fn cookies(&self) -> Result<Vec<Cookie>, BrowserError> {
         let output = self.executor().execute(&["cookies"]).await?;
 

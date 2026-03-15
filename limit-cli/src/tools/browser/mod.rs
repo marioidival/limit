@@ -35,6 +35,7 @@
 //! ```
 
 pub mod client;
+pub mod client_ext;
 pub mod config;
 pub mod executor;
 pub mod tool;

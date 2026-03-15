@@ -13,7 +13,7 @@ pub trait NavigationExt {
     fn reload(&self) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 }
 
-impl NavigationExt for super::BrowserClient {
+impl NavigationExt for super::super::BrowserClient {
     async fn back(&self) -> Result<(), BrowserError> {
         let output = self.executor().execute(&["back"]).await?;
 

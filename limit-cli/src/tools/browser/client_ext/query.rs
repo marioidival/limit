@@ -85,7 +85,7 @@ pub trait QueryExt {
     ) -> impl std::future::Future<Output = Result<String, BrowserError>> + Send;
 }
 
-impl QueryExt for super::BrowserClient {
+impl QueryExt for super::super::BrowserClient {
     async fn snapshot(&self) -> Result<SnapshotResult, BrowserError> {
         let output = self.executor().execute(&["snapshot"]).await?;
 

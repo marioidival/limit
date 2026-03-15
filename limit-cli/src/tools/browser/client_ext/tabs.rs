@@ -38,7 +38,7 @@ pub trait TabsExt {
     fn dialog_dismiss(&self) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 }
 
-impl TabsExt for super::BrowserClient {
+impl TabsExt for super::super::BrowserClient {
     async fn tab_list(&self) -> Result<Vec<TabInfo>, BrowserError> {
         let output = self.executor().execute(&["tab", "list"]).await?;
 

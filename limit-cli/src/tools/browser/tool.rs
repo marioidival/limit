@@ -3,6 +3,7 @@
 //! Implements the Tool trait for browser automation in the agent system.
 
 use super::client::BrowserClient;
+use super::client_ext::{InteractionExt, NavigationExt, QueryExt, StorageExt, TabsExt, WaitingExt};
 use super::config::{BrowserConfig, BrowserEngine};
 use super::executor::{BrowserExecutor, CliExecutor};
 use async_trait::async_trait;

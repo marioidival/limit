@@ -95,7 +95,7 @@ pub trait InteractionExt {
     ) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 }
 
-impl InteractionExt for super::BrowserClient {
+impl InteractionExt for super::super::BrowserClient {
     async fn click(&self, selector: &str) -> Result<(), BrowserError> {
         if selector.is_empty() {
             return Err(BrowserError::InvalidArguments(

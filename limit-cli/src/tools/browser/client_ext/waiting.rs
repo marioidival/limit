@@ -48,7 +48,7 @@ pub trait WaitingExt {
     ) -> impl std::future::Future<Output = Result<(), BrowserError>> + Send;
 }
 
-impl WaitingExt for super::BrowserClient {
+impl WaitingExt for super::super::BrowserClient {
     async fn wait_for(&self, condition: &str) -> Result<(), BrowserError> {
         if condition.is_empty() {
             return Err(BrowserError::InvalidArguments(
