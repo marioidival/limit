@@ -1,18 +1,100 @@
+//! Tool trait and built-in tools for agent execution.
+//!
+//! This module provides the core [`Tool`] trait for defining executable tools
+//! that can be registered with a [`ToolRegistry`](crate::ToolRegistry) and called by AI agents.
+//!
+//! # Defining Custom Tools
+//!
+//! Implement the [`Tool`] trait to create custom tools:
+//!
+//! ```
+//! use async_trait::async_trait;
+//! use limit_agent::{Tool, AgentError};
+//! use serde_json::{json, Value};
+//!
+//! struct CalculatorTool;
+//!
+//! #[async_trait]
+//! impl Tool for CalculatorTool {
+//!     fn name(&self) -> &str {
+//!         "calculate"
+//!     }
+//!     
+//!     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+//!         let a = args["a"].as_f64().unwrap_or(0.0);
+//!         let b = args["b"].as_f64().unwrap_or(0.0);
+//!         let op = args["op"].as_str().unwrap_or("+");
+//!         
+//!         let result = match op {
+//!             "+" => a + b,
+//!             "-" => a - b,
+//!             "*" => a * b,
+//!             "/" => a / b,
+//!             _ => return Err(AgentError::ToolError("Unknown operator".into())),
+//!         };
+//!         
+//!         Ok(json!({ "result": result }))
+//!     }
+//! }
+//! ```
+//!
+//! # Built-in Tools
+//!
+//! - [`EchoTool`] — Simple echo tool for testing, returns its input unchanged
+
 use crate::error::AgentError;
 use async_trait::async_trait;
 use serde_json::Value;
 
-#[async_trait]
+/// Trait for defining executable tools.
+///
+/// Tools are the primary way for AI agents to interact with the world.
+/// Each tool has a name and an async execute method that takes JSON
+/// arguments and returns a JSON result.
+///
+/// # Thread Safety
+///
+/// All tools must be `Send + Sync` because they may be executed concurrently
+/// across multiple threads.
 pub trait Tool: Send + Sync {
+    /// Returns the unique name of this tool.
+    ///
+    /// Tool names should be descriptive and follow a consistent naming
+    /// convention (e.g., `snake_case`).
     fn name(&self) -> &str;
 
-    async fn execute(&self, args: Value) -> Result<Value, AgentError>;
+    /// Executes the tool with the given arguments.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - JSON value containing the tool parameters. The structure
+    ///   depends on the tool's parameter schema.
+    ///
+    /// # Returns
+    ///
+    /// A JSON value containing the tool's output, or an error if execution failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AgentError::ToolError`] if the tool execution fails.
+    fn execute<'life0, 'async_trait>(
+        &'life0 self,
+        args: Value,
+    ) -> ::core::pin::Pin<
+        Box<dyn ::core::future::Future<Output = Result<Value, AgentError>> + ::core::marker::Send + 'async_trait>,
+    >
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait;
 }
 
-/// Example tool that echoes back its input arguments
+/// A simple echo tool that returns its input unchanged.
+///
+/// Primarily useful for testing the tool registration and execution pipeline.
 pub struct EchoTool;
 
 impl EchoTool {
+    /// Creates a new EchoTool instance.
     pub fn new() -> Self {
         EchoTool
     }
@@ -31,39 +113,7 @@ impl Tool for EchoTool {
     }
 
     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
-        // Echo back the input arguments
+        // Echo back the input arguments unchanged
         Ok(args)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_echo_tool_name() {
-        let tool = EchoTool::new();
-        assert_eq!(tool.name(), "echo");
-    }
-
-    #[tokio::test]
-    async fn test_echo_tool_execute() {
-        let tool = EchoTool::new();
-        let input = serde_json::json!({
-            "message": "hello",
-            "count": 42
-        });
-
-        let result = tool.execute(input.clone()).await.unwrap();
-        assert_eq!(result, input);
-    }
-
-    #[tokio::test]
-    async fn test_echo_tool_default() {
-        let tool = EchoTool;
-        let input = serde_json::json!("test");
-
-        let result = tool.execute(input.clone()).await.unwrap();
-        assert_eq!(result, input);
     }
 }

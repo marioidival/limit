@@ -10,14 +10,18 @@ Build autonomous AI agents that can execute tools, run code in isolated containe
 
 Part of the [Limit](https://github.com/marioidival/limit) ecosystem.
 
+## Why This Exists
+
+Building AI agents requires a flexible tool execution system that's both powerful and safe. `limit-agent` provides a production-ready runtime with Docker sandboxing, parallel execution, and persistent state—so you can focus on your agent's logic, not infrastructure.
+
 ## Features
 
-- **Tool registry**: Define, register, and execute tools dynamically
-- **Docker sandbox**: Isolated execution environment for untrusted code
-- **Parallel execution**: Run multiple tools concurrently with async/await
-- **Event-driven**: Subscribe to agent lifecycle events
-- **State management**: Persist and restore agent state
-- **LLM integration**: Works seamlessly with `limit-llm`
+- **Tool Registry**: Define, register, and execute tools dynamically with async/await
+- **Docker Sandbox**: Isolated execution environment for untrusted code
+- **Parallel Execution**: Run multiple tools concurrently for better performance
+- **Event-driven**: Subscribe to agent lifecycle events for logging and monitoring
+- **State Management**: Persist and restore agent state across sessions
+- **LLM Integration**: Works seamlessly with `limit-llm`
 
 ## Installation
 
@@ -25,17 +29,19 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-limit-agent = "0.0.25"
+limit-agent = "0.0.27"
 ```
+
+**Requirements**: Rust 1.70+, tokio runtime, Docker (optional, for sandbox)
 
 ## Quick Start
 
-### Define a Tool
+### Define a Custom Tool
 
 ```rust
 use async_trait::async_trait;
-use limit_agent::{Tool, ToolRegistry};
-use serde_json::Value;
+use limit_agent::{Tool, AgentError};
+use serde_json::{json, Value};
 
 struct WeatherTool;
 
@@ -45,24 +51,14 @@ impl Tool for WeatherTool {
         "get_weather"
     }
     
-    fn description(&self) -> &str {
-        "Get current weather for a location"
-    }
-    
-    fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "location": {"type": "string"}
-            },
-            "required": ["location"]
-        })
-    }
-    
-    async fn execute(&self, args: Value) -> Result<Value, Box<dyn std::error::Error>> {
-        let location = args["location"].as_str().unwrap();
-        // Fetch weather data...
-        Ok(json!({ "location": location, "temp": 22, "condition": "sunny" }))
+    async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+        let location = args["location"].as_str().unwrap_or("Unknown");
+        // Fetch weather data from API...
+        Ok(json!({
+            "location": location,
+            "temp": 22,
+            "condition": "sunny"
+        }))
     }
 }
 ```
@@ -71,14 +67,24 @@ impl Tool for WeatherTool {
 
 ```rust
 use limit_agent::ToolRegistry;
+# use async_trait::async_trait;
+# use limit_agent::{Tool, AgentError};
+# use serde_json::{json, Value};
+# struct WeatherTool;
+# #[async_trait]
+# impl Tool for WeatherTool {
+#     fn name(&self) -> &str { "get_weather" }
+#     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+#         Ok(json!({"temp": 22}))
+#     }
+# }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut registry = ToolRegistry::new();
     
+    // Register tools
     registry.register(WeatherTool);
-    registry.register(FileReadTool);
-    registry.register(ShellTool);
     
     // Execute tool by name
     let result = registry
@@ -91,10 +97,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### Parallel Execution
+## Parallel Execution
+
+Execute multiple tools concurrently for better performance:
 
 ```rust
-// Execute multiple tools concurrently
+# use limit_agent::ToolRegistry;
+# use serde_json::json;
+# #[tokio::main]
+# async fn main() -> Result<(), Box<dyn std::error::Error>> {
+let registry = ToolRegistry::new();
+// ... register tools ...
+
+// Execute multiple tools in parallel
 let results = registry.execute_all(vec![
     ("get_weather", json!({ "location": "Tokyo" })),
     ("get_weather", json!({ "location": "London" })),
@@ -104,13 +119,15 @@ let results = registry.execute_all(vec![
 for result in results {
     println!("{:?}", result);
 }
+# Ok(())
+# }
 ```
 
 ## Docker Sandbox
 
 Run untrusted code in isolated Docker containers:
 
-```rust
+```rust,no_run
 use limit_agent::sandbox::{DockerSandbox, SandboxConfig};
 
 #[tokio::main]
@@ -122,7 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         network_disabled: true,
     })?;
     
-    // Execute code in container
+    // Execute code safely in container
     let output = sandbox.run_code(r#"
         print("Hello from sandbox!")
         x = 2 + 2
@@ -135,9 +152,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Sandbox Security Features
+
+| Feature | Description |
+|---------|-------------|
+| Network isolation | Container has no network access |
+| Memory limit | Configurable memory ceiling (default: 256MB) |
+| Timeout | Execution time limit (default: 30s) |
+| Read-only mount | Project directory mounted read-only |
+| Non-root user | Container runs as unprivileged user |
+
 ## Event System
 
-Subscribe to agent lifecycle events:
+Subscribe to agent lifecycle events for logging, monitoring, or debugging:
 
 ```rust
 use limit_agent::events::{EventBus, Event};
@@ -162,7 +189,9 @@ events.subscribe(|event| {
 
 ## State Management
 
-```rust
+Persist and restore agent state across sessions:
+
+```rust,no_run
 use limit_agent::state::StateManager;
 
 let state = StateManager::new("~/.limit/agent-state/")?;
@@ -170,13 +199,11 @@ let state = StateManager::new("~/.limit/agent-state/")?;
 // Save current state
 state.save("session-123", &agent_state)?;
 
-// Restore state
+// Restore state later
 let restored = state.load("session-123")?;
 ```
 
-## API Reference
-
-### Core Types
+## Core Types
 
 | Type | Description |
 |------|-------------|
@@ -188,8 +215,21 @@ let restored = state.load("session-123")?;
 
 ### Built-in Tools
 
-- `EchoTool` — Simple echo for testing
+- `EchoTool` — Simple echo for testing the tool pipeline
+
+## API Reference
+
+See [docs.rs/limit-agent](https://docs.rs/limit-agent) for full API documentation.
+
+## Examples
+
+```bash
+# Run examples
+cargo run --example basic
+cargo run --example parallel
+cargo run --example sandbox
+```
 
 ## License
 
-MIT
+MIT © [Mário Idival](https://github.com/marioidival)
