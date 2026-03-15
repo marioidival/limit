@@ -81,7 +81,11 @@ pub trait Tool: Send + Sync {
         &'life0 self,
         args: Value,
     ) -> ::core::pin::Pin<
-        Box<dyn ::core::future::Future<Output = Result<Value, AgentError>> + ::core::marker::Send + 'async_trait>,
+        Box<
+            dyn ::core::future::Future<Output = Result<Value, AgentError>>
+                + ::core::marker::Send
+                + 'async_trait,
+        >,
     >
     where
         'life0: 'async_trait,

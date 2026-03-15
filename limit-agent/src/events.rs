@@ -8,9 +8,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
     /// Agent is thinking/reasoning.
-    Thinking {
-        version: u32,
-    },
+    Thinking { version: u32 },
     /// A tool is being called.
     ToolCall {
         version: u32,
@@ -18,10 +16,7 @@ pub enum Event {
         args: HashMap<String, serde_json::Value>,
     },
     /// A tool has completed with output.
-    ToolResult {
-        version: u32,
-        output: String,
-    },
+    ToolResult { version: u32, output: String },
     /// A file has been modified.
     FileChange {
         version: u32,
@@ -29,14 +24,9 @@ pub enum Event {
         diff: String,
     },
     /// An error occurred.
-    Error {
-        version: u32,
-        message: String,
-    },
+    Error { version: u32, message: String },
     /// Agent execution completed.
-    Done {
-        version: u32,
-    },
+    Done { version: u32 },
 }
 
 /// Event bus for subscribing to agent lifecycle events.
