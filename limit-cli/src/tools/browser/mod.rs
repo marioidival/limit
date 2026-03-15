@@ -34,15 +34,19 @@
 //! /browser close
 //! ```
 
+pub mod args;
 pub mod client;
 pub mod client_ext;
 pub mod config;
 pub mod executor;
+pub mod response;
 pub mod tool;
 pub mod types;
 
+pub use args::ArgsExt;
 pub use client::BrowserClient;
 pub use config::{BrowserConfig, BrowserEngine};
 pub use executor::{BrowserError, BrowserExecutor, BrowserOutput, CliExecutor};
+pub use response::{ok, ok_msg, Response};
 pub use tool::BrowserTool;
 pub use types::{BoundingBox, Cookie, Request, SnapshotResult, TabInfo};
