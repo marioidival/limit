@@ -1,4 +1,4 @@
-use limit_llm::{Config, ProviderConfig};
+use limit_llm::{BrowserConfigSection, Config, ProviderConfig};
 use serial_test::serial;
 use std::collections::HashMap;
 #[test]
@@ -28,6 +28,7 @@ fn test_anthropic_env_fallback() {
     let config = Config {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let provider_config = config.providers.get("anthropic").unwrap();
@@ -66,6 +67,7 @@ fn test_openai_env_fallback() {
     let config = Config {
         provider: "openai".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let provider_config = config.providers.get("openai").unwrap();
@@ -104,6 +106,7 @@ fn test_openai_zai_api_key_fallback() {
     let config = Config {
         provider: "openai".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let provider_config = config.providers.get("openai").unwrap();

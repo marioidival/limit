@@ -3,7 +3,7 @@
 // This test verifies the complete interaction between limit-cli, limit-tui, and the agent.
 
 use limit_cli::{AgentBridge, TuiBridge, TuiState};
-use limit_llm::{Config as LlmConfig, ProviderConfig};
+use limit_llm::{BrowserConfigSection, Config as LlmConfig, ProviderConfig};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
@@ -29,6 +29,7 @@ fn test_tui_integration_full_conversation() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     // Create agent bridge
@@ -62,6 +63,7 @@ fn test_tui_bridge_event_ordering() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -121,6 +123,7 @@ fn test_tui_bridge_tool_execution_display() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -194,6 +197,7 @@ fn test_tui_bridge_error_handling() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -234,6 +238,7 @@ fn test_tui_bridge_spinner_animation() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -291,6 +296,7 @@ fn test_tui_bridge_content_streaming() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -345,6 +351,7 @@ fn test_tui_bridge_is_ready() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -375,6 +382,7 @@ fn test_tui_bridge_get_tool_definitions() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -406,6 +414,7 @@ fn test_tui_bridge_tool_schema() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -444,6 +453,7 @@ fn test_tui_bridge_with_good_config() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -483,6 +493,7 @@ fn test_tui_bridge_from_string_config() {
     let config = LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();

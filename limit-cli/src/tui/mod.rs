@@ -35,7 +35,7 @@
 //!     thinking_enabled: false,
 //!     clear_thinking: true,
 //! });
-//! let config = Config { provider: "anthropic".to_string(), providers };
+//! let config = Config { provider: "anthropic".to_string(), providers, browser: limit_llm::BrowserConfigSection::default() };
 //!
 //! // Create agent bridge and event channel
 //! let (tx, rx) = mpsc::unbounded_channel();

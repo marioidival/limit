@@ -9,7 +9,7 @@
 //! All tests use real components except for the LLM API which is mocked.
 
 use limit_cli::{AgentBridge, SessionManager, TuiBridge, TuiState};
-use limit_llm::Config as LlmConfig;
+use limit_llm::{BrowserConfigSection, Config as LlmConfig};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
@@ -34,6 +34,7 @@ fn create_test_config() -> LlmConfig {
     LlmConfig {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     }
 }
 

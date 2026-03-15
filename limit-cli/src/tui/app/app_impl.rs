@@ -795,7 +795,13 @@ impl TuiApp {
                 }
                 Err(e) => {
                     tracing::error!("Command error: {}", e);
-                    return Err(e);
+                    // Show error to user instead of crashing
+                    self.tui_bridge
+                        .chat_view()
+                        .lock()
+                        .unwrap()
+                        .add_message(Message::system(format!("Error: {}", e)));
+                    return Ok(());
                 }
             }
         }
@@ -1062,7 +1068,7 @@ mod tests {
 
     /// Create a test config for AgentBridge
     fn create_test_config() -> limit_llm::Config {
-        use limit_llm::ProviderConfig;
+        use limit_llm::{BrowserConfigSection, ProviderConfig};
         let mut providers = std::collections::HashMap::new();
         providers.insert(
             "anthropic".to_string(),
@@ -1080,6 +1086,7 @@ mod tests {
         limit_llm::Config {
             provider: "anthropic".to_string(),
             providers,
+            browser: BrowserConfigSection::default(),
         }
     }
 

@@ -1,12 +1,59 @@
 use crate::error::ConfigError;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::{env, fs, io};
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 pub struct Config {
     pub provider: String,
     pub providers: HashMap<String, ProviderConfig>,
+    #[serde(default)]
+    pub browser: BrowserConfigSection,
+}
+
+/// Browser configuration section in config.toml
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct BrowserConfigSection {
+    /// Enable browser tool (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Path to agent-browser binary (default: "agent-browser" in PATH)
+    #[serde(default)]
+    pub binary_path: Option<PathBuf>,
+    /// Browser engine to use (default: "chrome")
+    #[serde(default = "default_browser_engine")]
+    pub engine: String,
+    /// Run in headless mode (default: true)
+    #[serde(default = "default_true")]
+    pub headless: bool,
+    /// Timeout for operations in milliseconds (default: 30000)
+    #[serde(default = "default_browser_timeout")]
+    pub timeout_ms: u64,
+}
+
+impl Default for BrowserConfigSection {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            binary_path: None,
+            engine: default_browser_engine(),
+            headless: default_true(),
+            timeout_ms: default_browser_timeout(),
+        }
+    }
+}
+
+fn default_browser_engine() -> String {
+    "chrome".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_browser_timeout() -> u64 {
+    30_000
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -175,6 +222,7 @@ impl Default for Config {
         Config {
             provider: "anthropic".to_string(),
             providers,
+            browser: BrowserConfigSection::default(),
         }
     }
 }

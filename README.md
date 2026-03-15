@@ -50,7 +50,7 @@ That's it! Start chatting with your AI coding assistant.
 ## Features
 
 - **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, z.ai, and local LLMs (Ollama, LM Studio, vLLM)
-- **17 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis, web search/fetch
+- **18 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis, web search/fetch, browser automation
 - **Session Persistence** — Auto-save/restore conversation history
 - **Token Tracking** — SQLite-based usage tracking with cost estimation
 - **Docker Sandbox** — Optional containerized tool execution for isolation
@@ -313,6 +313,11 @@ Input: Analyze @src/main.rs and explain
 | `web_search` | Search the web using Exa AI for current information |
 | `web_fetch` | Fetch and convert web pages to markdown |
 
+### Browser Automation
+| Tool | Description |
+|------|-------------|
+| `browser` | Full browser automation with 46+ actions: open, click, fill, screenshot, wait, tabs, cookies, and more. See [Browser Tool](docs/BROWSER_TOOL.md) for details. |
+
 ---
 
 ## Crates
@@ -344,6 +349,7 @@ See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
 - [OpenAI Setup](docs/OPENAI_SETUP.md) - Detailed guide for GPT-5.4 setup
 - [z.ai Setup](docs/ZAI_SETUP.md) - Detailed guide for z.ai (GLM-5) setup
 - [Local LLM Providers](docs/LOCAL_PROVIDERS.md) - Ollama, LM Studio, vLLM, and custom servers
+- [Browser Tool](docs/BROWSER_TOOL.md) - Browser automation for testing and scraping
 
 ---
 

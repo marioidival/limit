@@ -1,4 +1,4 @@
-use limit_llm::{Config, ProviderConfig, ProviderFactory};
+use limit_llm::{BrowserConfigSection, Config, ProviderConfig, ProviderFactory};
 use std::collections::HashMap;
 
 #[test]
@@ -20,6 +20,7 @@ fn test_unknown_provider_error() {
     let config = Config {
         provider: "openai".to_string(), // Known but not configured
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     let result = ProviderFactory::create_provider(&config);
@@ -35,6 +36,7 @@ fn test_missing_provider_error() {
     let config = Config {
         provider: "anthropic".to_string(),
         providers: HashMap::new(),
+        browser: BrowserConfigSection::default(),
     };
 
     let result = ProviderFactory::create_provider(&config);
@@ -63,6 +65,7 @@ fn test_missing_api_key_error() {
     let config = Config {
         provider: "anthropic".to_string(),
         providers,
+        browser: BrowserConfigSection::default(),
     };
 
     // Ensure no env var is set
