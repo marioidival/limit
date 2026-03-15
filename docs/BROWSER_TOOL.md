@@ -57,19 +57,82 @@ Use the `/browser` command in the Limit TUI:
 ```
 /browser snapshot          Take an accessibility snapshot
 /browser click <selector>  Click an element
+/browser dblclick <sel>    Double-click an element
 /browser fill <sel> <text> Fill a form field (instant)
 /browser type <sel> <text> Type text character by character
 /browser hover <selector>  Hover over an element
+/browser focus <selector>  Focus an element
 /browser select <sel> <val> Select option in dropdown
 /browser press <key>       Press a keyboard key
+/browser check <selector>  Check a checkbox
+/browser uncheck <sel>     Uncheck a checkbox
+```
+
+**Forms & Files:**
+```
+/browser upload <sel> <files...> Upload files to input
+/browser drag <src> <dst>  Drag and drop element
+```
+
+**Finding Elements:**
+```
+/browser find --<type> <value> <action> [action_value]
+  Locators: role, text, label, placeholder, alt, title, testid, css, xpath
+  Actions: click, fill, text, count, first, last, nth, hover, focus
+```
+
+**Waiting:**
+```
+/browser wait <condition>           Wait for selector/timeout
+/browser wait_for_text <text>       Wait for text to appear
+/browser wait_for_url <pattern>     Wait for URL pattern
+/browser wait_for_load <state>      Wait for load state (networkidle, load)
+/browser wait_for_state <sel> <st>  Wait for element state (visible, hidden)
+```
+
+**Tabs & Dialogs:**
+```
+/browser tab_list                   List all tabs
+/browser tab_new [url]              Open new tab
+/browser tab_close [index]          Close tab
+/browser tab_select <index>         Switch to tab
+/browser dialog_accept [text]       Accept dialog
+/browser dialog_dismiss             Dismiss dialog
 ```
 
 **State & Info:**
 ```
 /browser screenshot <path> Save a screenshot
+/browser pdf <path>        Save page as PDF
 /browser get <what>        Get page content (text, html, url, title)
+/browser get_attr <sel> <attr> Get element attribute
+/browser get_count <sel>   Get element count
+/browser get_box <sel>     Get element bounding box
+/browser get_styles <sel>  Get computed styles
 /browser scroll <dir> [px] Scroll page (up/down/left/right)
+/browser scrollintoview <sel> Scroll element into view
 /browser is <what> <sel>   Check element state (visible, enabled, etc.)
+```
+
+**Storage & Network:**
+```
+/browser cookies                    List all cookies
+/browser cookies_set <name> <val>   Set a cookie
+/browser storage_get <type> [key]   Get storage value (local/session)
+/browser storage_set <type> <k> <v> Set storage value
+/browser network_requests [filter]  Get network requests
+```
+
+**Settings:**
+```
+/browser set_viewport <w> <h> [scale]  Set viewport size
+/browser set_device <name>             Set device emulation
+/browser set_geo <lat> <lng>           Set geolocation
+```
+
+**Other:**
+```
+/browser download <sel> <path> Download file
 /browser close             Close the browser
 /browser help              Show help
 ```
@@ -88,11 +151,94 @@ Use the `/browser` command in the Limit TUI:
 # Click a button
 /browser click "button.submit"
 
+# Double-click an element
+/browser dblclick "@e5"
+
 # Fill a form field
 /browser fill "input[name=email]" "test@example.com"
 
 # Type text character by character (triggers key events)
 /browser type "input[name=password]" "secret"
+
+# Focus an element
+/browser focus "input[name=search]"
+
+# Check/uncheck checkboxes
+/browser check "input[type=checkbox]"
+/browser uncheck "input[type=checkbox]"
+
+# Select from dropdown
+/browser select "select.country" "US"
+
+# Upload files
+/browser upload "input[type=file]" "/path/to/file1.pdf" "/path/to/file2.pdf"
+
+# Drag and drop
+/browser drag "@source" "@target"
+
+# Find element by role and click
+/browser find --role button --value Submit click
+
+# Find element by text and fill
+/browser find --text "Email" fill "test@example.com"
+
+# Wait for text to appear
+/browser wait_for_text "Welcome"
+
+# Wait for page to load
+/browser wait_for_load networkidle
+
+# Wait for element to be visible
+/browser wait_for_state "@modal" visible
+
+# Get element attribute
+/browser get_attr "@link" href
+
+# Count elements
+/browser get_count "li.item"
+
+# Get element bounding box
+/browser get_box "@button"
+
+# Scroll element into view
+/browser scrollintoview "@footer"
+
+# Work with tabs
+/browser tab_list
+/browser tab_new "https://example.org"
+/browser tab_select 1
+/browser tab_close 0
+
+# Handle dialogs
+/browser dialog_accept
+/browser dialog_accept "Typed text"  # for prompt dialogs
+/browser dialog_dismiss
+
+# Download file
+/browser download "@download-link" "/tmp/file.zip"
+
+# Save as PDF
+/browser pdf "/tmp/page.pdf"
+
+# Work with cookies
+/browser cookies
+/browser cookies_set session_id "abc123"
+
+# Work with storage
+/browser storage_get local "user_prefs"
+/browser storage_set session "token" "xyz789"
+
+# View network requests
+/browser network_requests
+
+# Set viewport for mobile
+/browser set_viewport 375 667 2
+
+# Emulate device
+/browser set_device "iPhone 12"
+
+# Set geolocation
+/browser set_geo 37.7749 -122.4194
 
 # Hover over an element
 /browser hover "@e5"
@@ -131,26 +277,122 @@ The LLM can use the browser tool automatically. Just ask:
 
 #### Available Actions
 
-| Action | Description | Required Parameters |
-|--------|-------------|---------------------|
+**Navigation:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
 | `open` | Open a URL | `url` |
 | `close` | Close the browser | none |
+| `back` | Navigate back in history | none |
+| `forward` | Navigate forward in history | none |
+| `reload` | Reload the current page | none |
+
+**Page Interaction:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
 | `snapshot` | Get accessibility tree | none |
 | `click` | Click an element | `selector` |
+| `dblclick` | Double-click an element | `selector` |
 | `fill` | Fill a form field (instant) | `selector`, `text` |
 | `type` | Type text character by character | `selector`, `text` |
 | `press` | Press a keyboard key | `key` |
 | `hover` | Hover over an element | `selector` |
+| `focus` | Focus an element | `selector` |
 | `select` | Select option in dropdown | `selector`, `value` |
-| `screenshot` | Save screenshot | `path` |
+| `check` | Check a checkbox | `selector` |
+| `uncheck` | Uncheck a checkbox | `selector` |
+| `drag` | Drag and drop | `source`, `target` |
+| `upload` | Upload files | `selector`, `files` (array) |
+
+**Finding Elements:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `find` | Find and act on elements | `locator` (role/text/label/placeholder/alt/title/testid/css/xpath), `value`, `action`, optional `action_value` |
+
+**Waiting:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
 | `wait` | Wait for condition | `wait_for` |
-| `eval` | Execute JavaScript | `script` |
+| `wait_for_text` | Wait for text to appear | `text` |
+| `wait_for_url` | Wait for URL pattern | `pattern` |
+| `wait_for_load` | Wait for load state | `state` (networkidle/domcontentloaded/load) |
+| `wait_for_download` | Wait for download | optional `path` |
+| `wait_for_fn` | Wait for JS condition | `js` |
+| `wait_for_state` | Wait for element state | `selector`, `state` (visible/hidden/attached/detached/enabled/disabled) |
+
+**Screenshots & PDF:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `screenshot` | Save screenshot | `path` |
+| `pdf` | Save page as PDF | `path` |
+
+**Getting Information:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
 | `get` | Get page content | `get_what` (text/html/value/url/title) |
-| `back` | Navigate back in history | none |
-| `forward` | Navigate forward in history | none |
-| `reload` | Reload the current page | none |
-| `scroll` | Scroll the page | `direction` (up/down/left/right), optional `pixels` |
+| `get_attr` | Get element attribute | `selector`, `attr` |
+| `get_count` | Get element count | `selector` |
+| `get_box` | Get bounding box | `selector` |
+| `get_styles` | Get computed styles | `selector` |
 | `is` | Check element state | `what` (visible/hidden/enabled/disabled/editable), `selector` |
+
+**Scrolling:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `scroll` | Scroll the page | `direction` (up/down/left/right), optional `pixels` |
+| `scrollintoview` | Scroll element into view | `selector` |
+
+**Tabs:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `tab_list` | List all tabs | none |
+| `tab_new` | Open new tab | optional `url` |
+| `tab_close` | Close tab | optional `index` |
+| `tab_select` | Switch to tab | `index` |
+
+**Dialogs:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `dialog_accept` | Accept dialog | optional `text` (for prompt) |
+| `dialog_dismiss` | Dismiss dialog | none |
+
+**Downloads:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `download` | Download file | `selector`, `path` |
+
+**Storage & Network:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `cookies` | List all cookies | none |
+| `cookies_set` | Set a cookie | `name`, `value` |
+| `storage_get` | Get storage value | `storage_type` (local/session), optional `key` |
+| `storage_set` | Set storage value | `storage_type`, `key`, `value` |
+| `network_requests` | Get network requests | optional `filter` |
+
+**Settings:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `set_viewport` | Set viewport size | `width`, `height`, optional `scale` |
+| `set_device` | Set device emulation | `name` |
+| `set_geo` | Set geolocation | `latitude`, `longitude` |
+
+**JavaScript:**
+
+| Action | Description | Parameters |
+|--------|-------------|------------|
+| `eval` | Execute JavaScript | `script` |
 
 ### Workflow: Snapshot-Ref Pattern
 
