@@ -316,7 +316,7 @@ Input: Analyze @src/main.rs and explain
 ### Browser Automation
 | Tool | Description |
 |------|-------------|
-| `browser` | Automate browser interactions (open, click, fill, screenshot) |
+| `browser` | Full browser automation with 46+ actions: open, click, fill, screenshot, wait, tabs, cookies, and more. See [Browser Tool](docs/BROWSER_TOOL.md) for details. |
 
 ---
 
