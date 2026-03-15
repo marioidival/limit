@@ -10,6 +10,10 @@ Build rich terminal interfaces with a React-like component model, powered by [Ra
 
 Part of the [Limit](https://github.com/marioidival/limit) ecosystem.
 
+## Why This Exists
+
+Building terminal UIs in Rust shouldn't require imperative rendering code. `limit-tui` brings a React-like Virtual DOM to the terminal, enabling declarative UI components with efficient diff-based updates.
+
 ## Features
 
 - **Virtual DOM**: React-like component model with diff-based rendering
@@ -25,25 +29,26 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-limit-tui = "0.0.25"
+limit-tui = "0.0.27"
 ```
+
+**Requirements**: Rust 1.70+, Unix-like OS (Linux, macOS)
 
 ## Quick Start
 
 ### Basic Application
 
-```rust
-use limit_tui::{
-    VNode, Component, render, run_event_loop,
-    RatatuiBackend, InputPrompt, ChatView, Message, Role
-};
-use ratatui::backend::CrosstermBackend;
+```rust,no_run
+use limit_tui::backend::RatatuiBackend;
+use limit_tui::components::{ChatView, InputPrompt};
+use limit_tui::vdom::{VNode, Component};
+use limit_tui::layout::{FlexDirection, AlignItems};
+use crossterm::event::{KeyEvent, KeyCode};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = RatatuiBackend::new()?;
-    
     let app = App::new();
-    run_event_loop(backend, app)
+    limit_tui::run_event_loop(backend, app)
 }
 
 struct App {
@@ -78,12 +83,13 @@ impl Component for App {
 }
 ```
 
-### Virtual DOM
+## Virtual DOM
 
 Build UIs declaratively with `VNode`:
 
 ```rust
-use limit_tui::{VNode, AlignItems, JustifyContent};
+use limit_tui::vdom::VNode;
+use ratatui::style::{Style, Color};
 
 let ui = VNode::div()
     .style(Style::default().bg(Color::Blue))
@@ -92,6 +98,7 @@ let ui = VNode::div()
         VNode::div()
             .flex(FlexDirection::Column)
             .align_items(AlignItems::Center)
+            .gap(2)
             .children(vec![
                 VNode::text("Line 1"),
                 VNode::text("Line 2"),
@@ -104,7 +111,7 @@ let ui = VNode::div()
 The Virtual DOM efficiently computes minimal changes:
 
 ```rust
-use limit_tui::{diff, apply, Patch};
+use limit_tui::vdom::{diff, apply, VNode};
 
 let old_tree = VNode::text("Hello");
 let new_tree = VNode::text("Hello, World!");
@@ -122,7 +129,7 @@ apply(&mut terminal, patches)?;
 Display conversation messages with role-based styling:
 
 ```rust
-use limit_tui::{ChatView, Message, Role};
+use limit_tui::components::{ChatView, Message, Role};
 
 let chat = ChatView::new(vec![
     Message { role: Role::User, content: "What is Rust?".into() },
@@ -136,7 +143,7 @@ let chat = ChatView::new(vec![
 Interactive text input with placeholder:
 
 ```rust
-use limit_tui::InputPrompt;
+use limit_tui::components::InputPrompt;
 
 let input = InputPrompt::new(&buffer, "Enter command...")
     .prefix(">")
@@ -148,7 +155,7 @@ let input = InputPrompt::new(&buffer, "Enter command...")
 Single/multi-select menus:
 
 ```rust
-use limit_tui::{SelectPrompt, SelectResult};
+use limit_tui::components::{SelectPrompt, SelectResult};
 
 let menu = SelectPrompt::new(&["Option A", "Option B", "Option C"])
     .title("Choose an option");
@@ -165,7 +172,7 @@ match menu.result() {
 Loading indicators:
 
 ```rust
-use limit_tui::{Spinner, ProgressBar};
+use limit_tui::components::{Spinner, ProgressBar};
 
 let spinner = Spinner::new().label("Loading...");
 let progress = ProgressBar::new(75, 100).label("Downloading");
@@ -176,7 +183,7 @@ let progress = ProgressBar::new(75, 100).label("Downloading");
 Flexbox-inspired layout:
 
 ```rust
-use limit_tui::{FlexboxLayout, FlexDirection, JustifyContent, AlignItems};
+use limit_tui::layout::{FlexboxLayout, FlexDirection, JustifyContent, AlignItems};
 
 let layout = FlexboxLayout::new()
     .direction(FlexDirection::Row)
@@ -185,12 +192,22 @@ let layout = FlexboxLayout::new()
     .gap(2);
 ```
 
+### Layout Properties
+
+| Property | Values | Description |
+|----------|--------|-------------|
+| `direction` | `Row`, `Column` | Main axis direction |
+| `justify_content` | `Start`, `Center`, `End`, `SpaceBetween`, `SpaceAround` | Main axis alignment |
+| `align_items` | `Start`, `Center`, `End`, `Stretch` | Cross axis alignment |
+| `gap` | `u16` | Spacing between children |
+| `wrap` | `bool` | Enable flex wrapping |
+
 ## Syntax Highlighting
 
 ```rust
-use limit_tui::SyntaxHighlighter;
+use limit_tui::syntax::SyntaxHighlighter;
 
-let highlighter = SyntaxHighlighter::new();
+let highlighter = SyntaxHighlighter::new()?;
 
 let code = highlighter.highlight(r#"
 fn main() {
@@ -200,6 +217,15 @@ fn main() {
 
 // Returns styled text with syntax colors
 ```
+
+### Supported Languages
+
+Built-in support for 150+ languages including:
+- Rust, Go, Python, JavaScript, TypeScript
+- Java, C, C++, C#
+- HTML, CSS, SCSS
+- JSON, YAML, TOML, XML
+- Markdown, SQL, Shell
 
 ## API Reference
 
@@ -211,6 +237,15 @@ fn main() {
 | `syntax` | Syntax highlighting |
 | `backend` | Ratatui integration |
 
+## Examples
+
+```bash
+# Run examples
+cargo run --example basic
+cargo run --example chat
+cargo run --example flexbox
+```
+
 ## License
 
-MIT
+MIT © [Mário Idival](https://github.com/marioidival)
