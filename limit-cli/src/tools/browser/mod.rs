@@ -6,6 +6,7 @@
 //!
 //! - [`config`] - Configuration types for browser settings
 //! - [`executor`] - Abstraction layer for executing browser commands
+//! - [`types`] - Data types for browser operations
 //! - [`client`] - High-level API for browser operations
 //! - [`tool`] - LLM agent tool implementation
 //!
@@ -37,8 +38,10 @@ pub mod client;
 pub mod config;
 pub mod executor;
 pub mod tool;
+pub mod types;
 
-pub use client::{BrowserClient, SnapshotResult};
+pub use client::BrowserClient;
+pub use types::{BoundingBox, Cookie, Request, SnapshotResult, TabInfo};
 pub use config::{BrowserConfig, BrowserEngine};
 pub use executor::{BrowserError, BrowserExecutor, BrowserOutput, CliExecutor};
 pub use tool::BrowserTool;
