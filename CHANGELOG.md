@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.28] - 2026-03-15
+
+### 🚀 Features
+
+- Add detailed browser activity messages in TUI
+
+
+### 🐛 Bug Fixes
+
+- Share command doesnt copy prompt
+
+
+### 🚜 Refactor
+
+- Remove duplicate tool list from system prompt
+
+
+### 📚 Documentation
+
+- Add comprehensive documentation and module-level docs
+
+- Add comprehensive documentation for tool system
+
+- Add comprehensive documentation for TUI components
+
+- Add comprehensive documentation for CLI application
+
+
+### 🎨 Styling
+
+- Format event and tool definitions
+
+## [0.0.28] - 2026-03-15
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.27] - 2026-03-15
 
 ### 🚀 Features
