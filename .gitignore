@@ -1,5 +1,6 @@
 target/
 .limit/
+.sisyphus
 docs/plans/*
 *.db
 *.bin
