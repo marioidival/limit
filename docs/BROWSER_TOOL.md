@@ -78,7 +78,7 @@ Use the `/browser` command in the Limit TUI:
 ```
 /browser find --<type> <value> <action> [action_value]
   Locators: role, text, label, placeholder, alt, title, testid, css, xpath
-  Actions: click, fill, text, count, first, last, nth, hover, focus
+  Actions: click, fill, text, count, first, last, nth, hover, focus, check, uncheck
 ```
 
 **Waiting:**
