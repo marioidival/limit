@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.27] - 2026-03-15
+
+### 🚀 Features
+
+- Add input history with persistence
+
+- Integrate history into input editor
+
+- Export InputHistory from input module
+
+- Increase size of state events
+
+- Improve pasted content display with placeholder
+
+- Add browser automation tool for agent and TUI (#9)
+
+
+### 🐛 Bug Fixes
+
+- Use arrow keys for history navigation instead of scroll
+
+- Correct message count assertions in tui_integration
+
+- Resolve test isolation and syntax detection issues
+
+- Complete tui module doc example with config setup
+
+
+### 🚜 Refactor
+
+- Add debug logging to input handler
+
+- Add factory methods for dependency injection
+
+- Add ArgsExt trait and Response builder
+
+- Add From<BrowserError> for AgentError
+
+- Add BrowserAction enum for type-safe dispatch
+
+- Split handlers into categorical modules
+
+
+### 🎨 Styling
+
+- Apply cargo fmt to autocomplete
+
+- Apply cargo fmt to bridge_impl
+
+- Apply cargo fmt to renderer
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove plans
+
+## [0.0.27] - 2026-03-15
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.26] - 2026-03-13
 
 ### 🚀 Features
