@@ -5,10 +5,12 @@
 //! `create` registers a team with a placeholder provider.
 //! `start` replaces the placeholder with a real provider from the active
 //! [`AgentBridge`](crate::agent_bridge::AgentBridge) before executing.
+//!
+//! Teams are persisted to `~/.limit/teams/` as JSON snapshots.
 
 use crate::error::CliError;
 use crate::tui::commands::registry::{Command, CommandContext, CommandResult};
-use limit_agent::team::{EventLevel, Team, TeamConfig};
+use limit_agent::team::{EventLevel, Team, TeamConfig, TeamSnapshot, TeamStore};
 use limit_tui::components::Message;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -22,6 +24,7 @@ struct TeamEntry {
 /// The `/team` command.
 pub struct TeamCommand {
     teams: Mutex<HashMap<String, TeamEntry>>,
+    store: Mutex<TeamStore>,
 }
 
 impl Default for TeamCommand {
@@ -32,8 +35,47 @@ impl Default for TeamCommand {
 
 impl TeamCommand {
     pub fn new() -> Self {
+        let store = TeamStore::default_dir().unwrap_or_else(|e| {
+            tracing::warn!("Failed to create team store: {}. Using temp dir.", e);
+            let tmp = std::env::temp_dir().join("limit-teams");
+            std::fs::create_dir_all(&tmp).ok();
+            TeamStore::new(tmp).expect("temp dir should work")
+        });
         Self {
             teams: Mutex::new(HashMap::new()),
+            store: Mutex::new(store),
+        }
+    }
+
+    /// Load teams from disk into memory.
+    fn load_from_store(&self, ctx: &mut CommandContext) {
+        let store = self.store.lock().unwrap();
+        let names = match store.list() {
+            Ok(n) => n,
+            Err(e) => {
+                ctx.add_system_message(format!("⚠️  Failed to list teams: {}", e));
+                return;
+            }
+        };
+
+        let mut teams = self.teams.lock().unwrap();
+        for name in &names {
+            if teams.contains_key(name) {
+                continue; // already loaded
+            }
+            match store.load(name) {
+                Ok(Some(snap)) => {
+                    let team = create_placeholder_team(&snap.name, &snap.config);
+                    teams.insert(name.clone(), TeamEntry {
+                        team,
+                        config: snap.config,
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!("Failed to load team '{}': {}", name, e);
+                }
+            }
         }
     }
 }
@@ -123,7 +165,9 @@ impl TeamCommand {
 
         let config = TeamConfig {
             num_juniors: juniors,
-            ..TeamConfig::default()
+            max_parallel_tasks: 4,
+            enable_streaming: false,
+            roles: Default::default(),
         };
 
         let mut teams = self.teams.lock().unwrap();
@@ -131,6 +175,15 @@ impl TeamCommand {
             ctx.add_system_message(format!("⚠️  Team '{}' already exists", name));
         } else {
             let team = create_placeholder_team(&name, &config);
+
+            // Persist to disk
+            let snap = TeamSnapshot::new(&name, config.clone());
+            if let Ok(store) = self.store.lock() {
+                if let Err(e) = store.save(&snap) {
+                    tracing::warn!("Failed to persist team '{}': {}", name, e);
+                }
+            }
+
             teams.insert(name.clone(), TeamEntry { team, config });
             ctx.add_system_message(format!(
                 "✅ Team '{}' registered with {} junior agents\n\
@@ -152,6 +205,13 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
+        // Remove from disk
+        if let Ok(store) = self.store.lock() {
+            if let Err(e) = store.delete(name) {
+                tracing::warn!("Failed to delete team '{}' from disk: {}", name, e);
+            }
+        }
+
         let mut teams = self.teams.lock().unwrap();
         if teams.remove(name).is_some() {
             ctx.add_system_message(format!("✅ Team '{}' deleted", name));
@@ -163,6 +223,9 @@ impl TeamCommand {
     }
 
     fn handle_list(&self, ctx: &mut CommandContext) -> Result<CommandResult, CliError> {
+        // Load persisted teams first
+        self.load_from_store(ctx);
+
         let teams = self.teams.lock().unwrap();
         if teams.is_empty() {
             ctx.add_system_message("No teams created yet. Use /team create --name <name>".into());
@@ -325,61 +388,84 @@ impl TeamCommand {
                 let new_team = Team::new(name_clone.clone(), real_provider, team_config, tools);
 
                 match new_team {
-                    Ok(mut team) => match team.execute(&task_clone).await {
-                        Ok(result) => {
-                            let mut summary = format!(
-                                "✅ Team '{}' completed in {:.1}s",
-                                name_clone,
-                                result.duration.as_secs_f64(),
-                            );
+                    Ok(mut team) => {
+                        let result = team.execute(&task_clone).await;
 
-                            if result.total_tasks > 0 {
+                        match result {
+                            Ok(result) => {
+                                // Report phase-by-phase progress
+                                let phase_events: Vec<_> = result.events.iter()
+                                    .filter(|e| e.role == "system" && e.action.starts_with("phase:"))
+                                    .collect();
+
+                                for evt in &phase_events {
+                                    let phase_name = evt.action.trim_start_matches("phase:");
+                                    chat_view.lock().unwrap().add_message(
+                                        Message::system(format!("🔄 {}", phase_name))
+                                    );
+                                }
+
+                                let mut summary = format!(
+                                    "✅ Team '{}' completed in {:.1}s",
+                                    name_clone,
+                                    result.duration.as_secs_f64(),
+                                );
+
+                                if result.total_tasks > 0 {
+                                    summary.push_str(&format!(
+                                        "\n📦 Tasks: {}/{} succeeded",
+                                        result.total_tasks - result.failed_tasks,
+                                        result.total_tasks,
+                                    ));
+                                }
+
+                                if result.failed_tasks > 0 {
+                                    summary.push_str(&format!(
+                                        "\n⚠️  {} task(s) failed — check /team history for details",
+                                        result.failed_tasks
+                                    ));
+                                }
+
+                                if !result.files_modified.is_empty() {
+                                    summary.push_str(&format!(
+                                        "\n📁 Files: {}",
+                                        result.files_modified.join(", ")
+                                    ));
+                                }
+
                                 summary.push_str(&format!(
-                                    "\n📦 Tasks: {}/{} succeeded",
-                                    result.total_tasks - result.failed_tasks,
-                                    result.total_tasks,
+                                    "\n📊 Events: {}",
+                                    result.events.len(),
                                 ));
+
+                                summary.push_str(&format!("\n\n{}", result.solution));
+
+                                chat_view.lock().unwrap().add_message(Message::system(summary));
                             }
+                            Err(e) => {
+                                let err_msg = format!("{}", e);
+                                let hint = if err_msg.contains("Rate limit")
+                                    || err_msg.contains("429")
+                                {
+                                    "\n💡 Tip: Rate limited — try again in a moment or use a team config with a cheaper model for Jr agents."
+                                } else if err_msg.contains("API key") {
+                                    "\n💡 Tip: Check your API key in ~/.limit/config.toml"
+                                } else if err_msg.contains("timeout") {
+                                    "\n💡 Tip: Request timed out — try breaking the task into smaller pieces."
+                                } else {
+                                    ""
+                                };
 
-                            if result.failed_tasks > 0 {
-                                summary.push_str(&format!(
-                                    "\n⚠️  {} task(s) failed — check /team history for details",
-                                    result.failed_tasks
-                                ));
+                                chat_view
+                                    .lock()
+                                    .unwrap()
+                                    .add_message(Message::system(format!(
+                                        "❌ Team execution failed: {}{}",
+                                        err_msg, hint
+                                    )));
                             }
-
-                            summary.push_str(&format!(
-                                "\n📊 Events: {}",
-                                result.events.len(),
-                            ));
-
-                            summary.push_str(&format!("\n\n{}", result.solution));
-
-                            chat_view.lock().unwrap().add_message(Message::system(summary));
                         }
-                        Err(e) => {
-                            let err_msg = format!("{}", e);
-                            let hint = if err_msg.contains("Rate limit")
-                                || err_msg.contains("429")
-                            {
-                                "\n💡 Tip: Rate limited — try again in a moment or use a team config with a cheaper model for Jr agents."
-                            } else if err_msg.contains("API key") {
-                                "\n💡 Tip: Check your API key in ~/.limit/config.toml"
-                            } else if err_msg.contains("timeout") {
-                                "\n💡 Tip: Request timed out — try breaking the task into smaller pieces."
-                            } else {
-                                ""
-                            };
-
-                            chat_view
-                                .lock()
-                                .unwrap()
-                                .add_message(Message::system(format!(
-                                    "❌ Team execution failed: {}{}",
-                                    err_msg, hint
-                                )));
-                        }
-                    },
+                    }
                     Err(e) => {
                         chat_view
                             .lock()
@@ -586,6 +672,7 @@ mod tests {
         let config = TeamConfig {
             num_juniors: 5,
             max_parallel_tasks: 8,
+            enable_streaming: true,
             roles: Default::default(),
         };
         let team = create_placeholder_team("test", &config);
