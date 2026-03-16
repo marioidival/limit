@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn test_retry_constants() {
-        assert!(MAX_RETRIES >= 2);
-        assert!(!RETRY_BASE_DELAY.is_zero());
+        const _: () = assert!(MAX_RETRIES >= 2);
+        const _: () = assert!(!RETRY_BASE_DELAY.is_zero());
     }
 }

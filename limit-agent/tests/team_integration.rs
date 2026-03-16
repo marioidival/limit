@@ -7,7 +7,6 @@
 //! - Files are extracted from results
 //! - History events are recorded per phase
 
-use limit_agent::team::WorkflowPhase;
 use limit_agent::team::{Role, Team, TeamConfig};
 use limit_agent::ToolRegistry;
 use limit_llm::MockLlmProvider;

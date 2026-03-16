@@ -217,8 +217,8 @@ async fn execute_tasks_parallel(
         .collect();
     let num_jrs = jrs.len();
 
-    // Wrap all Jr agents in a single Mutex to satisfy the borrow checker.
-    let jrs_guard = std::sync::Mutex::new(jrs);
+    // Wrap all Jr agents in a single async-aware Mutex to satisfy the borrow checker.
+    let jrs_guard = tokio::sync::Mutex::new(jrs);
 
     let results: Vec<TaskResult> = stream::iter(owned_tasks.into_iter().enumerate())
         .map(|(i, (task_id, description))| {
@@ -230,7 +230,7 @@ async fn execute_tasks_parallel(
                 );
 
                 let result = {
-                    let mut jrs_lock = guard.lock().unwrap();
+                    let mut jrs_lock = guard.lock().await;
                     let jr = &mut jrs_lock[jr_idx];
                     jr.prompt(&prompt_text).await
                 };
@@ -247,7 +247,7 @@ async fn execute_tasks_parallel(
                             jr_idx, e
                         );
                         let retry_result = {
-                            let mut jrs_lock = guard.lock().unwrap();
+                            let mut jrs_lock = guard.lock().await;
                             let jr = &mut jrs_lock[jr_idx];
                             jr.prompt(&prompt_text).await
                         };
