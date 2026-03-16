@@ -17,13 +17,17 @@ use std::sync::{Arc, Mutex};
 
 /// Stored team together with its configuration.
 struct TeamEntry {
+    #[allow(dead_code)]
     team: Team,
     config: TeamConfig,
 }
 
 /// The `/team` command.
 pub struct TeamCommand {
+    /// Placeholder teams for metadata (config, junios count).
     teams: Mutex<HashMap<String, TeamEntry>>,
+    /// Execution histories indexed by team name (populated after team runs).
+    execution_histories: Arc<Mutex<HashMap<String, limit_agent::team::TeamHistory>>>,
     store: Mutex<TeamStore>,
 }
 
@@ -43,13 +47,20 @@ impl TeamCommand {
         });
         Self {
             teams: Mutex::new(HashMap::new()),
+            execution_histories: Arc::new(Mutex::new(HashMap::new())),
             store: Mutex::new(store),
         }
     }
 
     /// Load teams from disk into memory.
     fn load_from_store(&self, ctx: &mut CommandContext) {
-        let store = self.store.lock().unwrap();
+        let store = match self.store.lock() {
+            Ok(s) => s,
+            Err(_) => {
+                ctx.add_system_message("⚠️  Failed to access team store".to_string());
+                return;
+            }
+        };
         let names = match store.list() {
             Ok(n) => n,
             Err(e) => {
@@ -58,7 +69,13 @@ impl TeamCommand {
             }
         };
 
-        let mut teams = self.teams.lock().unwrap();
+        let mut teams = match self.teams.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                tracing::warn!("Teams mutex was poisoned, recovering...");
+                poisoned.into_inner()
+            }
+        };
         for name in &names {
             if teams.contains_key(name) {
                 continue; // already loaded
@@ -173,16 +190,21 @@ impl TeamCommand {
             roles: Default::default(),
         };
 
-        let mut teams = self.teams.lock().unwrap();
+        let mut teams = match self.teams.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                tracing::warn!("Teams mutex was poisoned, recovering...");
+                poisoned.into_inner()
+            }
+        };
         if teams.contains_key(&name) {
             ctx.add_system_message(format!("⚠️  Team '{}' already exists", name));
         } else {
             let team = create_placeholder_team(&name, &config);
 
             // Persist to disk
-            let snap = TeamSnapshot::new(&name, config.clone());
             if let Ok(store) = self.store.lock() {
-                if let Err(e) = store.save(&snap) {
+                if let Err(e) = store.save(&TeamSnapshot::new(&name, config.clone())) {
                     tracing::warn!("Failed to persist team '{}': {}", name, e);
                 }
             }
@@ -215,7 +237,13 @@ impl TeamCommand {
             }
         }
 
-        let mut teams = self.teams.lock().unwrap();
+        let mut teams = match self.teams.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                tracing::warn!("Teams mutex was poisoned, recovering...");
+                poisoned.into_inner()
+            }
+        };
         if teams.remove(name).is_some() {
             ctx.add_system_message(format!("✅ Team '{}' deleted", name));
         } else {
@@ -229,7 +257,13 @@ impl TeamCommand {
         // Load persisted teams first
         self.load_from_store(ctx);
 
-        let teams = self.teams.lock().unwrap();
+        let teams = match self.teams.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                tracing::warn!("Teams mutex was poisoned, recovering...");
+                poisoned.into_inner()
+            }
+        };
         if teams.is_empty() {
             ctx.add_system_message("No teams created yet. Use /team create --name <name>".into());
         } else {
@@ -254,7 +288,13 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let teams = self.teams.lock().unwrap();
+        let teams = match self.teams.lock() {
+            Ok(t) => t,
+            Err(poisoned) => {
+                tracing::warn!("Teams mutex was poisoned, recovering...");
+                poisoned.into_inner()
+            }
+        };
         match teams.get(name) {
             Some(entry) => {
                 ctx.add_system_message(format!(
@@ -323,20 +363,24 @@ impl TeamCommand {
 
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
-        // Validate team exists before spawning background work
-        {
-            let teams = self.teams.lock().unwrap();
-            if !teams.contains_key(&team_name) {
-                ctx.add_system_message(format!("⚠️  Team '{}' not found", team_name));
-                return Ok(CommandResult::Continue);
-            }
-        }
-
         // Spawn team execution in a background thread to avoid blocking the TUI.
         // This follows the same pattern as the main LLM processing in handle_enter.
         let chat_view = ctx.chat_view.clone();
         let name_clone = team_name;
         let task_clone = task;
+        let execution_histories = Arc::clone(&self.execution_histories);
+
+        // Validate team exists before spawning background work
+        {
+            let teams = match self.teams.lock() {
+                Ok(t) => t,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            if !teams.contains_key(&name_clone) {
+                ctx.add_system_message(format!("⚠️  Team '{}' not found", name_clone));
+                return Ok(CommandResult::Continue);
+            }
+        }
 
         std::thread::spawn(move || {
             let rt = match tokio::runtime::Runtime::new() {
@@ -388,7 +432,7 @@ impl TeamCommand {
                 let tool_registry = build_tool_registry();
                 let tools = Arc::new(tool_registry);
 
-                let new_team = Team::new(name_clone.clone(), real_provider, team_config, tools);
+                let new_team = Team::new(name_clone.clone(), real_provider, team_config.clone(), tools);
 
                 match new_team {
                     Ok(mut team) => {
@@ -406,6 +450,13 @@ impl TeamCommand {
                                     chat_view.lock().unwrap().add_message(
                                         Message::system(format!("🔄 {}", phase_name))
                                     );
+                                }
+
+                                // Update the execution history for this team
+                                // Clone history before acquiring the lock to avoid holding it across await
+                                let history_clone = (*team.history.read().await).clone();
+                                if let Ok(mut histories) = execution_histories.lock() {
+                                    histories.insert(name_clone.clone(), history_clone);
                                 }
 
                                 let mut summary = format!(
@@ -495,17 +546,20 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let teams = self.teams.lock().unwrap();
-        match teams.get(name) {
-            Some(entry) => {
-                let rt = match tokio::runtime::Runtime::new() {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        ctx.add_system_message(format!("Error: {}", e));
-                        return Ok(CommandResult::Continue);
-                    }
-                };
-                let events = rt.block_on(entry.team.events());
+        // Read from execution_histories (populated after team runs)
+        let events_result = {
+            let histories = match self.execution_histories.lock() {
+                Ok(h) => h,
+                Err(poisoned) => {
+                    tracing::warn!("Execution histories mutex was poisoned, recovering...");
+                    poisoned.into_inner()
+                }
+            };
+            histories.get(name).map(|history| history.events().to_vec())
+        };
+
+        match events_result {
+            Some(events) => {
                 if events.is_empty() {
                     ctx.add_system_message(
                         "No history recorded yet. Run /team start first.".into(),
@@ -554,7 +608,10 @@ impl TeamCommand {
                 }
             }
             None => {
-                ctx.add_system_message(format!("Team '{}' not found", name));
+                ctx.add_system_message(format!(
+                    "Team '{}' has no history. Run /team start first.",
+                    name
+                ));
             }
         }
 
