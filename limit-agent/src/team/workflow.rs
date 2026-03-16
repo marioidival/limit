@@ -7,6 +7,7 @@ use crate::error::AgentError;
 use crate::team::agent::TeamAgent;
 use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
 use crate::team::orchestrator::{parse_tasks, Task, TaskResult};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -27,6 +28,8 @@ pub struct TeamResult {
     pub failed_tasks: usize,
     /// Total number of tasks executed.
     pub total_tasks: usize,
+    /// Files modified during execution (extracted from tool call results).
+    pub files_modified: Vec<String>,
 }
 
 /// Named phases of the team workflow.
@@ -75,6 +78,7 @@ pub async fn execute_workflow(
 
     // ── Phase 1: PM analysis ──────────────────────────────────────────
     tracing::info!("[team] PM — analyzing request");
+    log_phase(history, WorkflowPhase::PmAnalysis).await;
     let analysis = pm
         .prompt(&format!(
             "User request:\n{user_request}\n\nAnalyze this request and identify what needs to be done."
@@ -84,6 +88,7 @@ pub async fn execute_workflow(
 
     // ── Phase 2: TL technical plan ────────────────────────────────────
     tracing::info!("[team] TL — creating technical plan");
+    log_phase(history, WorkflowPhase::TlPlan).await;
     let plan = tl
         .prompt(&format!(
             "PM analysis:\n{analysis}\n\nCreate a technical plan to implement this."
@@ -93,6 +98,7 @@ pub async fn execute_workflow(
 
     // ── Phase 3: TL task breakdown ────────────────────────────────────
     tracing::info!("[team] TL — breaking down tasks");
+    log_phase(history, WorkflowPhase::TlBreakdown).await;
     let tasks = tl
         .prompt(&format!(
             "Technical plan:\n{plan}\n\nBreak this down into specific, executable tasks. \
@@ -125,10 +131,12 @@ pub async fn execute_workflow(
             total_retries: 0,
             failed_tasks: 0,
             total_tasks: 0,
+            files_modified: vec![],
         });
     }
 
     // ── Phase 4: Jr parallel execution ────────────────────────────────
+    log_phase(history, WorkflowPhase::JrExecution).await;
     tracing::info!(
         "[team] Jr — executing {} tasks (max {max_parallel} parallel)",
         tasks.len()
@@ -137,6 +145,9 @@ pub async fn execute_workflow(
 
     let failed_tasks = task_results.iter().filter(|r| !r.success).count();
     let total_tasks = task_results.len();
+
+    // Extract modified files from Jr tool-call results
+    let files_modified = extract_modified_files(&task_results);
 
     let results_summary: String = task_results
         .iter()
@@ -151,6 +162,7 @@ pub async fn execute_workflow(
         .join("\n");
     log_event(history, "Jr", "execution", &results_summary).await;
 
+    log_phase(history, WorkflowPhase::TlValidation).await;
     // ── Phase 5: TL validation ────────────────────────────────────────
     tracing::info!("[team] TL — validating results");
     let validation = tl
@@ -161,6 +173,7 @@ pub async fn execute_workflow(
         .await?;
     log_event(history, "TL", "validation", &validation).await;
 
+    log_phase(history, WorkflowPhase::PmDelivery).await;
     // ── Phase 6: PM delivery ──────────────────────────────────────────
     tracing::info!("[team] PM — preparing delivery");
     let delivery = pm
@@ -178,76 +191,113 @@ pub async fn execute_workflow(
         total_retries: 0,
         failed_tasks,
         total_tasks,
+        files_modified,
     })
 }
 
-/// Execute tasks across Jr agents, distributing round-robin.
+/// Execute tasks across Jr agents using `futures::stream::buffer_unordered`.
 ///
+/// Tasks are distributed round-robin across available Jr agents.
 /// Failed tasks are retried once before being marked as failed.
-/// All other failures are captured as [`TaskResult`] with `success: false`.
 async fn execute_tasks_parallel(
     jrs: &mut [TeamAgent],
     tasks: &[Task],
-    _max_parallel: usize,
+    max_parallel: usize,
 ) -> Vec<TaskResult> {
     if jrs.is_empty() || tasks.is_empty() {
         return Vec::new();
     }
 
-    let mut task_results = Vec::with_capacity(tasks.len());
+    use futures::stream::{self, StreamExt};
 
-    for (i, task) in tasks.iter().enumerate() {
-        let jr_idx = i % jrs.len();
-        let description = task.description.clone();
-        let task_id = task.id.clone();
-        let jr = &mut jrs[jr_idx];
+    // We need to own the tasks for the async closure
+    let owned_tasks: Vec<(String, String)> = tasks
+        .iter()
+        .map(|t| (t.id.clone(), t.description.clone()))
+        .collect();
+    let num_jrs = jrs.len();
 
-        let prompt_text = format!(
-            "Execute this task:\n{description}\n\nUse tools as needed."
-        );
+    // Wrap all Jr agents in a single Mutex to satisfy the borrow checker.
+    let jrs_guard = std::sync::Mutex::new(jrs);
 
-        match jr.prompt(&prompt_text).await {
-            Ok(output) => task_results.push(TaskResult {
-                task_id,
-                output,
-                success: true,
-            }),
-            Err(e) => {
-                // One retry on failure
-                tracing::warn!(
-                    "[team] Jr[{}] task '{}' failed on first attempt: {}. Retrying...",
-                    jr_idx,
-                    &task.description[..task.description.len().min(60)],
-                    e
+    let results: Vec<TaskResult> = stream::iter(owned_tasks.into_iter().enumerate())
+        .map(|(i, (task_id, description))| {
+            let guard = &jrs_guard;
+            async move {
+                let jr_idx = i % num_jrs;
+                let prompt_text = format!(
+                    "Execute this task:\n{description}\n\nUse tools as needed."
                 );
-                match jr.prompt(&prompt_text).await {
-                    Ok(output) => task_results.push(TaskResult {
+
+                let result = {
+                    let mut jrs_lock = guard.lock().unwrap();
+                    let jr = &mut jrs_lock[jr_idx];
+                    jr.prompt(&prompt_text).await
+                };
+
+                match result {
+                    Ok(output) => TaskResult {
                         task_id,
                         output,
                         success: true,
-                    }),
-                    Err(retry_err) => {
-                        tracing::error!(
-                            "[team] Jr[{}] task '{}' failed after retry: {}",
-                            jr_idx,
-                            &task.description[..task.description.len().min(60)],
-                            retry_err
+                    },
+                    Err(e) => {
+                        tracing::warn!(
+                            "[team] Jr[{}] task failed on first attempt: {}. Retrying...",
+                            jr_idx, e
                         );
-                        task_results.push(TaskResult {
-                            task_id,
-                            output: format!(
-                                "Task failed after retry. Last error: {}",
-                                retry_err
-                            ),
-                            success: false,
-                        });
+                        let retry_result = {
+                            let mut jrs_lock = guard.lock().unwrap();
+                            let jr = &mut jrs_lock[jr_idx];
+                            jr.prompt(&prompt_text).await
+                        };
+                        match retry_result {
+                            Ok(output) => TaskResult {
+                                task_id,
+                                output,
+                                success: true,
+                            },
+                            Err(retry_err) => {
+                                tracing::error!(
+                                    "[team] Jr[{}] task failed after retry: {}",
+                                    jr_idx, retry_err
+                                );
+                                TaskResult {
+                                    task_id,
+                                    output: format!(
+                                        "Task failed after retry. Last error: {}",
+                                        retry_err
+                                    ),
+                                    success: false,
+                                }
+                            }
+                        }
                     }
                 }
             }
+        })
+        .buffer_unordered(max_parallel)
+        .collect()
+        .await;
+
+    results
+}
+
+/// Extract file paths from Jr task outputs by looking for common
+/// file-path patterns in tool-call results.
+fn extract_modified_files(results: &[TaskResult]) -> Vec<String> {
+    let re = Regex::new(r#""path"\s*:\s*"([^"]+)""#).unwrap();
+    let mut files = Vec::new();
+
+    for r in results {
+        for cap in re.captures_iter(&r.output) {
+            files.push(cap[1].to_string());
         }
     }
 
-    task_results
+    files.sort();
+    files.dedup();
+    files
 }
 
 /// Helper to record an event into shared history.
@@ -259,6 +309,19 @@ async fn log_event(history: &Arc<RwLock<TeamHistory>>, role: &str, action: &str,
         action: action.to_string(),
         content: content.to_string(),
         level: EventLevel::default(),
+    });
+}
+
+
+/// Log a workflow-phase transition event.
+async fn log_phase(history: &Arc<RwLock<TeamHistory>>, phase: WorkflowPhase) {
+    let mut h = history.write().await;
+    h.add_event(TeamEvent {
+        timestamp: chrono::Utc::now(),
+        role: "system".to_string(),
+        action: format!("phase:{:?}", phase),
+        content: format!("entered phase: {}", phase),
+        level: EventLevel::Info,
     });
 }
 
@@ -295,6 +358,7 @@ mod tests {
             total_retries: 2,
             failed_tasks: 1,
             total_tasks: 5,
+            files_modified: vec![],
         };
         assert_eq!(result.total_retries, 2);
         assert_eq!(result.failed_tasks, 1);
@@ -310,10 +374,59 @@ mod tests {
             total_retries: 0,
             failed_tasks: 0,
             total_tasks: 0,
+            files_modified: vec![],
         };
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: TeamResult = serde_json::from_str(&json).unwrap();
         assert_eq!(result.solution, deserialized.solution);
         assert_eq!(result.duration, deserialized.duration);
+    }
+
+    #[test]
+    fn test_extract_modified_files() {
+        let results = vec![
+            TaskResult {
+                task_id: "1".into(),
+                output: r#"Created file: {"path": "src/main.rs"}"#.into(),
+                success: true,
+            },
+            TaskResult {
+                task_id: "2".into(),
+                output: r#"{"path": "src/lib.rs", "content": "..."}"#.into(),
+                success: true,
+            },
+            TaskResult {
+                task_id: "3".into(),
+                output: "No files modified".into(),
+                success: true,
+            },
+        ];
+        let files = extract_modified_files(&results);
+        assert_eq!(files, vec!["src/lib.rs", "src/main.rs"]);
+    }
+
+    #[test]
+    fn test_extract_modified_files_dedup() {
+        let results = vec![
+            TaskResult {
+                task_id: "1".into(),
+                output: r#"{"path": "src/main.rs"}"#.into(),
+                success: true,
+            },
+            TaskResult {
+                task_id: "2".into(),
+                output: r#"{"path": "src/main.rs"}"#.into(),
+                success: true,
+            },
+        ];
+        let files = extract_modified_files(&results);
+        assert_eq!(files, vec!["src/main.rs"]);
+    }
+
+    #[test]
+    fn test_extract_modified_files_empty() {
+        let results: Vec<TaskResult> = vec![];
+        let files = extract_modified_files(&results);
+        assert!(files.is_empty());
     }
 }

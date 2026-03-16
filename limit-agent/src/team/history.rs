@@ -24,8 +24,10 @@ pub struct TeamEvent {
 
 /// Severity of a team event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum EventLevel {
     /// Informational event (default).
+    #[default]
     Info,
     /// Warning (non-critical issue).
     Warn,
@@ -33,11 +35,6 @@ pub enum EventLevel {
     Error,
 }
 
-impl Default for EventLevel {
-    fn default() -> Self {
-        Self::Info
-    }
-}
 
 impl fmt::Display for EventLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
