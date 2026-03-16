@@ -30,6 +30,7 @@ fn test_tui_integration_full_conversation() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     // Create agent bridge
@@ -64,6 +65,7 @@ fn test_tui_bridge_event_ordering() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -124,6 +126,7 @@ fn test_tui_bridge_tool_execution_display() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -198,6 +201,7 @@ fn test_tui_bridge_error_handling() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -239,6 +243,7 @@ fn test_tui_bridge_spinner_animation() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -297,6 +302,7 @@ fn test_tui_bridge_content_streaming() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -352,6 +358,7 @@ fn test_tui_bridge_is_ready() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -383,6 +390,7 @@ fn test_tui_bridge_get_tool_definitions() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -415,6 +423,7 @@ fn test_tui_bridge_tool_schema() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -454,6 +463,7 @@ fn test_tui_bridge_with_good_config() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -494,6 +504,7 @@ fn test_tui_bridge_from_string_config() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();

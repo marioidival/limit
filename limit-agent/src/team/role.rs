@@ -1,12 +1,11 @@
 //! Role definitions for team agents.
 //!
-//! Each role has a specific system prompt, default model preference,
-//! and set of available tools.
+//! Each role has a specific system prompt, and optionally a dedicated
+//! model and tool whitelist — both configurable via [`RoleConfig`].
 
 use serde::{Deserialize, Serialize};
-
 /// Specialized role for a team agent.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Role {
     /// Product Manager — understands requirements, product vision.
     PM,
@@ -14,6 +13,119 @@ pub enum Role {
     TL,
     /// Junior Developer — executes tasks with tools.
     Jr,
+}
+
+/// Per-role configuration loaded from `[team.roles]` in `config.toml`.
+///
+/// Any field set to `None` falls back to the active provider's default
+/// model (the same one used by the single-agent mode).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleConfig {
+    /// Model override for this role (e.g. `"gpt-4o-mini"` for Jr to save cost).
+    pub model: Option<String>,
+    /// Tool names this role is allowed to use.
+    ///
+    /// `None` means **all registered tools** are available.
+    /// An empty `Vec` means **no tools** (PM by default).
+    pub tools: Option<Vec<String>>,
+}
+
+impl Default for RoleConfig {
+    fn default() -> Self {
+        Self {
+            model: None,
+            tools: None,
+        }
+    }
+}
+
+/// Full team section from `config.toml`.
+///
+/// ```toml
+/// [team]
+/// default_juniors = 2
+/// max_parallel_tasks = 4
+/// enable_streaming = true
+///
+/// [team.roles]
+/// pm = { tools = [] }
+/// tl = { tools = ["bash"] }
+/// jr = { model = "gpt-4o-mini", tools = ["file_read", "file_write", "file_edit", "bash"] }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamSection {
+    /// Number of junior agents to spawn (default: 2).
+    #[serde(default = "default_juniors")]
+    pub default_juniors: usize,
+    /// Maximum tasks executed concurrently (default: 4).
+    #[serde(default = "default_max_parallel")]
+    pub max_parallel_tasks: usize,
+    /// Enable streaming output (default: true).
+    #[serde(default = "default_true")]
+    pub enable_streaming: bool,
+    /// Per-role overrides.
+    #[serde(default)]
+    pub roles: TeamRolesSection,
+}
+
+impl Default for TeamSection {
+    fn default() -> Self {
+        Self {
+            default_juniors: default_juniors(),
+            max_parallel_tasks: default_max_parallel(),
+            enable_streaming: default_true(),
+            roles: TeamRolesSection::default(),
+        }
+    }
+}
+
+/// Container for per-role config entries.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamRolesSection {
+    #[serde(default)]
+    pub pm: RoleConfig,
+    #[serde(default)]
+    pub tl: RoleConfig,
+    #[serde(default)]
+    pub jr: RoleConfig,
+}
+
+impl Default for TeamRolesSection {
+    fn default() -> Self {
+        Self {
+            pm: RoleConfig {
+                model: None,
+                tools: Some(vec![]), // PM: no tools by default
+            },
+            tl: RoleConfig {
+                model: None,
+                tools: Some(vec!["bash".to_string()]), // TL: can run validation commands
+            },
+            jr: RoleConfig {
+                model: None,
+                tools: None, // Jr: all tools by default
+            },
+        }
+    }
+}
+
+impl TeamSection {
+    /// Parse from a raw `toml::Value` (typically from `Config::team_raw`).
+    ///
+    /// Returns the default section if the value is missing or unparseable.
+    pub fn from_raw(value: &toml::Value) -> Self {
+        value.clone().try_into().unwrap_or_default()
+    }
+}
+
+fn default_juniors() -> usize {
+    2
+}
+fn default_max_parallel() -> usize {
+    4
+}
+fn default_true() -> bool {
+    true
 }
 
 impl Role {
@@ -32,6 +144,24 @@ impl Role {
             Role::PM => "PM",
             Role::TL => "TL",
             Role::Jr => "Jr",
+        }
+    }
+
+    /// TOML key used for this role in `[team.roles.<key>]`.
+    pub fn config_key(&self) -> &'static str {
+        match self {
+            Role::PM => "pm",
+            Role::TL => "tl",
+            Role::Jr => "jr",
+        }
+    }
+
+    /// Retrieve the [`RoleConfig`] for this role from the team section.
+    pub fn config_from(role: Role, section: &TeamSection) -> &RoleConfig {
+        match role {
+            Role::PM => &section.roles.pm,
+            Role::TL => &section.roles.tl,
+            Role::Jr => &section.roles.jr,
         }
     }
 }
@@ -73,5 +203,89 @@ mod tests {
         let json = serde_json::to_string(&role).unwrap();
         let deserialized: Role = serde_json::from_str(&json).unwrap();
         assert_eq!(role, deserialized);
+    }
+
+    #[test]
+    fn test_role_config_key() {
+        assert_eq!(Role::PM.config_key(), "pm");
+        assert_eq!(Role::TL.config_key(), "tl");
+        assert_eq!(Role::Jr.config_key(), "jr");
+    }
+
+    #[test]
+    fn test_team_section_default() {
+        let section = TeamSection::default();
+        assert_eq!(section.default_juniors, 2);
+        assert_eq!(section.max_parallel_tasks, 4);
+        assert!(section.enable_streaming);
+    }
+
+    #[test]
+    fn test_team_section_deserialize_minimal() {
+        let toml = "";
+        let section: TeamSection = toml::from_str(toml).unwrap();
+        assert_eq!(section.default_juniors, 2);
+        assert_eq!(section.max_parallel_tasks, 4);
+    }
+
+    #[test]
+    fn test_team_section_deserialize_full() {
+        let toml = r#"
+default_juniors = 3
+max_parallel_tasks = 8
+enable_streaming = false
+
+[roles]
+[roles.pm]
+tools = []
+
+[roles.tl]
+tools = ["bash", "grep"]
+
+[roles.jr]
+model = "gpt-4o-mini"
+tools = ["file_read", "file_write", "bash"]
+"#;
+        let section: TeamSection = toml::from_str(toml).unwrap();
+        assert_eq!(section.default_juniors, 3);
+        assert_eq!(section.max_parallel_tasks, 8);
+        assert!(!section.enable_streaming);
+
+        assert_eq!(section.roles.pm.tools.as_deref(), Some([].as_slice()));
+        assert_eq!(
+            section.roles.tl.tools.as_deref(),
+            Some(["bash".to_string(), "grep".to_string()].as_slice())
+        );
+        assert_eq!(section.roles.jr.model.as_deref(), Some("gpt-4o-mini"));
+        assert_eq!(
+            section.roles.jr.tools.as_deref(),
+            Some(
+                [
+                    "file_read".to_string(),
+                    "file_write".to_string(),
+                    "bash".to_string()
+                ]
+                .as_slice()
+            )
+        );
+    }
+
+    #[test]
+    fn test_config_from_section() {
+        let section = TeamSection::default();
+        let pm_cfg = Role::config_from(Role::PM, &section);
+        assert!(pm_cfg.model.is_none());
+        assert_eq!(pm_cfg.tools.as_deref(), Some([].as_slice()));
+
+        let jr_cfg = Role::config_from(Role::Jr, &section);
+        assert!(jr_cfg.model.is_none());
+        assert!(jr_cfg.tools.is_none()); // None = all tools
+    }
+
+    #[test]
+    fn test_role_config_default() {
+        let cfg = RoleConfig::default();
+        assert!(cfg.model.is_none());
+        assert!(cfg.tools.is_none());
     }
 }

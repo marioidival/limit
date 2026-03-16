@@ -922,7 +922,7 @@ impl TuiApp {
                     return;
                 }
 
-                let bridge_guard = {
+                let mut bridge = {
                     let mut attempts = 0;
                     loop {
                         if cancel_token.is_cancelled() {
@@ -946,8 +946,6 @@ impl TuiApp {
                         }
                     }
                 };
-
-                let mut bridge = bridge_guard;
 
                 // Set cancellation token and operation ID
                 bridge.set_cancellation_token(cancel_token.clone(), operation_id);
@@ -1092,6 +1090,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            ..Default::default()
         }
     }
 

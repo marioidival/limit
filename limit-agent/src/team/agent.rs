@@ -22,6 +22,35 @@ pub struct TeamAgent {
 impl TeamAgent {
     /// Create a new team agent for the given role.
     pub fn new(role: Role, provider: Box<dyn LlmProvider>, registry: Arc<ToolRegistry>) -> Self {
+        Self::with_allowed_tools(role, provider, registry, None)
+    }
+
+    /// Create a new team agent, restricting tools to the given whitelist.
+    ///
+    /// `allowed_tools`:
+    /// - `None` → all tools in the registry are available
+    /// - `Some(tools)` → only tools whose name appears in `tools` are available
+    pub fn with_allowed_tools(
+        role: Role,
+        provider: Box<dyn LlmProvider>,
+        registry: Arc<ToolRegistry>,
+        allowed_tools: Option<Vec<String>>,
+    ) -> Self {
+        // Build a filtered registry if a whitelist is provided
+        let registry = if let Some(ref whitelist) = allowed_tools {
+            let mut filtered = ToolRegistry::new();
+            for name in whitelist {
+                if let Some(tool) = registry.get(name) {
+                    // We can't extract the inner dyn Tool from Arc,
+                    // so we clone the Arc into the filtered registry.
+                    filtered.register_arc(tool);
+                }
+            }
+            Arc::new(filtered)
+        } else {
+            registry
+        };
+
         let system_msg = Message {
             role: LlmRole::System,
             content: Some(role.system_prompt().to_string()),

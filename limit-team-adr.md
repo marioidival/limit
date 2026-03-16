@@ -1,7 +1,8 @@
 # ADR: Team Command Implementation
 
-> **Status:** Proposed  
+> **Status:** In Progress  
 > **Date:** 2026-03-16  
+> **Last Updated:** 2026-03-16  
 > **Decision Makers:** Mário Idival  
 > **ADR Number:** 001  
 
@@ -981,38 +982,116 @@ Example output:
 
 ---
 
+## Implementation Progress
+
+### ✅ Phase 1: Core Infrastructure — COMPLETED
+
+| Item | Status | Commit(s) |
+|------|--------|-----------|
+| Create `limit-agent/src/team/` module | ✅ Done | `79954eb`, `4786855`, `4dab49c`, `a247e1b`, `700b3dc`, `3fda38f` |
+| Implement `Role` enum (PM/TL/Jr) | ✅ Done | `79954eb` |
+| Implement `TeamAgent` struct (LLM streaming + tool execution) | ✅ Done | `a247e1b` |
+| Implement `Task`, `TaskResult`, `TaskStatus`, `parse_tasks` | ✅ Done | `4dab49c` |
+| Implement `TeamHistory` and `TeamEvent` types | ✅ Done | `4786855` |
+| Implement `Team` struct + `TeamConfig` | ✅ Done | `3fda38f` |
+| Implement `execute_workflow` pipeline (PM→TL→Jr parallel→TL validate→PM deliver) | ✅ Done | `700b3dc` |
+| Prompt templates (PM/TL/Jr system prompts) | ✅ Done | `79954eb` |
+| Unit tests for team module | ✅ Done | Multiple commits |
+
+### ✅ Phase 2: Command Integration — COMPLETED
+
+| Item | Status | Commit(s) |
+|------|--------|-----------|
+| Implement `TeamCommand` in `limit-cli` | ✅ Done | `fec1955` |
+| Subcommands: create, delete, list, status, start, history | ✅ Done | `fec1955` |
+| Integrate with existing `CommandRegistry` | ✅ Done | `fec1955` |
+| Add command help text | ✅ Done | `fec1955` |
+| Fix: remove `tokio::sync::RwLock` from `Command` trait (TUI crash) | ✅ Done | `309090c` |
+| Background team execution (non-blocking TUI) | ✅ Done | Staged (diff) |
+
+### ✅ Phase 3: Advanced Features — PARTIALLY DONE
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Parallel task execution via `futures::stream::buffer_unordered` | ✅ Done | `700b3dc` |
+| `TeamHistory` event logging | ✅ Done | `4786855` |
+| Streaming output (LlmProvider streaming) | ✅ Done | `a247e1b` |
+| Config-driven team setup (`config.toml` `[team]` section) | ✅ Done | Staged (diff) |
+| Per-role tool whitelists | ✅ Done | Staged (diff) |
+| Per-role model override | ✅ Done | Staged (diff) |
+| `TeamConfig::from_section()` — build config from parsed TOML | ✅ Done | Staged (diff) |
+| `ToolRegistry::register_arc()` — share tools via `Arc` | ✅ Done | Staged (diff) |
+| `TeamAgent::with_allowed_tools()` — filtered tool registry | ✅ Done | Staged (diff) |
+| Error recovery / retry logic | ❌ Pending | |
+| Performance optimization (cost tracking, token counting) | ❌ Pending | |
+
+### 🔲 Phase 4: Polish & Testing — IN PROGRESS
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Config section `[team]` in `limit-llm::Config` (`team_raw: Option<toml::Value>`) | ✅ Done | Staged (diff) |
+| `RoleConfig`, `TeamSection`, `TeamRolesSection` types | ✅ Done | Staged (diff) |
+| Update all test fixtures with `team_raw` field | ✅ Done | Staged (diff) |
+| `..Default::default()` pattern for test configs | ✅ Done | Staged (diff) |
+| Add `toml = "0.8"` dependency to `limit-agent` | ✅ Done | Staged (diff) |
+| Integration tests (E2E with real LLM) | ❌ Pending | |
+| Improve error messages for team operations | ❌ Pending | |
+| Update user documentation / README | ❌ Pending | |
+| Example workflows in docs | ❌ Pending | |
+
+---
+
+### 🔲 Staged Changes (Not Yet Committed)
+
+The following changes are in the working tree and ready to commit:
+
+1. **`limit-llm/src/config.rs`** — Added `team_raw: Option<toml::Value>` field to `Config` struct, enabling opaque `[team]` section passthrough.
+2. **`limit-agent/src/team/role.rs`** — Added `RoleConfig`, `TeamSection`, `TeamRolesSection` structs with full TOML deserialization, defaults (PM: no tools, TL: bash, Jr: all tools), and `TeamSection::from_raw()` parser.
+3. **`limit-agent/src/team/agent.rs`** — Added `TeamAgent::with_allowed_tools()` constructor that creates a filtered `ToolRegistry` from a whitelist.
+4. **`limit-agent/src/team/mod.rs`** — Updated `TeamConfig` to include `roles: TeamRolesSection`, added `TeamConfig::from_section()`, updated `Team::new()` to pass per-role tool whitelists to agents.
+5. **`limit-agent/src/registry.rs`** — Added `ToolRegistry::register_arc()` to register pre-built `Arc<dyn Tool>` instances.
+6. **`limit-agent/Cargo.toml`** — Added `toml = "0.8"` dependency.
+7. **`limit-agent/src/lib.rs`** — Re-exported `RoleConfig`, `TeamSection`.
+8. **`limit-cli/src/tui/commands/team.rs`** — Updated `handle_start` to read team config from `config.toml` `[team]` section via `TeamSection::from_raw()`.
+9. **`limit-cli/src/tui/app/app_impl.rs`** — Refactored bridge acquisition pattern.
+10. **All test files** — Updated `Config` construction to include `team_raw` field.
+
+---
+
 ## Implementation Roadmap
 
-### Phase 1: Core Infrastructure (Week 1)
+> **Note:** The original roadmap below is kept for historical reference. See "Implementation Progress" above for the actual current status.
+
+### Phase 1: Core Infrastructure (Week 1) — ✅ COMPLETED
 
 **Goal:** Basic team creation and task execution
 
 **Tasks:**
-- [ ] Create `limit-agent/src/team/` module
-- [ ] Implement `Role` enum
-- [ ] Implement `TeamAgent` struct
-- [ ] Implement `Team` struct
-- [ ] Add prompt templates
-- [ ] Write unit tests
+- [x] Create `limit-agent/src/team/` module
+- [x] Implement `Role` enum
+- [x] Implement `TeamAgent` struct
+- [x] Implement `Team` struct
+- [x] Add prompt templates
+- [x] Write unit tests
 
 **Deliverables:**
 ```rust
-let team = Team::new("dev-team", provider, config, tools).await?;
+let team = Team::new("dev-team", provider, config, tools)?;
 let result = team.execute("Add hello world function").await?;
 ```
 
 ---
 
-### Phase 2: Command Integration (Week 2)
+### Phase 2: Command Integration (Week 2) — ✅ COMPLETED
 
 **Goal:** CLI command for team management
 
 **Tasks:**
-- [ ] Implement `TeamCommand` in `limit-cli`
-- [ ] Add subcommands: create, delete, list, status, start
-- [ ] Integrate with existing `CommandRegistry`
-- [ ] Add command help text
-- [ ] Test CLI usage
+- [x] Implement `TeamCommand` in `limit-cli`
+- [x] Add subcommands: create, delete, list, status, start
+- [x] Integrate with existing `CommandRegistry`
+- [x] Add command help text
+- [x] Test CLI usage
 
 **Deliverables:**
 ```bash
@@ -1022,14 +1101,17 @@ lim> /team start --team "dev-team" --task "Add JWT auth"
 
 ---
 
-### Phase 3: Advanced Features (Week 3)
+### Phase 3: Advanced Features (Week 3) — 🔲 IN PROGRESS
 
-**Goal:** Parallel execution and history
+**Goal:** Parallel execution, config-driven setup, and tool whitelists
 
 **Tasks:**
-- [ ] Implement parallel task execution
-- [ ] Add `TeamHistory` for event logging
-- [ ] Implement streaming output
+- [x] Implement parallel task execution
+- [x] Add `TeamHistory` for event logging
+- [x] Implement streaming output
+- [x] Config-driven team setup (`[team]` section in `config.toml`)
+- [x] Per-role tool whitelists
+- [x] Per-role model override
 - [ ] Add error recovery
 - [ ] Performance optimization
 
@@ -1040,16 +1122,21 @@ let results = team.execute_tasks_parallel(tasks).await?;
 
 // History tracking
 let history = team.history.read().await;
+
+// Config-driven
+let section = TeamSection::from_raw(&config.team_raw);
+let team_config = TeamConfig::from_section(&section);
 ```
 
 ---
 
-### Phase 4: Polish & Testing (Week 4)
+### Phase 4: Polish & Testing (Week 4) — 🔲 IN PROGRESS
 
 **Goal:** Production-ready implementation
 
 **Tasks:**
-- [ ] Add configuration options
+- [x] Add configuration options (`[team]` TOML section)
+- [x] Per-role config (model + tool whitelist)
 - [ ] Improve error messages
 - [ ] Add integration tests
 - [ ] Update documentation
@@ -1064,6 +1151,8 @@ let history = team.history.read().await;
 
 ## Configuration
 
+> **Updated:** The actual config format implemented differs slightly from the original proposal. Here's the current implementation:
+
 ```toml
 # ~/.limit/config.toml
 
@@ -1075,17 +1164,29 @@ default_juniors = 2
 max_parallel_tasks = 4
 
 # Enable streaming output
-streaming = true
+enable_streaming = true
 
-# Model configurations
-[team.models]
-pm = "gpt-4"
-tl = "gpt-4"
-jr = "gpt-4o-mini"
+# Per-role overrides
+[team.roles]
+# PM: no tools by default (product analysis only)
+[team.roles.pm]
+tools = []  # empty = no tools
 
-# Team storage
-teams_dir = "~/.limit/teams"
+# TL: can run validation commands
+[team.roles.tl]
+tools = ["bash"]  # model = "gpt-4"  # optional model override
+
+# Jr: all tools by default, cheaper model recommended
+[team.roles.jr]
+model = "gpt-4o-mini"  # optional model override
+# tools = ["file_read", "file_write", "file_edit", "bash"]  # None = all tools
 ```
+
+**Implementation notes:**
+- `tools = None` → all registered tools are available
+- `tools = []` → no tools (PM default)
+- `model` is optional; falls back to the active provider's default model
+- The `[team]` section is parsed opaquely via `team_raw: Option<toml::Value>` in `Config`, then deserialized with `TeamSection::from_raw()`
 
 ---
 
@@ -1235,6 +1336,22 @@ async fn test_full_team_workflow() {
 | Author | OpenClaw | 2026-03-16 | Draft |
 | Reviewer | Mário Idival | - | Pending |
 | Approver | Mário Idival | - | Pending |
+
+---
+
+## Appendix A: Changes from Original Design
+
+The implementation diverged from the original ADR in several intentional ways:
+
+| Aspect | Original Design | Actual Implementation | Reason |
+|--------|----------------|----------------------|--------|
+| `Team::new()` | `async fn`, takes `Vec<Arc<dyn Tool>>` | Sync `fn`, takes `Arc<ToolRegistry>` | Consistency with existing architecture |
+| Tool filtering | `filter_tools()` helper function | `TeamAgent::with_allowed_tools()` + `ToolRegistry::register_arc()` | Cleaner encapsulation |
+| Config format | `[team.models]` separate section | `[team.roles.<role>]` with `model` + `tools` fields | Simpler, single section per role |
+| Config parsing | Direct deserialization in `Config` | Opaque `team_raw: Option<toml::Value>` + `TeamSection::from_raw()` | Avoids coupling `limit-llm` to `limit-agent` types |
+| `Role` variants | `Clone` only | `Copy` (added) | Enums without data should be `Copy` |
+| Command trait | Used `tokio::sync::RwLock` | Uses `std::sync::Mutex` for team storage | Fixed TUI crash (commit `309090c`) |
+| Tool call format | `[TOOL_CALL: name {args}]` regex | Uses standard LLM function calling | Leverages existing tool infrastructure |
 
 ---
 

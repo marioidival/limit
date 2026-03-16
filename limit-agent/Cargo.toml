@@ -24,6 +24,7 @@ uuid = { version = "1.0", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tracing = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }

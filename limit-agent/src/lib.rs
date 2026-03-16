@@ -158,5 +158,7 @@ pub mod tool;
 pub use error::AgentError;
 pub use events::EventBus;
 pub use registry::ToolRegistry;
-pub use team::{Role, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult};
+pub use team::{
+    Role, RoleConfig, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult, TeamSection,
+};
 pub use tool::{EchoTool, Tool};

@@ -461,6 +461,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            ..Default::default()
         }
     }
 

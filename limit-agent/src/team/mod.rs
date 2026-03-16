@@ -39,7 +39,7 @@ mod workflow;
 pub use agent::TeamAgent;
 pub use history::{TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
-pub use role::Role;
+pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
 pub use workflow::{execute_workflow, TeamResult, WorkflowPhase};
 
 use crate::error::AgentError;
@@ -49,12 +49,17 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Configuration for creating a [`Team`].
+///
+/// Mirrors the `[team]` section in `config.toml`. Prefer using
+/// [`TeamConfig::from_section`] to build from a parsed [`TeamSection`].
 #[derive(Debug, Clone)]
 pub struct TeamConfig {
     /// Number of Junior developer agents to spawn.
     pub num_juniors: usize,
     /// Maximum number of tasks to execute concurrently.
     pub max_parallel_tasks: usize,
+    /// Per-role overrides (model, tool whitelist).
+    pub roles: TeamRolesSection,
 }
 
 impl Default for TeamConfig {
@@ -62,6 +67,18 @@ impl Default for TeamConfig {
         Self {
             num_juniors: 2,
             max_parallel_tasks: 4,
+            roles: TeamRolesSection::default(),
+        }
+    }
+}
+
+impl TeamConfig {
+    /// Build a `TeamConfig` from a parsed [`TeamSection`].
+    pub fn from_section(section: &TeamSection) -> Self {
+        Self {
+            num_juniors: section.default_juniors,
+            max_parallel_tasks: section.max_parallel_tasks,
+            roles: section.roles.clone(),
         }
     }
 }
@@ -86,18 +103,32 @@ impl Team {
     /// Create a new team with the given name, provider, and tools.
     ///
     /// All agents share the same LLM provider but have their own
-    /// conversation history and role-specific system prompts.
+    /// conversation history, role-specific system prompts, and
+    /// tool whitelists from `config.roles`.
     pub fn new(
         name: String,
         provider: Box<dyn LlmProvider>,
         config: TeamConfig,
         tools: Arc<ToolRegistry>,
     ) -> Result<Self, AgentError> {
-        let pm = TeamAgent::new(Role::PM, provider.clone_box(), tools.clone());
-        let tl = TeamAgent::new(Role::TL, provider.clone_box(), tools.clone());
+        let pm_tools = config.roles.pm.tools.clone();
+        let tl_tools = config.roles.tl.tools.clone();
+        let jr_tools = config.roles.jr.tools.clone();
+
+        let pm =
+            TeamAgent::with_allowed_tools(Role::PM, provider.clone_box(), tools.clone(), pm_tools);
+        let tl =
+            TeamAgent::with_allowed_tools(Role::TL, provider.clone_box(), tools.clone(), tl_tools);
 
         let jrs = (0..config.num_juniors)
-            .map(|_| TeamAgent::new(Role::Jr, provider.clone_box(), tools.clone()))
+            .map(|_| {
+                TeamAgent::with_allowed_tools(
+                    Role::Jr,
+                    provider.clone_box(),
+                    tools.clone(),
+                    jr_tools.clone(),
+                )
+            })
             .collect();
 
         Ok(Self {
@@ -154,6 +185,19 @@ mod tests {
     }
 
     #[test]
+    fn test_team_config_from_section() {
+        let section = TeamSection {
+            default_juniors: 5,
+            max_parallel_tasks: 10,
+            enable_streaming: false,
+            roles: TeamRolesSection::default(),
+        };
+        let config = TeamConfig::from_section(&section);
+        assert_eq!(config.num_juniors, 5);
+        assert_eq!(config.max_parallel_tasks, 10);
+    }
+
+    #[test]
     fn test_team_config_clone() {
         let config = TeamConfig::default();
         let _ = config.clone();
@@ -170,5 +214,11 @@ mod tests {
     fn test_parse_tasks_reexport() {
         let tasks = parse_tasks("TASK: do stuff");
         assert_eq!(tasks.len(), 1);
+    }
+
+    #[test]
+    fn test_team_section_reexport() {
+        let _ = TeamSection::default();
+        let _ = RoleConfig::default();
     }
 }

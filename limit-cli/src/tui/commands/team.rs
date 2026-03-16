@@ -258,16 +258,13 @@ impl TeamCommand {
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
         // Validate team exists before spawning background work
-        let team_config = {
+        {
             let teams = self.teams.lock().unwrap();
-            match teams.get(&team_name) {
-                Some(entry) => entry.config.clone(),
-                None => {
-                    ctx.add_system_message(format!("⚠️  Team '{}' not found", team_name));
-                    return Ok(CommandResult::Continue);
-                }
+            if !teams.contains_key(&team_name) {
+                ctx.add_system_message(format!("⚠️  Team '{}' not found", team_name));
+                return Ok(CommandResult::Continue);
             }
-        };
+        }
 
         // Spawn team execution in a background thread to avoid blocking the TUI.
         // This follows the same pattern as the main LLM processing in handle_enter.
@@ -282,13 +279,15 @@ impl TeamCommand {
                     chat_view
                         .lock()
                         .unwrap()
-                        .add_message(Message::system(format!("❌ Failed to create runtime: {}", e)));
+                        .add_message(Message::system(format!(
+                            "❌ Failed to create runtime: {}",
+                            e
+                        )));
                     return;
                 }
             };
 
             rt.block_on(async move {
-                // Build real provider from config
                 let config_result = limit_llm::Config::load();
                 let provider = match &config_result {
                     Ok(cfg) => limit_llm::ProviderFactory::create_provider(cfg),
@@ -298,25 +297,32 @@ impl TeamCommand {
                 let real_provider: Box<dyn limit_llm::LlmProvider> = match provider {
                     Ok(p) => p,
                     Err(e) => {
-                        chat_view.lock().unwrap().add_message(Message::system(format!(
-                            "⚠️  Failed to create LLM provider: {}\n\
+                        chat_view
+                            .lock()
+                            .unwrap()
+                            .add_message(Message::system(format!(
+                                "⚠️  Failed to create LLM provider: {}\n\
                              Please check your config in ~/.limit/config.toml",
-                            e
-                        )));
+                                e
+                            )));
                         return;
                     }
                 };
 
-                // Re-create team with real provider and proper tools
+                // Build team config from [team] section in config.toml
+                let team_section = config_result
+                    .as_ref()
+                    .ok()
+                    .and_then(|cfg| cfg.team_raw.as_ref())
+                    .map(limit_agent::team::TeamSection::from_raw)
+                    .unwrap_or_default();
+                let team_config = TeamConfig::from_section(&team_section);
+
+                // Re-create team with real provider, config from file, and proper tools
                 let tool_registry = build_tool_registry();
                 let tools = Arc::new(tool_registry);
 
-                let new_team = Team::new(
-                    name_clone.clone(),
-                    real_provider,
-                    team_config,
-                    tools,
-                );
+                let new_team = Team::new(name_clone.clone(), real_provider, team_config, tools);
 
                 match new_team {
                     Ok(mut team) => match team.execute(&task_clone).await {
@@ -331,17 +337,23 @@ impl TeamCommand {
                             chat_view.lock().unwrap().add_message(msg);
                         }
                         Err(e) => {
-                            chat_view.lock().unwrap().add_message(Message::system(format!(
-                                "❌ Team execution failed: {}",
-                                e
-                            )));
+                            chat_view
+                                .lock()
+                                .unwrap()
+                                .add_message(Message::system(format!(
+                                    "❌ Team execution failed: {}",
+                                    e
+                                )));
                         }
                     },
                     Err(e) => {
-                        chat_view.lock().unwrap().add_message(Message::system(format!(
-                            "❌ Failed to create team: {}",
-                            e
-                        )));
+                        chat_view
+                            .lock()
+                            .unwrap()
+                            .add_message(Message::system(format!(
+                                "❌ Failed to create team: {}",
+                                e
+                            )));
                     }
                 }
             });
@@ -519,6 +531,7 @@ mod tests {
         let config = TeamConfig {
             num_juniors: 5,
             max_parallel_tasks: 8,
+            roles: Default::default(),
         };
         let team = create_placeholder_team("test", &config);
         assert_eq!(team.jrs.len(), 5);

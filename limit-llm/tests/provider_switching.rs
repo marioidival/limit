@@ -21,6 +21,7 @@ fn test_anthropic_provider_creation() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let provider = ProviderFactory::create_provider(&config).unwrap();
@@ -47,6 +48,7 @@ fn test_openai_provider_creation() {
         provider: "openai".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        team_raw: None,
     };
 
     let provider = ProviderFactory::create_provider(&config).unwrap();

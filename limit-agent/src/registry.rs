@@ -46,6 +46,15 @@ impl ToolRegistry {
             .ok_or_else(|| AgentError::ToolError(format!("Tool '{}' not found", name)))?;
         tool.execute(args).await
     }
+
+    /// Register a pre-built `Arc<dyn Tool>` directly.
+    ///
+    /// Used when cloning tools between registries without going through
+    /// the concrete type.
+    pub fn register_arc(&mut self, tool: Arc<dyn Tool>) {
+        let name = tool.name().to_string();
+        self.tools.insert(name, tool);
+    }
 }
 
 impl Default for ToolRegistry {

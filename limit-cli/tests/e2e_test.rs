@@ -35,6 +35,7 @@ fn create_test_config() -> LlmConfig {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        ..Default::default()
     }
 }
 
