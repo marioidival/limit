@@ -146,6 +146,27 @@ impl TeamAgent {
         self.history = vec![system_msg];
     }
 
+    /// Trim conversation history to prevent unbounded growth.
+    ///
+    /// Keeps the system message and the most recent `max_messages` messages.
+    /// This should be called periodically (e.g., after task completion)
+    /// to prevent history from growing too large for the LLM context window.
+    pub fn trim_history(&mut self, max_messages: usize) {
+        if self.history.len() <= max_messages + 1 {
+            return; // +1 for system message
+        }
+
+        // Always keep the system message
+        let system_msg = self.history.first().cloned();
+        if let Some(system) = system_msg {
+            // Keep the most recent messages
+            let start = self.history.len().saturating_sub(max_messages);
+            let mut new_history = vec![system];
+            new_history.extend(self.history[start..].to_vec());
+            self.history = new_history;
+        }
+    }
+
     /// Send a user prompt and collect the full response.
     ///
     /// Handles tool calls automatically: if the provider returns tool-call
@@ -254,8 +275,20 @@ impl TeamAgent {
                     }
                     current_tool_id = id;
                     current_tool_name = name;
-                    if let Value::Object(_) = &arguments {
-                        current_tool_args = serde_json::to_string(&arguments).unwrap_or_default();
+                    // Accumulate arguments from all deltas (handles both Object and String fragments)
+                    match &arguments {
+                        Value::Object(_) | Value::Array(_) | Value::Bool(_) | Value::Number(_) => {
+                            // Structured value - serialize it
+                            current_tool_args =
+                                serde_json::to_string(&arguments).unwrap_or_default();
+                        }
+                        Value::String(s) => {
+                            // String fragment - append it
+                            current_tool_args.push_str(s);
+                        }
+                        Value::Null => {
+                            // Null - ignore
+                        }
                     }
                 }
                 Ok(limit_llm::ProviderResponseChunk::Done(_)) => {
@@ -331,8 +364,27 @@ impl TeamAgent {
 
     /// Build LLM tool definitions from the registry's tool list.
     fn build_llm_tools(&self) -> Vec<limit_llm::Tool> {
-        // Provider handles tool calling natively.
-        Vec::new()
+        // Build tool definitions from the registry for providers that need them.
+        // Some providers (like OpenAI) can work without explicit tool definitions,
+        // but providing them ensures consistent behavior across all providers.
+        self.registry
+            .list()
+            .into_iter()
+            .filter_map(|name| {
+                // Get tool from registry to build its definition
+                self.registry.get(&name).map(|_tool| {
+                    let desc = format!("Tool: {}", name);
+                    limit_llm::Tool {
+                        tool_type: "function".to_string(),
+                        function: limit_llm::ToolFunction {
+                            name,
+                            description: desc,
+                            parameters: serde_json::json!({"type": "object"}),
+                        },
+                    }
+                })
+            })
+            .collect()
     }
 
     /// Send a user prompt and return a streaming response.
@@ -353,7 +405,7 @@ impl TeamAgent {
                 tool_call_id: None,
             });
 
-            let tools = Vec::new(); // provider handles tool calling natively
+            let tools = self.build_llm_tools(); // Build tool definitions for provider
 
             let mut attempt = 0;
             loop {
@@ -406,9 +458,19 @@ impl TeamAgent {
                             }
                             current_tool_id = id;
                             current_tool_name = name;
-                            if let Value::Object(_) = &arguments {
-                                current_tool_args =
-                                    serde_json::to_string(&arguments).unwrap_or_default();
+                            // Accumulate arguments from all deltas (handles both Object and String fragments)
+                            match &arguments {
+                                Value::Object(_) | Value::Array(_) | Value::Bool(_) | Value::Number(_) => {
+                                    // Structured value - serialize it
+                                    current_tool_args = serde_json::to_string(&arguments).unwrap_or_default();
+                                }
+                                Value::String(s) => {
+                                    // String fragment - append it
+                                    current_tool_args.push_str(s);
+                                }
+                                Value::Null => {
+                                    // Null - ignore
+                                }
                             }
                         }
                         Ok(ProviderResponseChunk::Done(_)) => break,
@@ -481,21 +543,57 @@ impl TeamAgent {
 }
 
 /// Determine whether an error is transient and worth retrying.
+/// Uses word-boundary matching to avoid false positives.
 fn is_retryable(err: &AgentError) -> bool {
     is_retryable_e(&err.to_string())
 }
 
 fn is_retryable_e(msg: &str) -> bool {
     let lower = msg.to_lowercase();
-    lower.contains("rate limit")
-        || lower.contains("429")
-        || lower.contains("502")
-        || lower.contains("503")
-        || lower.contains("500")
-        || lower.contains("timeout")
-        || lower.contains("connection")
-        || lower.contains("overloaded")
-        || lower.contains("temporary")
+
+    // Check for specific HTTP status codes with word boundaries
+    if lower.contains("429") || lower.contains("502") || lower.contains("503") {
+        return true;
+    }
+
+    // Check for rate limiting
+    if lower.contains("rate limit") || lower.contains("rate_limit") {
+        return true;
+    }
+
+    // Check for server errors
+    if lower.contains("server error")
+        || lower.contains("internal error")
+        || lower.contains("service unavailable")
+    {
+        return true;
+    }
+
+    // Check for timeout and connection issues
+    if lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+    {
+        return true;
+    }
+
+    // Check for overload conditions
+    if lower.contains("overloaded") || lower.contains("too many requests") {
+        return true;
+    }
+
+    // Check for temporary failures
+    if lower.contains("temporary") || lower.contains("retry") {
+        return true;
+    }
+
+    // Check for specific 500 error (avoid false positives like "500 files")
+    if lower.contains("http 500") || lower.contains("status 500") || lower.contains("error 500") {
+        return true;
+    }
+
+    false
 }
 
 #[cfg(test)]

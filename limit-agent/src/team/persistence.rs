@@ -67,8 +67,44 @@ impl TeamStore {
 
     /// Path to the JSON file for a named team.
     fn team_path(&self, name: &str) -> PathBuf {
-        // Sanitize: replace / and other problematic chars
-        let safe_name = name.replace(['/', '\\'], "_");
+        // Sanitize: remove problematic characters and patterns
+        let mut safe_name = String::new();
+        for ch in name.chars() {
+            match ch {
+                // Allow alphanumeric, underscore, hyphen, and space
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ' ' => safe_name.push(ch),
+                // Replace path separators and other problematic chars
+                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' => {
+                    safe_name.push('_');
+                }
+                // Allow other Unicode but sanitize
+                _ => safe_name.push('_'),
+            }
+        }
+
+        // Prevent path traversal by removing leading dots and checking for ".."
+        let safe_name = safe_name.trim_start_matches('.');
+        let safe_name = safe_name.replace("..", "_");
+
+        // Prevent empty or reserved names
+        if safe_name.is_empty() || safe_name == "." || safe_name == ".." {
+            return self.dir.join("_.json");
+        }
+
+        // On Windows, prevent reserved device names
+        #[cfg(windows)]
+        {
+            let upper = safe_name.to_uppercase();
+            let reserved = [
+                "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+                "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8",
+                "LPT9",
+            ];
+            if reserved.contains(&upper.as_str()) {
+                return self.dir.join("_.json");
+            }
+        }
+
         self.dir.join(format!("{}.json", safe_name))
     }
 

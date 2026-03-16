@@ -9,9 +9,38 @@ use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
 use crate::team::orchestrator::{parse_tasks, Task, TaskResult};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+/// Maximum conversation history per agent to prevent unbounded growth.
+const MAX_HISTORY_PER_AGENT: usize = 50;
+
+/// Compiled regex for extracting file paths (lazy-initialized once).
+static FILE_PATH_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+
+/// Track retry statistics during workflow execution (thread-safe for parallel tasks).
+#[derive(Debug)]
+struct RetryTracker {
+    count: Arc<AtomicUsize>,
+}
+
+impl RetryTracker {
+    fn new() -> Self {
+        Self {
+            count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn total(&self) -> usize {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    fn clone_counter(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.count)
+    }
+}
 
 /// The final result produced by a team execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,10 +170,17 @@ pub async fn execute_workflow(
         "[team] Jr — executing {} tasks (max {max_parallel} parallel)",
         tasks.len()
     );
-    let task_results = execute_tasks_parallel(jrs, &tasks, max_parallel).await;
+    let retry_tracker = RetryTracker::new();
+    let task_results = execute_tasks_parallel(jrs, &tasks, max_parallel, &retry_tracker).await;
+
+    // Trim Jr agent histories to prevent unbounded growth
+    for jr in jrs.iter_mut() {
+        jr.trim_history(MAX_HISTORY_PER_AGENT);
+    }
 
     let failed_tasks = task_results.iter().filter(|r| !r.success).count();
     let total_tasks = task_results.len();
+    let total_retries = retry_tracker.total();
 
     // Extract modified files from Jr tool-call results
     let files_modified = extract_modified_files(&task_results);
@@ -188,7 +224,7 @@ pub async fn execute_workflow(
         solution: delivery,
         duration: start.elapsed(),
         events: history.read().await.events().to_vec(),
-        total_retries: 0,
+        total_retries,
         failed_tasks,
         total_tasks,
         files_modified,
@@ -206,6 +242,7 @@ async fn execute_tasks_parallel(
     jrs: &mut [TeamAgent],
     tasks: &[Task],
     max_parallel: usize,
+    retry_tracker: &RetryTracker,
 ) -> Vec<TaskResult> {
     if jrs.is_empty() || tasks.is_empty() {
         return Vec::new();
@@ -219,6 +256,9 @@ async fn execute_tasks_parallel(
         .map(|t| (t.id.clone(), t.description.clone()))
         .collect();
     let num_jrs = jrs.len();
+
+    // Clone the retry counter for use in async tasks
+    let retry_counter = retry_tracker.clone_counter();
 
     // Wrap each Jr agent in its own Mutex to allow parallel execution.
     // This avoids the single-mutex bottleneck that would serialize all tasks.
@@ -235,6 +275,7 @@ async fn execute_tasks_parallel(
     let results: Vec<TaskResult> = stream::iter(owned_tasks.into_iter().enumerate())
         .map(|(i, (task_id, description))| {
             let jrs = jrs.clone();
+            let retry_counter = retry_counter.clone();
             async move {
                 let jr_idx = i % num_jrs;
                 let prompt_text =
@@ -258,6 +299,9 @@ async fn execute_tasks_parallel(
                             jr_idx,
                             e
                         );
+                        // Track the retry
+                        retry_counter.fetch_add(1, Ordering::Relaxed);
+
                         let retry_result = {
                             let jr = jrs[jr_idx].clone();
                             let mut jr_lock = jr.lock().await;
@@ -299,7 +343,8 @@ async fn execute_tasks_parallel(
 /// Extract file paths from Jr task outputs by looking for common
 /// file-path patterns in tool-call results.
 fn extract_modified_files(results: &[TaskResult]) -> Vec<String> {
-    let re = Regex::new(r#""path"\s*:\s*"([^"]+)""#).unwrap();
+    let re = FILE_PATH_REGEX
+        .get_or_init(|| Regex::new(r#""path"\s*:\s*"([^"]+)""#).expect("invalid file path regex"));
     let mut files = Vec::new();
 
     for r in results {
