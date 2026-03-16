@@ -7,7 +7,7 @@ use crate::error::AgentError;
 use crate::registry::ToolRegistry;
 use crate::team::role::Role;
 use futures::StreamExt;
-use limit_llm::{LlmProvider, Message, Role as LlmRole};
+use limit_llm::{LlmProvider, Message, ProviderResponseChunk, Role as LlmRole};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
@@ -145,7 +145,7 @@ impl TeamAgent {
                         delay,
                     );
                     // Remove the failed assistant message so we can retry
-                    if self.history.last().map_or(false, |m| m.role == LlmRole::Assistant) {
+                    if self.history.last().is_some_and(|m| m.role == LlmRole::Assistant) {
                         self.history.pop();
                     }
                     tokio::time::sleep(delay).await;
@@ -276,16 +276,159 @@ impl TeamAgent {
         // Provider handles tool calling natively.
         Vec::new()
     }
+
+    /// Send a user prompt and return a streaming response.
+    ///
+    /// Returns chunks of text as they arrive from the LLM provider.
+    /// Tool calls are handled automatically: if the provider returns
+    /// tool-call chunks they are executed and the results are fed back
+    /// before yielding more content.
+    pub fn prompt_stream<'a>(
+        &'a mut self,
+        user_input: &'a str,
+    ) -> impl futures::Stream<Item = Result<String, AgentError>> + 'a {
+        async_stream::stream! {
+            self.history.push(Message {
+                role: LlmRole::User,
+                content: Some(user_input.to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+            });
+
+            let tools = Vec::new(); // provider handles tool calling natively
+
+            let mut attempt = 0;
+            loop {
+                let stream_result = self.provider.send(self.history.clone(), tools.clone()).await;
+
+                let mut stream = match stream_result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        if is_retryable_e(&e.to_string()) && attempt < MAX_RETRIES {
+                            attempt += 1;
+                            let delay = RETRY_BASE_DELAY * 2u32.pow(attempt as u32 - 1);
+                            tracing::warn!(
+                                "[team] {:?} stream failed (attempt {}/{}): {}. Retrying in {:?}",
+                                self.role, attempt, MAX_RETRIES, e, delay,
+                            );
+                            tokio::time::sleep(delay).await;
+                            continue;
+                        }
+                        yield Err(AgentError::LlmError(e.to_string()));
+                        return;
+                    }
+                };
+
+                let mut content = String::new();
+                let mut tool_calls: Vec<limit_llm::ToolCall> = Vec::new();
+                let mut current_tool_id = String::new();
+                let mut current_tool_name = String::new();
+                let mut current_tool_args = String::new();
+
+                while let Some(chunk) = stream.next().await {
+                    match chunk {
+                        Ok(ProviderResponseChunk::ContentDelta(text)) => {
+                            content.push_str(&text);
+                            yield Ok(text);
+                        }
+                        Ok(ProviderResponseChunk::ToolCallDelta {
+                            id,
+                            name,
+                            arguments,
+                        }) => {
+                            if id != current_tool_id && !current_tool_id.is_empty() {
+                                tool_calls.push(limit_llm::ToolCall {
+                                    id: current_tool_id.clone(),
+                                    tool_type: "function".to_string(),
+                                    function: limit_llm::FunctionCall {
+                                        name: current_tool_name.clone(),
+                                        arguments: current_tool_args.clone(),
+                                    },
+                                });
+                            }
+                            current_tool_id = id;
+                            current_tool_name = name;
+                            if let Value::Object(_) = &arguments {
+                                current_tool_args =
+                                    serde_json::to_string(&arguments).unwrap_or_default();
+                            }
+                        }
+                        Ok(ProviderResponseChunk::Done(_)) => break,
+                        Err(e) => {
+                            yield Err(AgentError::LlmError(e.to_string()));
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+                drop(stream);
+
+                if !current_tool_id.is_empty() {
+                    tool_calls.push(limit_llm::ToolCall {
+                        id: current_tool_id,
+                        tool_type: "function".to_string(),
+                        function: limit_llm::FunctionCall {
+                            name: current_tool_name,
+                            arguments: current_tool_args,
+                        },
+                    });
+                }
+
+                // Store assistant message
+                let tool_calls_clone = tool_calls.clone();
+                self.history.push(Message {
+                    role: LlmRole::Assistant,
+                    content: if content.is_empty() && !tool_calls_clone.is_empty() {
+                        None
+                    } else {
+                        Some(content.clone())
+                    },
+                    tool_calls: if tool_calls_clone.is_empty() {
+                        None
+                    } else {
+                        Some(tool_calls_clone)
+                    },
+                    tool_call_id: None,
+                });
+
+                // If there are tool calls, execute them and continue
+                if !tool_calls.is_empty() {
+                    for tc in &tool_calls {
+                        let args: Value =
+                            serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
+                        let result = self.registry.execute(&tc.function.name, args).await;
+
+                        let result_content = match result {
+                            Ok(val) => {
+                                serde_json::to_string(&val).unwrap_or_else(|_| "ok".to_string())
+                            }
+                            Err(e) => format!("Error: {}", e),
+                        };
+
+                        self.history.push(Message {
+                            role: LlmRole::Tool,
+                            content: Some(result_content),
+                            tool_calls: None,
+                            tool_call_id: Some(tc.id.clone()),
+                        });
+                    }
+                    // Loop to get the response after tool results
+                    continue;
+                }
+
+                return;
+            }
+        }
+    }
 }
 
 /// Determine whether an error is transient and worth retrying.
 fn is_retryable(err: &AgentError) -> bool {
-    let msg = err.to_string();
+    is_retryable_e(&err.to_string())
+}
+
+fn is_retryable_e(msg: &str) -> bool {
     let lower = msg.to_lowercase();
-    // Common transient patterns from LLM providers:
-    // - rate limits (429)
-    // - temporary server errors (500, 502, 503)
-    // - connection timeouts / resets
     lower.contains("rate limit")
         || lower.contains("429")
         || lower.contains("502")
