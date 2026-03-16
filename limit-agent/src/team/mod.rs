@@ -33,18 +33,21 @@
 mod agent;
 mod history;
 mod orchestrator;
+mod persistence;
 mod role;
 mod workflow;
 
 pub use agent::TeamAgent;
 pub use history::{EventLevel, TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
+pub use persistence::{TeamSnapshot, TeamStore};
 pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
 pub use workflow::{execute_workflow, TeamResult, WorkflowPhase};
 
 use crate::error::AgentError;
 use crate::registry::ToolRegistry;
 use limit_llm::LlmProvider;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -52,12 +55,14 @@ use tokio::sync::RwLock;
 ///
 /// Mirrors the `[team]` section in `config.toml`. Prefer using
 /// [`TeamConfig::from_section`] to build from a parsed [`TeamSection`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamConfig {
     /// Number of Junior developer agents to spawn.
     pub num_juniors: usize,
     /// Maximum number of tasks to execute concurrently.
     pub max_parallel_tasks: usize,
+    /// Enable streaming output.
+    pub enable_streaming: bool,
     /// Per-role overrides (model, tool whitelist).
     pub roles: TeamRolesSection,
 }
@@ -67,6 +72,7 @@ impl Default for TeamConfig {
         Self {
             num_juniors: 2,
             max_parallel_tasks: 4,
+            enable_streaming: true,
             roles: TeamRolesSection::default(),
         }
     }
@@ -78,6 +84,7 @@ impl TeamConfig {
         Self {
             num_juniors: section.default_juniors,
             max_parallel_tasks: section.max_parallel_tasks,
+            enable_streaming: section.enable_streaming,
             roles: section.roles.clone(),
         }
     }
@@ -182,6 +189,7 @@ mod tests {
         let config = TeamConfig::default();
         assert_eq!(config.num_juniors, 2);
         assert_eq!(config.max_parallel_tasks, 4);
+        assert!(config.enable_streaming);
     }
 
     #[test]

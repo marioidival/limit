@@ -160,6 +160,6 @@ pub use events::EventBus;
 pub use registry::ToolRegistry;
 pub use team::{
     EventLevel, Role, RoleConfig, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult,
-    TeamSection,
+    TeamSection, TeamSnapshot, TeamStore,
 };
 pub use tool::{EchoTool, Tool};
