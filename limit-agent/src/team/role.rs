@@ -20,6 +20,7 @@ pub enum Role {
 /// Any field set to `None` falls back to the active provider's default
 /// model (the same one used by the single-agent mode).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct RoleConfig {
     /// Model override for this role (e.g. `"gpt-4o-mini"` for Jr to save cost).
     pub model: Option<String>,
@@ -30,14 +31,6 @@ pub struct RoleConfig {
     pub tools: Option<Vec<String>>,
 }
 
-impl Default for RoleConfig {
-    fn default() -> Self {
-        Self {
-            model: None,
-            tools: None,
-        }
-    }
-}
 
 /// Full team section from `config.toml`.
 ///
@@ -153,6 +146,30 @@ impl Role {
             Role::PM => "pm",
             Role::TL => "tl",
             Role::Jr => "jr",
+        }
+    }
+
+    /// Default model recommendation for this role.
+    ///
+    /// Falls back to the active provider's default model when the
+    /// per-role [`RoleConfig::model`] is `None`.
+    pub fn default_model(&self) -> &'static str {
+        match self {
+            Role::PM => "gpt-4",
+            Role::TL => "gpt-4",
+            Role::Jr => "gpt-4o-mini",
+        }
+    }
+
+    /// Default tool whitelist for this role when no config is provided.
+    ///
+    /// Returns `Some(tools)` to restrict, `None` for all tools, `Some([])`
+    /// for no tools.
+    pub fn default_tools(&self) -> Option<Vec<&'static str>> {
+        match self {
+            Role::PM => Some(vec![]),
+            Role::TL => Some(vec!["bash"]),
+            Role::Jr => Some(vec!["file_read", "file_write", "file_edit", "bash"]),
         }
     }
 
@@ -287,5 +304,22 @@ tools = ["file_read", "file_write", "bash"]
         let cfg = RoleConfig::default();
         assert!(cfg.model.is_none());
         assert!(cfg.tools.is_none());
+    }
+
+    #[test]
+    fn test_role_default_model() {
+        assert_eq!(Role::PM.default_model(), "gpt-4");
+        assert_eq!(Role::TL.default_model(), "gpt-4");
+        assert_eq!(Role::Jr.default_model(), "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_role_default_tools() {
+        assert_eq!(Role::PM.default_tools(), Some(vec![] as Vec<&str>));
+        assert_eq!(Role::TL.default_tools(), Some(vec!["bash"]));
+        assert_eq!(
+            Role::Jr.default_tools(),
+            Some(vec!["file_read", "file_write", "file_edit", "bash"])
+        );
     }
 }
