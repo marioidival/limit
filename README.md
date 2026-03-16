@@ -56,6 +56,7 @@ That's it! Start chatting with your AI coding assistant.
 - **Docker Sandbox** — Optional containerized tool execution for isolation
 - **LSP Integration** — Go-to-definition, find-references
 - **AST-Aware Search** — Code search that understands syntax (Rust, TypeScript, Python)
+- **Multi-Agent Teams** — Coordinate PM, TL, and Jr agents through a structured workflow for complex tasks
 - **Markdown Rendering** — Rich formatting with syntax-highlighted code blocks
 - **File Autocomplete** — Type `@` in TUI to quickly reference files with fuzzy matching
 
@@ -239,6 +240,12 @@ This file contains the main entry point for the CLI application...
 | `/share` | Copy session to clipboard (markdown) |
 | `/share md` | Export session as markdown file |
 | `/share json` | Export session as JSON file |
+| `/team create --name <n> [--juniors N]` | Create a multi-agent team |
+| `/team start --team <n> --task <desc>` | Execute a task with a team |
+| `/team list` | List all teams |
+| `/team status <name>` | Show team info |
+| `/team history <name>` | View team event log |
+| `/team delete <name>` | Delete a team |
 
 ---
 
@@ -325,7 +332,7 @@ Input: Analyze @src/main.rs and explain
 | Crate | Description |
 |-------|-------------|
 | [`limit-llm`](limit-llm) | Multi-provider LLM client with streaming, SQLite tracking, binary persistence, model handoff |
-| [`limit-agent`](limit-agent) | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
+| [`limit-agent`](limit-agent) | Agent runtime with tool registry, multi-agent teams, parallel execution, event system, Docker sandbox |
 | [`limit-cli`](limit-cli) | REPL interface with 17 tools, markdown rendering, session management |
 
 ---
@@ -350,6 +357,9 @@ See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
 - [z.ai Setup](docs/ZAI_SETUP.md) - Detailed guide for z.ai (GLM-5) setup
 - [Local LLM Providers](docs/LOCAL_PROVIDERS.md) - Ollama, LM Studio, vLLM, and custom servers
 - [Browser Tool](docs/BROWSER_TOOL.md) - Browser automation for testing and scraping
+
+### Feature Guides
+- [Team System](docs/TEAM_SYSTEM.md) - Multi-agent orchestration with PM, TL, Jr roles
 
 ---
 
