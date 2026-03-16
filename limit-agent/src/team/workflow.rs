@@ -199,6 +199,9 @@ pub async fn execute_workflow(
 ///
 /// Tasks are distributed round-robin across available Jr agents.
 /// Failed tasks are retried once before being marked as failed.
+///
+/// Uses per-agent mutexes to allow true parallel execution of tasks
+/// assigned to different Jr agents.
 async fn execute_tasks_parallel(
     jrs: &mut [TeamAgent],
     tasks: &[Task],
@@ -217,21 +220,30 @@ async fn execute_tasks_parallel(
         .collect();
     let num_jrs = jrs.len();
 
-    // Wrap all Jr agents in a single async-aware Mutex to satisfy the borrow checker.
-    let jrs_guard = tokio::sync::Mutex::new(jrs);
+    // Wrap each Jr agent in its own Mutex to allow parallel execution.
+    // This avoids the single-mutex bottleneck that would serialize all tasks.
+    let jrs: Vec<Arc<tokio::sync::Mutex<TeamAgent>>> = jrs
+        .iter_mut()
+        .map(|jr| {
+            Arc::new(tokio::sync::Mutex::new(std::mem::replace(
+                jr,
+                TeamAgent::placeholder(),
+            )))
+        })
+        .collect();
 
     let results: Vec<TaskResult> = stream::iter(owned_tasks.into_iter().enumerate())
         .map(|(i, (task_id, description))| {
-            let guard = &jrs_guard;
+            let jrs = jrs.clone();
             async move {
                 let jr_idx = i % num_jrs;
                 let prompt_text =
                     format!("Execute this task:\n{description}\n\nUse tools as needed.");
 
                 let result = {
-                    let mut jrs_lock = guard.lock().await;
-                    let jr = &mut jrs_lock[jr_idx];
-                    jr.prompt(&prompt_text).await
+                    let jr = jrs[jr_idx].clone();
+                    let mut jr_lock = jr.lock().await;
+                    jr_lock.prompt(&prompt_text).await
                 };
 
                 match result {
@@ -247,9 +259,9 @@ async fn execute_tasks_parallel(
                             e
                         );
                         let retry_result = {
-                            let mut jrs_lock = guard.lock().await;
-                            let jr = &mut jrs_lock[jr_idx];
-                            jr.prompt(&prompt_text).await
+                            let jr = jrs[jr_idx].clone();
+                            let mut jr_lock = jr.lock().await;
+                            jr_lock.prompt(&prompt_text).await
                         };
                         match retry_result {
                             Ok(output) => TaskResult {

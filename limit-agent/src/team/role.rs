@@ -94,7 +94,15 @@ impl Default for TeamRolesSection {
             },
             jr: RoleConfig {
                 model: None,
-                tools: None, // Jr: all tools by default
+                tools: Some(
+                    // Jr: restricted safe tools only (explicit opt-in for dangerous tools)
+                    Role::Jr
+                        .default_tools()
+                        .expect("Jr default_tools should return Some")
+                        .into_iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                ),
             },
         }
     }
@@ -294,7 +302,14 @@ tools = ["file_read", "file_write", "bash"]
 
         let jr_cfg = Role::config_from(Role::Jr, &section);
         assert!(jr_cfg.model.is_none());
-        assert!(jr_cfg.tools.is_none()); // None = all tools
+        // Jr now defaults to restricted safe tools (not None/all tools)
+        assert!(jr_cfg.tools.is_some());
+        let tools = jr_cfg.tools.as_deref().unwrap();
+        assert!(tools.contains(&"file_read".to_string()));
+        assert!(tools.contains(&"bash".to_string()));
+        // Should NOT contain dangerous tools like git_push or web_fetch
+        assert!(!tools.contains(&"git_push".to_string()));
+        assert!(!tools.contains(&"web_fetch".to_string()));
     }
 
     #[test]
