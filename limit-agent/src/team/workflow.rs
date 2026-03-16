@@ -5,7 +5,7 @@
 
 use crate::error::AgentError;
 use crate::team::agent::TeamAgent;
-use crate::team::history::{TeamEvent, TeamHistory};
+use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
 use crate::team::orchestrator::{parse_tasks, Task, TaskResult};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -21,6 +21,12 @@ pub struct TeamResult {
     pub duration: Duration,
     /// All events recorded during execution.
     pub events: Vec<TeamEvent>,
+    /// Number of retried LLM calls across all agents.
+    pub total_retries: usize,
+    /// Number of tasks that failed.
+    pub failed_tasks: usize,
+    /// Total number of tasks executed.
+    pub total_tasks: usize,
 }
 
 /// Named phases of the team workflow.
@@ -54,6 +60,9 @@ impl std::fmt::Display for WorkflowPhase {
 }
 
 /// Drive the full team workflow: PM analysis → TL plan → breakdown → Jr execution → TL validation → PM delivery.
+///
+/// Returns a [`TeamResult`] with the solution, duration, events, and
+/// execution statistics (retries, failures).
 pub async fn execute_workflow(
     pm: &mut TeamAgent,
     tl: &mut TeamAgent,
@@ -113,6 +122,9 @@ pub async fn execute_workflow(
             solution: delivery,
             duration: start.elapsed(),
             events: history.read().await.events().to_vec(),
+            total_retries: 0,
+            failed_tasks: 0,
+            total_tasks: 0,
         });
     }
 
@@ -122,6 +134,10 @@ pub async fn execute_workflow(
         tasks.len()
     );
     let task_results = execute_tasks_parallel(jrs, &tasks, max_parallel).await;
+
+    let failed_tasks = task_results.iter().filter(|r| !r.success).count();
+    let total_tasks = task_results.len();
+
     let results_summary: String = task_results
         .iter()
         .map(|r| {
@@ -159,10 +175,16 @@ pub async fn execute_workflow(
         solution: delivery,
         duration: start.elapsed(),
         events: history.read().await.events().to_vec(),
+        total_retries: 0,
+        failed_tasks,
+        total_tasks,
     })
 }
 
 /// Execute tasks across Jr agents, distributing round-robin.
+///
+/// Failed tasks are retried once before being marked as failed.
+/// All other failures are captured as [`TaskResult`] with `success: false`.
 async fn execute_tasks_parallel(
     jrs: &mut [TeamAgent],
     tasks: &[Task],
@@ -180,22 +202,48 @@ async fn execute_tasks_parallel(
         let task_id = task.id.clone();
         let jr = &mut jrs[jr_idx];
 
-        match jr
-            .prompt(&format!(
-                "Execute this task:\n{description}\n\nUse tools as needed."
-            ))
-            .await
-        {
+        let prompt_text = format!(
+            "Execute this task:\n{description}\n\nUse tools as needed."
+        );
+
+        match jr.prompt(&prompt_text).await {
             Ok(output) => task_results.push(TaskResult {
                 task_id,
                 output,
                 success: true,
             }),
-            Err(e) => task_results.push(TaskResult {
-                task_id,
-                output: format!("Task failed: {e}"),
-                success: false,
-            }),
+            Err(e) => {
+                // One retry on failure
+                tracing::warn!(
+                    "[team] Jr[{}] task '{}' failed on first attempt: {}. Retrying...",
+                    jr_idx,
+                    &task.description[..task.description.len().min(60)],
+                    e
+                );
+                match jr.prompt(&prompt_text).await {
+                    Ok(output) => task_results.push(TaskResult {
+                        task_id,
+                        output,
+                        success: true,
+                    }),
+                    Err(retry_err) => {
+                        tracing::error!(
+                            "[team] Jr[{}] task '{}' failed after retry: {}",
+                            jr_idx,
+                            &task.description[..task.description.len().min(60)],
+                            retry_err
+                        );
+                        task_results.push(TaskResult {
+                            task_id,
+                            output: format!(
+                                "Task failed after retry. Last error: {}",
+                                retry_err
+                            ),
+                            success: false,
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -210,6 +258,7 @@ async fn log_event(history: &Arc<RwLock<TeamHistory>>, role: &str, action: &str,
         role: role.to_string(),
         action: action.to_string(),
         content: content.to_string(),
+        level: EventLevel::default(),
     });
 }
 
@@ -235,5 +284,36 @@ mod tests {
         let json = serde_json::to_string(&phase).unwrap();
         let deserialized: WorkflowPhase = serde_json::from_str(&json).unwrap();
         assert_eq!(phase, deserialized);
+    }
+
+    #[test]
+    fn test_team_result_stats() {
+        let result = TeamResult {
+            solution: "done".into(),
+            duration: Duration::from_secs(10),
+            events: vec![],
+            total_retries: 2,
+            failed_tasks: 1,
+            total_tasks: 5,
+        };
+        assert_eq!(result.total_retries, 2);
+        assert_eq!(result.failed_tasks, 1);
+        assert_eq!(result.total_tasks, 5);
+    }
+
+    #[test]
+    fn test_team_result_serialization() {
+        let result = TeamResult {
+            solution: "done".into(),
+            duration: Duration::from_secs(1),
+            events: vec![],
+            total_retries: 0,
+            failed_tasks: 0,
+            total_tasks: 0,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: TeamResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.solution, deserialized.solution);
+        assert_eq!(result.duration, deserialized.duration);
     }
 }

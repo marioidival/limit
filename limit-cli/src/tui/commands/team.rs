@@ -8,7 +8,7 @@
 
 use crate::error::CliError;
 use crate::tui::commands::registry::{Command, CommandContext, CommandResult};
-use limit_agent::team::{Team, TeamConfig};
+use limit_agent::team::{EventLevel, Team, TeamConfig};
 use limit_tui::components::Message;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -327,22 +327,56 @@ impl TeamCommand {
                 match new_team {
                     Ok(mut team) => match team.execute(&task_clone).await {
                         Ok(result) => {
-                            let msg = Message::system(format!(
-                                "✅ Team '{}' completed in {:.1}s\n\n{}\n\n📊 Events: {}",
+                            let mut summary = format!(
+                                "✅ Team '{}' completed in {:.1}s",
                                 name_clone,
                                 result.duration.as_secs_f64(),
-                                result.solution,
+                            );
+
+                            if result.total_tasks > 0 {
+                                summary.push_str(&format!(
+                                    "\n📦 Tasks: {}/{} succeeded",
+                                    result.total_tasks - result.failed_tasks,
+                                    result.total_tasks,
+                                ));
+                            }
+
+                            if result.failed_tasks > 0 {
+                                summary.push_str(&format!(
+                                    "\n⚠️  {} task(s) failed — check /team history for details",
+                                    result.failed_tasks
+                                ));
+                            }
+
+                            summary.push_str(&format!(
+                                "\n📊 Events: {}",
                                 result.events.len(),
                             ));
-                            chat_view.lock().unwrap().add_message(msg);
+
+                            summary.push_str(&format!("\n\n{}", result.solution));
+
+                            chat_view.lock().unwrap().add_message(Message::system(summary));
                         }
                         Err(e) => {
+                            let err_msg = format!("{}", e);
+                            let hint = if err_msg.contains("Rate limit")
+                                || err_msg.contains("429")
+                            {
+                                "\n💡 Tip: Rate limited — try again in a moment or use a team config with a cheaper model for Jr agents."
+                            } else if err_msg.contains("API key") {
+                                "\n💡 Tip: Check your API key in ~/.limit/config.toml"
+                            } else if err_msg.contains("timeout") {
+                                "\n💡 Tip: Request timed out — try breaking the task into smaller pieces."
+                            } else {
+                                ""
+                            };
+
                             chat_view
                                 .lock()
                                 .unwrap()
                                 .add_message(Message::system(format!(
-                                    "❌ Team execution failed: {}",
-                                    e
+                                    "❌ Team execution failed: {}{}",
+                                    err_msg, hint
                                 )));
                         }
                     },
@@ -351,7 +385,7 @@ impl TeamCommand {
                             .lock()
                             .unwrap()
                             .add_message(Message::system(format!(
-                                "❌ Failed to create team: {}",
+                                "❌ Failed to create team: {}. Check your config in ~/.limit/config.toml",
                                 e
                             )));
                     }
@@ -388,11 +422,32 @@ impl TeamCommand {
                         "No history recorded yet. Run /team start first.".into(),
                     );
                 } else {
-                    let log = events
-                        .iter()
-                        .map(|e| format!("[{}] {}: {}", e.role, e.action, e.content))
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
+                    let errors: Vec<_> = events.iter().filter(|e| e.level == EventLevel::Error).collect();
+                    let warnings: Vec<_> = events.iter().filter(|e| e.level == EventLevel::Warn).collect();
+
+                    let mut log = String::new();
+
+                    // Summary header
+                    log.push_str(&format!("📋 Team '{}' history ({} events", name, events.len()));
+                    if !errors.is_empty() {
+                        log.push_str(&format!(", {} errors", errors.len()));
+                    }
+                    if !warnings.is_empty() {
+                        log.push_str(&format!(", {} warnings", warnings.len()));
+                    }
+                    log.push_str("):\n\n");
+
+                    for e in &events {
+                        log.push_str(&format!("[{}] {}: {}\n\n", e.role, e.action, e.content));
+                    }
+
+                    if !errors.is_empty() {
+                        log.push_str("⚠️  Errors:\n");
+                        for e in errors {
+                            log.push_str(&format!("  - [{}] {}: {}\n", e.role, e.action, e.content));
+                        }
+                    }
+
                     ctx.add_system_message(log);
                 }
             }

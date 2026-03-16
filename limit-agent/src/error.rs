@@ -10,6 +10,10 @@ pub enum AgentError {
     IoError(String),
     #[error("Bincode error: {0}")]
     BincodeError(String),
+    #[error("Team error: {0}")]
+    TeamError(String),
+    #[error("LLM provider error: {0}")]
+    LlmError(String),
 }
 
 impl Clone for AgentError {
@@ -20,6 +24,8 @@ impl Clone for AgentError {
             AgentError::SandboxError(s) => AgentError::SandboxError(s.clone()),
             AgentError::IoError(s) => AgentError::IoError(s.clone()),
             AgentError::BincodeError(s) => AgentError::BincodeError(s.clone()),
+            AgentError::TeamError(s) => AgentError::TeamError(s.clone()),
+            AgentError::LlmError(s) => AgentError::LlmError(s.clone()),
         }
     }
 }

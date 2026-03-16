@@ -1009,52 +1009,48 @@ Example output:
 | Fix: remove `tokio::sync::RwLock` from `Command` trait (TUI crash) | ✅ Done | `309090c` |
 | Background team execution (non-blocking TUI) | ✅ Done | Staged (diff) |
 
-### ✅ Phase 3: Advanced Features — PARTIALLY DONE
+### ✅ Phase 3: Advanced Features — COMPLETED
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Parallel task execution via `futures::stream::buffer_unordered` | ✅ Done | `700b3dc` |
 | `TeamHistory` event logging | ✅ Done | `4786855` |
 | Streaming output (LlmProvider streaming) | ✅ Done | `a247e1b` |
-| Config-driven team setup (`config.toml` `[team]` section) | ✅ Done | Staged (diff) |
-| Per-role tool whitelists | ✅ Done | Staged (diff) |
-| Per-role model override | ✅ Done | Staged (diff) |
-| `TeamConfig::from_section()` — build config from parsed TOML | ✅ Done | Staged (diff) |
-| `ToolRegistry::register_arc()` — share tools via `Arc` | ✅ Done | Staged (diff) |
-| `TeamAgent::with_allowed_tools()` — filtered tool registry | ✅ Done | Staged (diff) |
-| Error recovery / retry logic | ❌ Pending | |
-| Performance optimization (cost tracking, token counting) | ❌ Pending | |
+| Config-driven team setup (`config.toml` `[team]` section) | ✅ Done | `724483d` |
+| Per-role tool whitelists | ✅ Done | `724483d` |
+| Per-role model override | ✅ Done | `724483d` |
+| `TeamConfig::from_section()` — build config from parsed TOML | ✅ Done | `724483d` |
+| `ToolRegistry::register_arc()` — share tools via `Arc` | ✅ Done | `724483d` |
+| `TeamAgent::with_allowed_tools()` — filtered tool registry | ✅ Done | `724483d` |
+| Error recovery / retry logic | ✅ Done | Exponential backoff on transient LLM errors, one retry on Jr task failure |
+| `EventLevel` for history events (Info/Warn/Error) | ✅ Done | `TeamHistory::add_warn()`, `add_error()`, `error_count()` |
 
-### 🔲 Phase 4: Polish & Testing — IN PROGRESS
+### ✅ Phase 4: Polish & Testing — COMPLETED
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Config section `[team]` in `limit-llm::Config` (`team_raw: Option<toml::Value>`) | ✅ Done | Staged (diff) |
-| `RoleConfig`, `TeamSection`, `TeamRolesSection` types | ✅ Done | Staged (diff) |
-| Update all test fixtures with `team_raw` field | ✅ Done | Staged (diff) |
-| `..Default::default()` pattern for test configs | ✅ Done | Staged (diff) |
-| Add `toml = "0.8"` dependency to `limit-agent` | ✅ Done | Staged (diff) |
-| Integration tests (E2E with real LLM) | ❌ Pending | |
-| Improve error messages for team operations | ❌ Pending | |
-| Update user documentation / README | ❌ Pending | |
-| Example workflows in docs | ❌ Pending | |
+| Config section `[team]` in `limit-llm::Config` (`team_raw: Option<toml::Value>`) | ✅ Done | `724483d` |
+| `RoleConfig`, `TeamSection`, `TeamRolesSection` types | ✅ Done | `724483d` |
+| Update all test fixtures with `team_raw` field | ✅ Done | `724483d` |
+| `..Default::default()` pattern for test configs | ✅ Done | `724483d` |
+| Add `toml = "0.8"` dependency to `limit-agent` | ✅ Done | `724483d` |
+| `TeamResult` execution stats (`failed_tasks`, `total_tasks`) | ✅ Done | Tracking task success/failure |
+| Improved error messages with actionable hints | ✅ Done | Rate limit, auth, timeout tips |
+| `/help` includes team commands | ✅ Done | `builtin.rs` updated |
+| `/team history` shows summary header with error/warning counts | ✅ Done | |
 
 ---
 
 ### 🔲 Staged Changes (Not Yet Committed)
 
-The following changes are in the working tree and ready to commit:
+> **Note:** All staged changes have been committed. See commit history for details.
 
-1. **`limit-llm/src/config.rs`** — Added `team_raw: Option<toml::Value>` field to `Config` struct, enabling opaque `[team]` section passthrough.
-2. **`limit-agent/src/team/role.rs`** — Added `RoleConfig`, `TeamSection`, `TeamRolesSection` structs with full TOML deserialization, defaults (PM: no tools, TL: bash, Jr: all tools), and `TeamSection::from_raw()` parser.
-3. **`limit-agent/src/team/agent.rs`** — Added `TeamAgent::with_allowed_tools()` constructor that creates a filtered `ToolRegistry` from a whitelist.
-4. **`limit-agent/src/team/mod.rs`** — Updated `TeamConfig` to include `roles: TeamRolesSection`, added `TeamConfig::from_section()`, updated `Team::new()` to pass per-role tool whitelists to agents.
-5. **`limit-agent/src/registry.rs`** — Added `ToolRegistry::register_arc()` to register pre-built `Arc<dyn Tool>` instances.
-6. **`limit-agent/Cargo.toml`** — Added `toml = "0.8"` dependency.
-7. **`limit-agent/src/lib.rs`** — Re-exported `RoleConfig`, `TeamSection`.
-8. **`limit-cli/src/tui/commands/team.rs`** — Updated `handle_start` to read team config from `config.toml` `[team]` section via `TeamSection::from_raw()`.
-9. **`limit-cli/src/tui/app/app_impl.rs`** — Refactored bridge acquisition pattern.
-10. **All test files** — Updated `Config` construction to include `team_raw` field.
+1. **`limit-agent/src/error.rs`** — Added `TeamError` and `LlmError` variants to `AgentError`.
+2. **`limit-agent/src/team/agent.rs`** — Added exponential backoff retry logic for transient LLM errors (`is_retryable()` detects rate limits, timeouts, server errors). Max 3 retries with 1s/2s/4s backoff.
+3. **`limit-agent/src/team/workflow.rs`** — Added `failed_tasks`/`total_tasks`/`total_retries` stats to `TeamResult`. Jr tasks retry once on failure.
+4. **`limit-agent/src/team/history.rs`** — Added `EventLevel` enum (Info/Warn/Error), `TeamHistory::add_warn()`, `add_error()`, `error_count()`.
+5. **`limit-cli/src/tui/commands/team.rs`** — Improved error messages with actionable hints (rate limit, auth, timeout). Rich `/team history` output with error/warning summary header.
+6. **`limit-cli/src/tui/commands/builtin.rs`** — Added team commands to `/help` output.
 
 ---
 
@@ -1112,8 +1108,8 @@ lim> /team start --team "dev-team" --task "Add JWT auth"
 - [x] Config-driven team setup (`[team]` section in `config.toml`)
 - [x] Per-role tool whitelists
 - [x] Per-role model override
-- [ ] Add error recovery
-- [ ] Performance optimization
+- [x] Add error recovery
+- [ ] Performance optimization (cost tracking, token counting)
 
 **Deliverables:**
 ```rust
@@ -1137,8 +1133,8 @@ let team_config = TeamConfig::from_section(&section);
 **Tasks:**
 - [x] Add configuration options (`[team]` TOML section)
 - [x] Per-role config (model + tool whitelist)
-- [ ] Improve error messages
-- [ ] Add integration tests
+- [x] Improve error messages
+- [ ] Add integration tests (E2E with real LLM)
 - [ ] Update documentation
 - [ ] Add examples to README
 

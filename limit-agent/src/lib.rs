@@ -159,6 +159,7 @@ pub use error::AgentError;
 pub use events::EventBus;
 pub use registry::ToolRegistry;
 pub use team::{
-    Role, RoleConfig, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult, TeamSection,
+    EventLevel, Role, RoleConfig, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult,
+    TeamSection,
 };
 pub use tool::{EchoTool, Tool};

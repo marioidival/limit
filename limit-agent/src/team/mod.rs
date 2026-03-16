@@ -37,7 +37,7 @@ mod role;
 mod workflow;
 
 pub use agent::TeamAgent;
-pub use history::{TeamEvent, TeamHistory};
+pub use history::{EventLevel, TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
 pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
 pub use workflow::{execute_workflow, TeamResult, WorkflowPhase};

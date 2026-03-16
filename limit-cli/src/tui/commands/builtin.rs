@@ -39,6 +39,9 @@ impl Command for HelpCommand {
                  /share         - Copy session to clipboard (markdown)\n\
                  /share md      - Export session as markdown file\n\
                  /share json    - Export session as JSON file\n\
+                 /team create --name <n> [--juniors N] - Create a team\n\
+                 /team start --team <n> --task <desc>  - Execute a team task\n\
+                 /team list|status|history|delete <n>  - Manage teams\n\
                  \n\
                  Page Up/Down - Scroll chat history";
             ctx.add_system_message(help_text.to_string());

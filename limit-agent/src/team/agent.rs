@@ -10,6 +10,12 @@ use futures::StreamExt;
 use limit_llm::{LlmProvider, Message, Role as LlmRole};
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
+
+/// Maximum number of automatic retries for transient LLM failures.
+const MAX_RETRIES: usize = 3;
+/// Base delay between retries (doubles on each attempt: 1s, 2s, 4s).
+const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 
 /// A specialized agent that acts as a single member of a team.
 pub struct TeamAgent {
@@ -90,6 +96,9 @@ impl TeamAgent {
     ///
     /// Handles tool calls automatically: if the provider returns tool-call
     /// chunks they are executed and the results are fed back.
+    ///
+    /// Transient LLM errors are retried up to [`MAX_RETRIES`] times with
+    /// exponential backoff.
     pub async fn prompt(&mut self, user_input: &str) -> Result<String, AgentError> {
         self.history.push(Message {
             role: LlmRole::User,
@@ -98,30 +107,53 @@ impl TeamAgent {
             tool_call_id: None,
         });
 
-        // Build the LLM tool definitions from the registry
         let tools = self.build_llm_tools();
 
-        let response = self.send_and_collect(tools).await?;
+        // Retry loop for transient failures.
+        let mut attempt = 0;
+        loop {
+            match self.send_and_collect(tools.clone()).await {
+                Ok(response) => {
+                    // If there are tool calls in the response, execute them and continue
+                    let has_tool_calls = self
+                        .history
+                        .last()
+                        .and_then(|msg| msg.tool_calls.as_ref())
+                        .map(|tc| !tc.is_empty())
+                        .unwrap_or(false);
 
-        // If there are tool calls in the response, execute them and continue
-        let has_tool_calls = self
-            .history
-            .last()
-            .and_then(|msg| msg.tool_calls.as_ref())
-            .map(|tc| !tc.is_empty())
-            .unwrap_or(false);
+                    if has_tool_calls {
+                        let tool_calls = self
+                            .history
+                            .last()
+                            .and_then(|msg| msg.tool_calls.clone())
+                            .expect("tool_calls exist");
+                        return self.handle_tool_calls(&tool_calls).await;
+                    }
 
-        if has_tool_calls {
-            // Extract the tool calls from the last message before borrowing mutably
-            let tool_calls = self
-                .history
-                .last()
-                .and_then(|msg| msg.tool_calls.clone())
-                .expect("tool_calls exist");
-            return self.handle_tool_calls(&tool_calls).await;
+                    return Ok(response);
+                }
+                Err(ref e) if is_retryable(e) && attempt < MAX_RETRIES => {
+                    attempt += 1;
+                    let delay = RETRY_BASE_DELAY * 2u32.pow(attempt as u32 - 1);
+                    tracing::warn!(
+                        "[team] {:?} prompt failed (attempt {}/{}): {}. Retrying in {:?}",
+                        self.role,
+                        attempt,
+                        MAX_RETRIES,
+                        e,
+                        delay,
+                    );
+                    // Remove the failed assistant message so we can retry
+                    if self.history.last().map_or(false, |m| m.role == LlmRole::Assistant) {
+                        self.history.pop();
+                    }
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
         }
-
-        Ok(response)
     }
 
     /// Send the current history to the provider and collect the response.
@@ -246,6 +278,25 @@ impl TeamAgent {
     }
 }
 
+/// Determine whether an error is transient and worth retrying.
+fn is_retryable(err: &AgentError) -> bool {
+    let msg = err.to_string();
+    let lower = msg.to_lowercase();
+    // Common transient patterns from LLM providers:
+    // - rate limits (429)
+    // - temporary server errors (500, 502, 503)
+    // - connection timeouts / resets
+    lower.contains("rate limit")
+        || lower.contains("429")
+        || lower.contains("502")
+        || lower.contains("503")
+        || lower.contains("500")
+        || lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("overloaded")
+        || lower.contains("temporary")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +312,47 @@ mod tests {
     fn test_team_agent_registry_arc() {
         let registry = ToolRegistry::new();
         let _arc: Arc<ToolRegistry> = Arc::new(registry);
+    }
+
+    #[test]
+    fn test_is_retryable_rate_limit() {
+        let err = AgentError::LlmError("Rate limit exceeded (429)".into());
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_retryable_server_error() {
+        let err = AgentError::LlmError("Server error 503".into());
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_retryable_timeout() {
+        let err = AgentError::LlmError("Connection timeout".into());
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_retryable_overloaded() {
+        let err = AgentError::LlmError("Model overloaded".into());
+        assert!(is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_not_retryable_auth() {
+        let err = AgentError::LlmError("Invalid API key".into());
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_not_retryable_tool_error() {
+        let err = AgentError::ToolError("Tool not found".into());
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn test_retry_constants() {
+        assert!(MAX_RETRIES >= 2);
+        assert!(!RETRY_BASE_DELAY.is_zero());
     }
 }
