@@ -152,9 +152,11 @@ pub mod executor;
 pub mod registry;
 pub mod sandbox;
 pub mod state;
+pub mod team;
 pub mod tool;
 
 pub use error::AgentError;
 pub use events::EventBus;
 pub use registry::ToolRegistry;
+pub use team::{Role, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult};
 pub use tool::{EchoTool, Tool};
