@@ -24,17 +24,11 @@ use std::sync::Arc;
 fn mock_provider_for_workflow() -> MockLlmProvider {
     MockLlmProvider::new()
         // 1. PM analysis
-        .with_response(
-            "This is a request to add error handling to the main module.",
-        )
+        .with_response("This is a request to add error handling to the main module.")
         // 2. TL plan
-        .with_response(
-            "Plan: Add Result<T, E> wrapper around fallible operations.",
-        )
+        .with_response("Plan: Add Result<T, E> wrapper around fallible operations.")
         // 3. TL task breakdown — two tasks
-        .with_response(
-            "TASK: Add error types to src/error.rs\nTASK: Wrap main function in Result",
-        )
+        .with_response("TASK: Add error types to src/error.rs\nTASK: Wrap main function in Result")
         // 4. Jr task 1 execution
         .with_response(r#"Created file: {"path": "src/error.rs"}"#)
         // 5. Jr task 2 execution
@@ -130,19 +124,21 @@ async fn test_workflow_records_pm_analysis_event() {
     let mut team = mock_team("pm-event-test");
     let result = team.execute("test").await.unwrap();
 
-    let pm_events: Vec<_> = result
-        .events
-        .iter()
-        .filter(|e| e.role == "PM")
-        .collect();
+    let pm_events: Vec<_> = result.events.iter().filter(|e| e.role == "PM").collect();
     assert!(
         !pm_events.is_empty(),
         "PM should have at least one recorded event"
     );
     // PM events should include "analysis" and "delivery" actions
     let actions: Vec<&str> = pm_events.iter().map(|e| e.action.as_str()).collect();
-    assert!(actions.contains(&"analysis"), "PM should have analysis event");
-    assert!(actions.contains(&"delivery"), "PM should have delivery event");
+    assert!(
+        actions.contains(&"analysis"),
+        "PM should have analysis event"
+    );
+    assert!(
+        actions.contains(&"delivery"),
+        "PM should have delivery event"
+    );
 }
 
 #[tokio::test]
@@ -150,15 +146,14 @@ async fn test_workflow_records_tl_events() {
     let mut team = mock_team("tl-event-test");
     let result = team.execute("test").await.unwrap();
 
-    let tl_events: Vec<_> = result
-        .events
-        .iter()
-        .filter(|e| e.role == "TL")
-        .collect();
+    let tl_events: Vec<_> = result.events.iter().filter(|e| e.role == "TL").collect();
     let actions: Vec<&str> = tl_events.iter().map(|e| e.action.as_str()).collect();
     assert!(actions.contains(&"plan"), "TL should have plan event");
     assert!(actions.contains(&"tasks"), "TL should have tasks event");
-    assert!(actions.contains(&"validation"), "TL should have validation event");
+    assert!(
+        actions.contains(&"validation"),
+        "TL should have validation event"
+    );
 }
 
 #[tokio::test]
@@ -166,11 +161,7 @@ async fn test_workflow_records_jr_events() {
     let mut team = mock_team("jr-event-test");
     let result = team.execute("test").await.unwrap();
 
-    let jr_events: Vec<_> = result
-        .events
-        .iter()
-        .filter(|e| e.role == "Jr")
-        .collect();
+    let jr_events: Vec<_> = result.events.iter().filter(|e| e.role == "Jr").collect();
     assert!(
         !jr_events.is_empty(),
         "Jr should have execution results recorded"
@@ -208,7 +199,10 @@ async fn test_workflow_empty_tasks_returns_early() {
     let result = team.execute("simple request").await.unwrap();
     assert_eq!(result.total_tasks, 0, "no tasks should be parsed");
     assert_eq!(result.failed_tasks, 0);
-    assert!(!result.solution.is_empty(), "should still deliver a summary");
+    assert!(
+        !result.solution.is_empty(),
+        "should still deliver a summary"
+    );
 }
 
 #[tokio::test]
@@ -236,7 +230,10 @@ async fn test_team_reset_clears_state() {
     team.reset().await;
 
     let events_after = team.events().await;
-    assert!(events_after.is_empty(), "events should be cleared after reset");
+    assert!(
+        events_after.is_empty(),
+        "events should be cleared after reset"
+    );
 }
 
 #[tokio::test]

@@ -225,9 +225,8 @@ async fn execute_tasks_parallel(
             let guard = &jrs_guard;
             async move {
                 let jr_idx = i % num_jrs;
-                let prompt_text = format!(
-                    "Execute this task:\n{description}\n\nUse tools as needed."
-                );
+                let prompt_text =
+                    format!("Execute this task:\n{description}\n\nUse tools as needed.");
 
                 let result = {
                     let mut jrs_lock = guard.lock().await;
@@ -244,7 +243,8 @@ async fn execute_tasks_parallel(
                     Err(e) => {
                         tracing::warn!(
                             "[team] Jr[{}] task failed on first attempt: {}. Retrying...",
-                            jr_idx, e
+                            jr_idx,
+                            e
                         );
                         let retry_result = {
                             let mut jrs_lock = guard.lock().await;
@@ -260,7 +260,8 @@ async fn execute_tasks_parallel(
                             Err(retry_err) => {
                                 tracing::error!(
                                     "[team] Jr[{}] task failed after retry: {}",
-                                    jr_idx, retry_err
+                                    jr_idx,
+                                    retry_err
                                 );
                                 TaskResult {
                                     task_id,
@@ -311,7 +312,6 @@ async fn log_event(history: &Arc<RwLock<TeamHistory>>, role: &str, action: &str,
         level: EventLevel::default(),
     });
 }
-
 
 /// Log a workflow-phase transition event.
 async fn log_phase(history: &Arc<RwLock<TeamHistory>>, phase: WorkflowPhase) {

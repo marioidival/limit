@@ -145,7 +145,11 @@ impl TeamAgent {
                         delay,
                     );
                     // Remove the failed assistant message so we can retry
-                    if self.history.last().is_some_and(|m| m.role == LlmRole::Assistant) {
+                    if self
+                        .history
+                        .last()
+                        .is_some_and(|m| m.role == LlmRole::Assistant)
+                    {
                         self.history.pop();
                     }
                     tokio::time::sleep(delay).await;

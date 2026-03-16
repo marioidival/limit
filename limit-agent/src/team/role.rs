@@ -19,8 +19,7 @@ pub enum Role {
 ///
 /// Any field set to `None` falls back to the active provider's default
 /// model (the same one used by the single-agent mode).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoleConfig {
     /// Model override for this role (e.g. `"gpt-4o-mini"` for Jr to save cost).
     pub model: Option<String>,
@@ -30,7 +29,6 @@ pub struct RoleConfig {
     /// An empty `Vec` means **no tools** (PM by default).
     pub tools: Option<Vec<String>>,
 }
-
 
 /// Full team section from `config.toml`.
 ///

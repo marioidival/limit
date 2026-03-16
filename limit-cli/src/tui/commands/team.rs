@@ -66,10 +66,13 @@ impl TeamCommand {
             match store.load(name) {
                 Ok(Some(snap)) => {
                     let team = create_placeholder_team(&snap.name, &snap.config);
-                    teams.insert(name.clone(), TeamEntry {
-                        team,
-                        config: snap.config,
-                    });
+                    teams.insert(
+                        name.clone(),
+                        TeamEntry {
+                            team,
+                            config: snap.config,
+                        },
+                    );
                 }
                 Ok(None) => {}
                 Err(e) => {
@@ -508,13 +511,23 @@ impl TeamCommand {
                         "No history recorded yet. Run /team start first.".into(),
                     );
                 } else {
-                    let errors: Vec<_> = events.iter().filter(|e| e.level == EventLevel::Error).collect();
-                    let warnings: Vec<_> = events.iter().filter(|e| e.level == EventLevel::Warn).collect();
+                    let errors: Vec<_> = events
+                        .iter()
+                        .filter(|e| e.level == EventLevel::Error)
+                        .collect();
+                    let warnings: Vec<_> = events
+                        .iter()
+                        .filter(|e| e.level == EventLevel::Warn)
+                        .collect();
 
                     let mut log = String::new();
 
                     // Summary header
-                    log.push_str(&format!("📋 Team '{}' history ({} events", name, events.len()));
+                    log.push_str(&format!(
+                        "📋 Team '{}' history ({} events",
+                        name,
+                        events.len()
+                    ));
                     if !errors.is_empty() {
                         log.push_str(&format!(", {} errors", errors.len()));
                     }
@@ -530,7 +543,10 @@ impl TeamCommand {
                     if !errors.is_empty() {
                         log.push_str("⚠️  Errors:\n");
                         for e in errors {
-                            log.push_str(&format!("  - [{}] {}: {}\n", e.role, e.action, e.content));
+                            log.push_str(&format!(
+                                "  - [{}] {}: {}\n",
+                                e.role, e.action, e.content
+                            ));
                         }
                     }
 

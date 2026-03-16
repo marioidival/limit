@@ -23,8 +23,7 @@ pub struct TeamEvent {
 }
 
 /// Severity of a team event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum EventLevel {
     /// Informational event (default).
     #[default]
@@ -34,7 +33,6 @@ pub enum EventLevel {
     /// Error (failure that was recovered or not).
     Error,
 }
-
 
 impl fmt::Display for EventLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -48,7 +46,11 @@ impl fmt::Display for EventLevel {
 
 impl fmt::Display for TeamEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}][{}] {}: {}", self.level, self.role, self.action, self.content)
+        write!(
+            f,
+            "[{}][{}] {}: {}",
+            self.level, self.role, self.action, self.content
+        )
     }
 }
 
@@ -93,7 +95,10 @@ impl TeamHistory {
 
     /// Number of error-level events.
     pub fn error_count(&self) -> usize {
-        self.events.iter().filter(|e| e.level == EventLevel::Error).count()
+        self.events
+            .iter()
+            .filter(|e| e.level == EventLevel::Error)
+            .count()
     }
 
     /// Read-only access to the event list.

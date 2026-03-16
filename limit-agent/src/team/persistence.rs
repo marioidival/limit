@@ -209,8 +209,12 @@ mod tests {
 
         assert!(store.list().unwrap().is_empty());
 
-        store.save(&TeamSnapshot::new("alpha", test_config())).unwrap();
-        store.save(&TeamSnapshot::new("beta", test_config())).unwrap();
+        store
+            .save(&TeamSnapshot::new("alpha", test_config()))
+            .unwrap();
+        store
+            .save(&TeamSnapshot::new("beta", test_config()))
+            .unwrap();
 
         let names = store.list().unwrap();
         assert_eq!(names, vec!["alpha", "beta"]);
