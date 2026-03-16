@@ -9,9 +9,9 @@
 use crate::error::CliError;
 use crate::tui::commands::registry::{Command, CommandContext, CommandResult};
 use limit_agent::team::{Team, TeamConfig};
+use limit_tui::components::Message;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::sync::{Arc, Mutex};
 
 /// Stored team together with its configuration.
 struct TeamEntry {
@@ -21,7 +21,7 @@ struct TeamEntry {
 
 /// The `/team` command.
 pub struct TeamCommand {
-    teams: Arc<RwLock<HashMap<String, TeamEntry>>>,
+    teams: Mutex<HashMap<String, TeamEntry>>,
 }
 
 impl Default for TeamCommand {
@@ -33,7 +33,7 @@ impl Default for TeamCommand {
 impl TeamCommand {
     pub fn new() -> Self {
         Self {
-            teams: Arc::new(RwLock::new(HashMap::new())),
+            teams: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -126,24 +126,19 @@ impl TeamCommand {
             ..TeamConfig::default()
         };
 
-        let rt = tokio::runtime::Handle::current();
-        let teams = self.teams.clone();
-        let msg = rt.block_on(async {
-            let mut teams = teams.write().await;
-            if teams.contains_key(&name) {
-                format!("⚠️  Team '{}' already exists", name)
-            } else {
-                let team = create_placeholder_team(&name, &config);
-                teams.insert(name.clone(), TeamEntry { team, config });
-                format!(
-                    "✅ Team '{}' registered with {} junior agents\n\
-                     Run /team start --team \"{}\" --task \"<description>\" to execute",
-                    name, juniors, name
-                )
-            }
-        });
+        let mut teams = self.teams.lock().unwrap();
+        if teams.contains_key(&name) {
+            ctx.add_system_message(format!("⚠️  Team '{}' already exists", name));
+        } else {
+            let team = create_placeholder_team(&name, &config);
+            teams.insert(name.clone(), TeamEntry { team, config });
+            ctx.add_system_message(format!(
+                "✅ Team '{}' registered with {} junior agents\n\
+                 Run /team start --team \"{}\" --task \"<description>\" to execute",
+                name, juniors, name
+            ));
+        }
 
-        ctx.add_system_message(msg);
         Ok(CommandResult::Continue)
     }
 
@@ -157,39 +152,29 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let rt = tokio::runtime::Handle::current();
-        let teams = self.teams.clone();
-        let msg = rt.block_on(async {
-            let mut teams = teams.write().await;
-            if teams.remove(name).is_some() {
-                format!("✅ Team '{}' deleted", name)
-            } else {
-                format!("⚠️  Team '{}' not found", name)
-            }
-        });
+        let mut teams = self.teams.lock().unwrap();
+        if teams.remove(name).is_some() {
+            ctx.add_system_message(format!("✅ Team '{}' deleted", name));
+        } else {
+            ctx.add_system_message(format!("⚠️  Team '{}' not found", name));
+        }
 
-        ctx.add_system_message(msg);
         Ok(CommandResult::Continue)
     }
 
     fn handle_list(&self, ctx: &mut CommandContext) -> Result<CommandResult, CliError> {
-        let rt = tokio::runtime::Handle::current();
-        let teams = self.teams.clone();
-        let msg = rt.block_on(async {
-            let teams = teams.read().await;
-            if teams.is_empty() {
-                "No teams created yet. Use /team create --name <name>".to_string()
-            } else {
-                let list = teams
-                    .iter()
-                    .map(|(n, e)| format!("- {} ({} juniors)", n, e.team.jrs.len()))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format!("Teams:\n{}", list)
-            }
-        });
+        let teams = self.teams.lock().unwrap();
+        if teams.is_empty() {
+            ctx.add_system_message("No teams created yet. Use /team create --name <name>".into());
+        } else {
+            let list = teams
+                .iter()
+                .map(|(n, e)| format!("- {} ({} juniors)", n, e.team.jrs.len()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            ctx.add_system_message(format!("Teams:\n{}", list));
+        }
 
-        ctx.add_system_message(msg);
         Ok(CommandResult::Continue)
     }
 
@@ -203,23 +188,22 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let rt = tokio::runtime::Handle::current();
-        let teams = self.teams.clone();
-        let msg = rt.block_on(async {
-            let teams = teams.read().await;
-            match teams.get(name) {
-                Some(entry) => format!(
+        let teams = self.teams.lock().unwrap();
+        match teams.get(name) {
+            Some(entry) => {
+                ctx.add_system_message(format!(
                     "Team: {}\nPM: ready\nTL: ready\nJuniors: {} agents\n\
                      Max parallel tasks: {}",
                     name,
                     entry.team.jrs.len(),
                     entry.config.max_parallel_tasks,
-                ),
-                None => format!("Team '{}' not found", name),
+                ));
             }
-        });
+            None => {
+                ctx.add_system_message(format!("Team '{}' not found", name));
+            }
+        }
 
-        ctx.add_system_message(msg);
         Ok(CommandResult::Continue)
     }
 
@@ -271,90 +255,98 @@ impl TeamCommand {
             }
         };
 
-        // We need the AgentBridge to get the real LLM provider and tools.
-        // The bridge is accessible via CommandContext's state, which holds
-        // a reference to the TuiBridge. However, CommandContext doesn't
-        // expose it directly. We instead spawn the execution in the async
-        // runtime and let the caller's event loop drive UI updates.
-        //
-        // For now, we run synchronously using block_on. The task will show
-        // results as a system message when complete.
-
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
-        let rt = tokio::runtime::Handle::current();
-        let teams = self.teams.clone();
-        let name_clone = team_name.clone();
-        let task_clone = task.clone();
-
-        let result = rt.block_on(async move {
-            let mut teams = teams.write().await;
-
-            let entry = match teams.get_mut(&name_clone) {
-                Some(e) => e,
+        // Validate team exists before spawning background work
+        let team_config = {
+            let teams = self.teams.lock().unwrap();
+            match teams.get(&team_name) {
+                Some(entry) => entry.config.clone(),
                 None => {
-                    return format!("⚠️  Team '{}' not found", name_clone);
+                    ctx.add_system_message(format!("⚠️  Team '{}' not found", team_name));
+                    return Ok(CommandResult::Continue);
                 }
-            };
+            }
+        };
 
-            // Build a real provider and tool registry from the AgentBridge
-            // that's already running in the TUI. Since we don't have direct
-            // access, we re-create the provider from the config.
-            let config = limit_llm::Config::load().map_err(|e| e.to_string());
-            let provider = match &config {
-                Ok(cfg) => {
-                    limit_llm::ProviderFactory::create_provider(cfg).map_err(|e| e.to_string())
-                }
-                Err(e) => Err(e.clone()),
-            };
+        // Spawn team execution in a background thread to avoid blocking the TUI.
+        // This follows the same pattern as the main LLM processing in handle_enter.
+        let chat_view = ctx.chat_view.clone();
+        let name_clone = team_name;
+        let task_clone = task;
 
-            let real_provider: Box<dyn limit_llm::LlmProvider> = match provider {
-                Ok(p) => p,
+        std::thread::spawn(move || {
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
                 Err(e) => {
-                    return format!(
-                        "⚠️  Failed to create LLM provider: {}\n\
-                         Please check your config in ~/.limit/config.toml",
-                        e
-                    );
+                    chat_view
+                        .lock()
+                        .unwrap()
+                        .add_message(Message::system(format!("❌ Failed to create runtime: {}", e)));
+                    return;
                 }
             };
 
-            // Re-create team with the real provider and proper tools
-            let tool_registry = build_tool_registry();
-            let tools = Arc::new(tool_registry);
-            let new_team = Team::new(
-                entry.team.name.clone(),
-                real_provider,
-                entry.config.clone(),
-                tools,
-            );
+            rt.block_on(async move {
+                // Build real provider from config
+                let config_result = limit_llm::Config::load();
+                let provider = match &config_result {
+                    Ok(cfg) => limit_llm::ProviderFactory::create_provider(cfg),
+                    Err(e) => Err(limit_llm::LlmError::ConfigError(e.to_string())),
+                };
 
-            match new_team {
-                Ok(mut team) => {
-                    let exec_result = team.execute(&task_clone).await;
-                    match exec_result {
+                let real_provider: Box<dyn limit_llm::LlmProvider> = match provider {
+                    Ok(p) => p,
+                    Err(e) => {
+                        chat_view.lock().unwrap().add_message(Message::system(format!(
+                            "⚠️  Failed to create LLM provider: {}\n\
+                             Please check your config in ~/.limit/config.toml",
+                            e
+                        )));
+                        return;
+                    }
+                };
+
+                // Re-create team with real provider and proper tools
+                let tool_registry = build_tool_registry();
+                let tools = Arc::new(tool_registry);
+
+                let new_team = Team::new(
+                    name_clone.clone(),
+                    real_provider,
+                    team_config,
+                    tools,
+                );
+
+                match new_team {
+                    Ok(mut team) => match team.execute(&task_clone).await {
                         Ok(result) => {
-                            // Replace placeholder with the real team
-                            entry.team = team;
-
-                            format!(
+                            let msg = Message::system(format!(
                                 "✅ Team '{}' completed in {:.1}s\n\n{}\n\n📊 Events: {}",
                                 name_clone,
                                 result.duration.as_secs_f64(),
                                 result.solution,
                                 result.events.len(),
-                            )
+                            ));
+                            chat_view.lock().unwrap().add_message(msg);
                         }
                         Err(e) => {
-                            format!("❌ Team execution failed: {}", e)
+                            chat_view.lock().unwrap().add_message(Message::system(format!(
+                                "❌ Team execution failed: {}",
+                                e
+                            )));
                         }
+                    },
+                    Err(e) => {
+                        chat_view.lock().unwrap().add_message(Message::system(format!(
+                            "❌ Failed to create team: {}",
+                            e
+                        )));
                     }
                 }
-                Err(e) => format!("❌ Failed to create team: {}", e),
-            }
+            });
         });
 
-        ctx.add_system_message(result);
         Ok(CommandResult::Continue)
     }
 
@@ -368,28 +360,35 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let rt = tokio::runtime::Handle::current();
-        let teams = self.teams.clone();
-        let msg = rt.block_on(async {
-            let teams = teams.read().await;
-            match teams.get(name) {
-                Some(entry) => {
-                    let events = entry.team.events().await;
-                    if events.is_empty() {
-                        "No history recorded yet. Run /team start first.".to_string()
-                    } else {
-                        events
-                            .iter()
-                            .map(|e| format!("[{}] {}: {}", e.role, e.action, e.content))
-                            .collect::<Vec<_>>()
-                            .join("\n\n")
+        let teams = self.teams.lock().unwrap();
+        match teams.get(name) {
+            Some(entry) => {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        ctx.add_system_message(format!("Error: {}", e));
+                        return Ok(CommandResult::Continue);
                     }
+                };
+                let events = rt.block_on(entry.team.events());
+                if events.is_empty() {
+                    ctx.add_system_message(
+                        "No history recorded yet. Run /team start first.".into(),
+                    );
+                } else {
+                    let log = events
+                        .iter()
+                        .map(|e| format!("[{}] {}: {}", e.role, e.action, e.content))
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    ctx.add_system_message(log);
                 }
-                None => format!("Team '{}' not found", name),
             }
-        });
+            None => {
+                ctx.add_system_message(format!("Team '{}' not found", name));
+            }
+        }
 
-        ctx.add_system_message(msg);
         Ok(CommandResult::Continue)
     }
 }
