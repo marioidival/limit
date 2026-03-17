@@ -14,6 +14,8 @@ pub enum AgentError {
     TeamError(String),
     #[error("LLM provider error: {0}")]
     LlmError(String),
+    #[error("Actor error: {0}")]
+    ActorError(String),
 }
 
 impl Clone for AgentError {
@@ -26,6 +28,7 @@ impl Clone for AgentError {
             AgentError::BincodeError(s) => AgentError::BincodeError(s.clone()),
             AgentError::TeamError(s) => AgentError::TeamError(s.clone()),
             AgentError::LlmError(s) => AgentError::LlmError(s.clone()),
+            AgentError::ActorError(s) => AgentError::ActorError(s.clone()),
         }
     }
 }

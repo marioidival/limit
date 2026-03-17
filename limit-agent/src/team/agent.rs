@@ -7,7 +7,7 @@ use crate::error::AgentError;
 use crate::registry::ToolRegistry;
 use crate::team::role::Role;
 use futures::StreamExt;
-use limit_llm::{LlmProvider, Message, ProviderResponseChunk, Role as LlmRole};
+use limit_llm::{LlmProvider, Message, ProviderResponseChunk, Role as LlmRole, Usage};
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +18,25 @@ const MAX_RETRIES: usize = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 /// Maximum tool-call rounds per `prompt()` call before forcing a text response.
 /// Prevents infinite loops where the LLM keeps requesting more tool calls.
-const MAX_TOOL_ROUNDS: usize = 5;
+const MAX_TOOL_ROUNDS: usize = 10;
+
+/// Result from [`TeamAgent::prompt`] including token usage and tool-limit status.
+#[derive(Debug, Clone)]
+pub struct PromptResult {
+    /// The text content of the LLM response.
+    pub text: String,
+    /// Token usage accumulated across all rounds.
+    pub usage: Usage,
+    /// Whether the tool-call limit ([`MAX_TOOL_ROUNDS`]) was hit.
+    pub hit_tool_limit: bool,
+}
+
+fn zero_usage() -> Usage {
+    Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+    }
+}
 
 /// Accumulates tool-call deltas from streaming responses.
 ///
@@ -279,7 +297,7 @@ impl TeamAgent {
     ///
     /// Transient LLM errors are retried up to [`MAX_RETRIES`] times with
     /// exponential backoff.
-    pub async fn prompt(&mut self, user_input: &str) -> Result<String, AgentError> {
+    pub async fn prompt(&mut self, user_input: &str) -> Result<PromptResult, AgentError> {
         self.push_message(Message {
             role: LlmRole::User,
             content: Some(user_input.to_string()),
@@ -293,7 +311,7 @@ impl TeamAgent {
         let mut attempt = 0;
         loop {
             match self.send_and_collect(tools.clone()).await {
-                Ok(response) => {
+                Ok((response, usage)) => {
                     // If there are tool calls in the response, execute them and continue
                     let has_tool_calls = self
                         .history
@@ -306,7 +324,8 @@ impl TeamAgent {
                         if let Some(tool_calls) =
                             self.history.last().and_then(|msg| msg.tool_calls.clone())
                         {
-                            return self.handle_tool_calls(&tool_calls).await;
+                            let result = self.handle_tool_calls(&tool_calls, usage).await?;
+                            return Ok(result);
                         }
                         tracing::warn!(
                             "[team] {:?} has_tool_calls was true but no tool_calls found in last message",
@@ -315,7 +334,11 @@ impl TeamAgent {
                         // Continue with normal response flow
                     }
 
-                    return Ok(response);
+                    return Ok(PromptResult {
+                        text: response,
+                        usage,
+                        hit_tool_limit: false,
+                    });
                 }
                 Err(ref e) if is_retryable(e) && attempt < MAX_RETRIES => {
                     attempt += 1;
@@ -348,7 +371,7 @@ impl TeamAgent {
     async fn send_and_collect(
         &mut self,
         tools: Vec<limit_llm::Tool>,
-    ) -> Result<String, AgentError> {
+    ) -> Result<(String, Usage), AgentError> {
         let mut stream = self
             .provider
             .send((*self.history).clone(), tools)
@@ -358,6 +381,7 @@ impl TeamAgent {
         let mut content = String::new();
         let mut tool_calls: Vec<limit_llm::ToolCall> = Vec::new();
         let mut accumulator = ToolCallAccumulator::default();
+        let mut usage = zero_usage();
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -373,7 +397,9 @@ impl TeamAgent {
                         tool_calls.push(completed);
                     }
                 }
-                Ok(limit_llm::ProviderResponseChunk::Done(_)) => {
+                Ok(limit_llm::ProviderResponseChunk::Done(u)) => {
+                    usage.input_tokens += u.input_tokens;
+                    usage.output_tokens += u.output_tokens;
                     break;
                 }
                 Err(e) => {
@@ -406,14 +432,15 @@ impl TeamAgent {
             tool_call_id: None,
         });
 
-        Ok(content.trim().to_string())
+        Ok((content.trim().to_string(), usage))
     }
 
     /// Execute tool calls, feed results back, and collect the final response.
     async fn handle_tool_calls(
         &mut self,
         tool_calls: &[limit_llm::ToolCall],
-    ) -> Result<String, AgentError> {
+        mut usage: Usage,
+    ) -> Result<PromptResult, AgentError> {
         for tc in tool_calls {
             let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
             tracing::debug!(
@@ -457,7 +484,9 @@ impl TeamAgent {
         // Continue conversation with tool results, looping if the LLM
         // requests more tool calls (e.g., read file then edit it).
         let tools = self.build_llm_tools();
-        let mut response = self.send_and_collect(tools.clone()).await?;
+        let (mut response, round_usage) = self.send_and_collect(tools.clone()).await?;
+        usage.input_tokens += round_usage.input_tokens;
+        usage.output_tokens += round_usage.output_tokens;
         let mut tool_rounds = 1;
 
         // Loop: if the response contains more tool calls, execute them.
@@ -469,7 +498,11 @@ impl TeamAgent {
                     self.role,
                     MAX_TOOL_ROUNDS
                 );
-                break;
+                return Ok(PromptResult {
+                    text: response,
+                    usage,
+                    hit_tool_limit: true,
+                });
             }
 
             let has_more = self
@@ -515,10 +548,17 @@ impl TeamAgent {
                 });
             }
 
-            response = self.send_and_collect(tools.clone()).await?;
+            let (round_response, round_usage) = self.send_and_collect(tools.clone()).await?;
+            response = round_response;
+            usage.input_tokens += round_usage.input_tokens;
+            usage.output_tokens += round_usage.output_tokens;
         }
 
-        Ok(response)
+        Ok(PromptResult {
+            text: response,
+            usage,
+            hit_tool_limit: false,
+        })
     }
 
     /// Build LLM tool definitions from the registry's tool list.

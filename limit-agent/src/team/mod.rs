@@ -9,6 +9,11 @@
 //! 4. **TL** validates the results
 //! 5. **PM** delivers a summary to the user
 //!
+//! Internally, each agent runs as an independent actor with its own
+//! tokio task and mailbox. The [`OrchestratorActor`](orchestrator_actor::OrchestratorActor)
+//! drives the 6-phase workflow by sending messages to actors and
+//! collecting replies via oneshot channels.
+//!
 //! # Example
 //!
 //! ```rust,no_run
@@ -30,28 +35,39 @@
 //! # }
 //! ```
 
+mod actor;
 mod agent;
+mod agent_actor;
 mod history;
+mod messages;
 mod orchestrator;
+mod orchestrator_actor;
 mod persistence;
 mod progress;
 mod role;
-mod workflow;
+mod supervisor;
+pub mod workflow;
 
-pub use agent::TeamAgent;
+pub use agent::{PromptResult, TeamAgent};
 pub use history::{EventLevel, TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
 pub use persistence::{TeamSnapshot, TeamStore};
 pub use progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent, PHASE_COUNT};
 pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
+#[allow(deprecated)]
 pub use workflow::{execute_workflow, TeamResult, WorkflowPhase};
 
 use crate::error::AgentError;
 use crate::registry::ToolRegistry;
+use crate::team::actor::{spawn, ActorRef};
+use crate::team::agent_actor::AgentActor;
+use crate::team::messages::TeamMessage;
+use crate::team::orchestrator_actor::OrchestratorActor;
 use limit_llm::LlmProvider;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, oneshot, RwLock};
 
 /// Configuration for creating a [`Team`].
 ///
@@ -65,7 +81,7 @@ pub struct TeamConfig {
     pub max_parallel_tasks: usize,
     /// Enable streaming output.
     pub enable_streaming: bool,
-    /// Per-role overrides (model, tool whitelist).
+    /// Per-role overrides (model, tool whitelist, max_tokens).
     pub roles: TeamRolesSection,
 }
 
@@ -93,6 +109,9 @@ impl TeamConfig {
 }
 
 /// A named team containing a PM, TL, and one or more Jr agents.
+///
+/// Agents are rebuilt per [`execute`](Team::execute) call from the stored
+/// provider and tools, ensuring a clean state each run.
 pub struct Team {
     /// Human-readable name for this team.
     pub name: String,
@@ -102,6 +121,10 @@ pub struct Team {
     pub tl: TeamAgent,
     /// Junior developer agents.
     pub jrs: Vec<TeamAgent>,
+    /// LLM provider (stored for rebuilding agents per execute call).
+    provider: Box<dyn LlmProvider>,
+    /// Tool registry (shared across all agents).
+    tools: Arc<ToolRegistry>,
     /// Shared event log.
     pub history: Arc<RwLock<TeamHistory>>,
     /// Configuration used when creating this team.
@@ -145,6 +168,8 @@ impl Team {
             pm,
             tl,
             jrs,
+            provider,
+            tools,
             history: Arc::new(RwLock::new(TeamHistory::new())),
             config,
         })
@@ -152,6 +177,7 @@ impl Team {
 
     /// Execute a user request through the full team workflow.
     ///
+    /// Spawns agent actors (PM, TL, Jrs), an orchestrator, and a supervisor.
     /// Returns a [`TeamResult`] containing the PM's delivery summary,
     /// wall-clock duration, and all recorded events.
     pub async fn execute(
@@ -159,16 +185,132 @@ impl Team {
         user_request: &str,
         progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
     ) -> Result<TeamResult, AgentError> {
-        execute_workflow(
-            &mut self.pm,
-            &mut self.tl,
-            &mut self.jrs,
-            user_request,
-            &self.history,
+        // Shared token counters across all agents
+        let token_input = Arc::new(AtomicU64::new(0));
+        let token_output = Arc::new(AtomicU64::new(0));
+
+        // 1. Build fresh agents from stored config
+        let pm_provider = self.provider.clone_box();
+        let tl_provider = self.provider.clone_box();
+        let jr_provider: Box<dyn LlmProvider> = match self.config.roles.jr.max_tokens {
+            Some(m) => self.provider.with_max_tokens(m),
+            None => self.provider.clone_box(),
+        };
+
+        let pm = TeamAgent::with_allowed_tools(
+            Role::PM,
+            pm_provider,
+            self.tools.clone(),
+            self.config.roles.pm.tools.clone(),
+        );
+        let tl = TeamAgent::with_allowed_tools(
+            Role::TL,
+            tl_provider,
+            self.tools.clone(),
+            self.config.roles.tl.tools.clone(),
+        );
+        let jrs: Vec<TeamAgent> = (0..self.config.num_juniors)
+            .map(|_| {
+                TeamAgent::with_allowed_tools(
+                    Role::Jr,
+                    jr_provider.clone_box(),
+                    self.tools.clone(),
+                    self.config.roles.jr.tools.clone(),
+                )
+            })
+            .collect();
+
+        // 2. Spawn agent actors
+        let pm_actor = AgentActor::new(
+            Role::PM,
+            pm,
+            self.history.clone(),
+            progress_tx.clone(),
+            token_input.clone(),
+            token_output.clone(),
+        );
+        let (pm_ref, pm_handle) = spawn(pm_actor, 32);
+
+        let tl_actor = AgentActor::new(
+            Role::TL,
+            tl,
+            self.history.clone(),
+            progress_tx.clone(),
+            token_input.clone(),
+            token_output.clone(),
+        );
+        let (tl_ref, tl_handle) = spawn(tl_actor, 32);
+
+        let mut jr_refs: Vec<ActorRef<TeamMessage>> = Vec::with_capacity(jrs.len());
+        let mut jr_handles: Vec<tokio::task::JoinHandle<()>> = Vec::with_capacity(jrs.len());
+        for jr in jrs {
+            let jr_actor = AgentActor::new(
+                Role::Jr,
+                jr,
+                self.history.clone(),
+                progress_tx.clone(),
+                token_input.clone(),
+                token_output.clone(),
+            );
+            let (jr_ref, jr_handle) = spawn(jr_actor, 32);
+            jr_refs.push(jr_ref);
+            jr_handles.push(jr_handle);
+        }
+
+        // 3. Create oneshot for final result
+        let (result_tx, result_rx) = oneshot::channel();
+
+        // 4. Spawn orchestrator
+        let orchestrator = OrchestratorActor::new(
+            pm_ref,
+            tl_ref,
+            jr_refs,
             self.config.max_parallel_tasks,
+            self.history.clone(),
             progress_tx,
-        )
-        .await
+            result_tx,
+            user_request.to_string(),
+        );
+
+        let orchestrator_handle = tokio::spawn(async move {
+            orchestrator.run_workflow().await;
+        });
+
+        // 5. Await the result
+        let result = result_rx.await.map_err(|_| {
+            // The orchestrator likely panicked. Try to extract the panic message.
+            use futures::future::FutureExt;
+            if let Some(Err(join_err)) = orchestrator_handle.now_or_never() {
+                if let Ok(panic_payload) = join_err.try_into_panic() {
+                    let msg: String = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic".to_string()
+                    };
+                    tracing::error!("[team] orchestrator PANICKED: {}", msg);
+                }
+            }
+            AgentError::ActorError("orchestrator dropped result channel".into())
+        })??;
+
+        // 6. Graceful shutdown — abort all actor tasks
+        // (orchestrator_handle was consumed by the error handler above,
+        //  but it has already completed by this point)
+        pm_handle.abort();
+        tl_handle.abort();
+        for h in jr_handles {
+            h.abort();
+        }
+
+        let mut result = result;
+
+        // Accumulate token counts from shared counters
+        result.tokens_input = token_input.load(std::sync::atomic::Ordering::Relaxed);
+        result.tokens_output = token_output.load(std::sync::atomic::Ordering::Relaxed);
+
+        Ok(result)
     }
 
     /// Read the team's event history.

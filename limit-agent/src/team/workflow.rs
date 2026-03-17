@@ -1,14 +1,15 @@
 //! Team workflow — the pipeline that coordinates PM → TL → Jr agents.
 //!
-//! This module defines the high-level [`TeamWorkflow`] enum that drives
-//! the team from request analysis through to delivery.
+//! This module defines the [`TeamResult`] and [`WorkflowPhase`] types
+//! and the legacy [`execute_workflow`] function (deprecated in favor
+//! of the actor-based system in [`crate::team::orchestrator_actor`]).
 
 use crate::error::AgentError;
 use crate::team::agent::TeamAgent;
 use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
+use crate::team::messages::{extract_modified_files, send_progress, truncate};
 use crate::team::orchestrator::{parse_tasks, Task, TaskResult};
 use crate::team::progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -19,9 +20,6 @@ use tokio::sync::{mpsc, RwLock};
 const MAX_HISTORY_PER_AGENT: usize = 50;
 /// Maximum tasks from TL breakdown. Prevents over-decomposition.
 const MAX_TASKS: usize = 10;
-
-/// Compiled regex for extracting file paths (lazy-initialized once).
-static FILE_PATH_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// Track retry statistics during workflow execution (thread-safe for parallel tasks).
 #[derive(Debug)]
@@ -62,6 +60,10 @@ pub struct TeamResult {
     pub total_tasks: usize,
     /// Files modified during execution (extracted from tool call results).
     pub files_modified: Vec<String>,
+    /// Total input tokens across all phases.
+    pub tokens_input: u64,
+    /// Total output tokens across all phases.
+    pub tokens_output: u64,
 }
 
 /// Named phases of the team workflow.
@@ -98,6 +100,9 @@ impl std::fmt::Display for WorkflowPhase {
 ///
 /// Returns a [`TeamResult`] with the solution, duration, events, and
 /// execution statistics (retries, failures).
+///
+/// **Deprecated**: Use the actor-based system via [`Team::execute`](super::Team::execute) instead.
+#[deprecated(note = "Use the actor-based Team::execute() instead")]
 pub async fn execute_workflow(
     pm: &mut TeamAgent,
     tl: &mut TeamAgent,
@@ -124,7 +129,8 @@ pub async fn execute_workflow(
         .prompt(&format!(
             "User request:\n{user_request}\n\nAnalyze this request and identify what needs to be done."
         ))
-        .await?;
+        .await?
+        .text;
     send_progress(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
@@ -149,7 +155,8 @@ pub async fn execute_workflow(
         .prompt(&format!(
             "PM analysis:\n{analysis}\n\nCreate a technical plan to implement this."
         ))
-        .await?;
+        .await?
+        .text;
     send_progress(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
@@ -177,7 +184,8 @@ pub async fn execute_workflow(
              completable by a junior developer. Combine small steps into single tasks. \
              Format each task on its own line as:\nTASK: <description>"
         ))
-        .await?;
+        .await?
+        .text;
     send_progress(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
@@ -227,7 +235,8 @@ pub async fn execute_workflow(
                 "The Tech Lead produced a plan but no specific tasks. Here is the plan:\n\n{plan}\n\n\
                  Summarize this for the user and suggest next steps."
             ))
-            .await?;
+            .await?
+            .text;
         log_event(history, "PM", "delivery", &delivery).await;
 
         send_progress(&progress_tx, TeamProgressEvent::Finished { success: true });
@@ -240,6 +249,8 @@ pub async fn execute_workflow(
             failed_tasks: 0,
             total_tasks: 0,
             files_modified: vec![],
+            tokens_input: 0,
+            tokens_output: 0,
         });
     }
 
@@ -318,7 +329,8 @@ pub async fn execute_workflow(
              Validate the implementation based on the task results above. \
              Do NOT use tools — just analyze the results and note any issues."
         ))
-        .await?;
+        .await?
+        .text;
     send_progress(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
@@ -353,7 +365,8 @@ pub async fn execute_workflow(
                 .collect::<Vec<_>>()
                 .join("\n")
         ))
-        .await?;
+        .await?
+        .text;
     send_progress(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
@@ -372,6 +385,8 @@ pub async fn execute_workflow(
         failed_tasks,
         total_tasks,
         files_modified,
+        tokens_input: 0,
+        tokens_output: 0,
     })
 }
 
@@ -395,21 +410,17 @@ async fn execute_tasks_parallel(
 
     use futures::stream::{self, StreamExt};
 
-    // We need to own the tasks for the async closure
     let owned_tasks: Vec<(String, String)> = tasks
         .iter()
         .map(|t| (t.id.clone(), t.description.clone()))
         .collect();
     let num_jrs = jrs.len();
 
-    // Clone the retry counter for use in async tasks
     let retry_counter = retry_tracker.clone_counter();
 
-    // Clone progress sender for use in async tasks
     let progress_tx = progress_tx.clone();
 
     // Wrap each Jr agent in its own Mutex to allow parallel execution.
-    // This avoids the single-mutex bottleneck that would serialize all tasks.
     let jrs: Vec<Arc<tokio::sync::Mutex<TeamAgent>>> = jrs
         .iter_mut()
         .map(|jr| {
@@ -449,7 +460,7 @@ async fn execute_tasks_parallel(
                 };
 
                 let task_result = match result {
-                    Ok(output) => {
+                    Ok(pr) => {
                         let success = true;
                         send_progress(
                             &progress_tx,
@@ -460,8 +471,9 @@ async fn execute_tasks_parallel(
                         );
                         TaskResult {
                             task_id,
-                            output,
+                            output: pr.text,
                             success,
+                            hit_tool_limit: pr.hit_tool_limit,
                         }
                     }
                     Err(e) => {
@@ -470,7 +482,6 @@ async fn execute_tasks_parallel(
                             jr_idx,
                             e
                         );
-                        // Track the retry
                         retry_counter.fetch_add(1, Ordering::Relaxed);
 
                         let retry_result = {
@@ -479,7 +490,7 @@ async fn execute_tasks_parallel(
                             jr_lock.prompt(&prompt_text).await
                         };
                         match retry_result {
-                            Ok(output) => {
+                            Ok(pr) => {
                                 send_progress(
                                     &progress_tx,
                                     TeamProgressEvent::TaskCompleted {
@@ -489,8 +500,9 @@ async fn execute_tasks_parallel(
                                 );
                                 TaskResult {
                                     task_id,
-                                    output,
+                                    output: pr.text,
                                     success: true,
+                                    hit_tool_limit: pr.hit_tool_limit,
                                 }
                             }
                             Err(retry_err) => {
@@ -513,6 +525,7 @@ async fn execute_tasks_parallel(
                                         retry_err
                                     ),
                                     success: false,
+                                    hit_tool_limit: false,
                                 }
                             }
                         }
@@ -527,24 +540,6 @@ async fn execute_tasks_parallel(
         .await;
 
     results
-}
-
-/// Extract file paths from Jr task outputs by looking for common
-/// file-path patterns in tool-call results.
-fn extract_modified_files(results: &[TaskResult]) -> Vec<String> {
-    let re = FILE_PATH_REGEX
-        .get_or_init(|| Regex::new(r#""path"\s*:\s*"([^"]+)""#).expect("invalid file path regex"));
-    let mut files = Vec::new();
-
-    for r in results {
-        for cap in re.captures_iter(&r.output) {
-            files.push(cap[1].to_string());
-        }
-    }
-
-    files.sort();
-    files.dedup();
-    files
 }
 
 /// Helper to record an event into shared history.
@@ -569,36 +564,6 @@ async fn log_phase(history: &Arc<RwLock<TeamHistory>>, phase: WorkflowPhase) {
         content: format!("entered phase: {}", phase),
         level: EventLevel::Info,
     });
-}
-
-/// Send a progress event to the TUI (non-blocking, ignores send errors).
-fn send_progress(tx: &Option<mpsc::UnboundedSender<TeamProgressEvent>>, event: TeamProgressEvent) {
-    if let Some(tx) = tx {
-        tracing::debug!(
-            "[team] sending progress event: {:?}",
-            std::mem::discriminant(&event)
-        );
-        let _ = tx.send(event);
-    }
-}
-
-/// Truncate a string to `max` bytes, breaking at the last newline or space within limit.
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        return s.to_string();
-    }
-    let mut end = s[..max]
-        .char_indices()
-        .last()
-        .map(|(i, _)| i)
-        .unwrap_or(max);
-    if let Some(nl) = s[..end].rfind('\n') {
-        end = nl;
-    } else if let Some(sp) = s[..end].rfind(' ') {
-        end = sp;
-    }
-    // Strip trailing whitespace at break point
-    format!("{}...", s[..end].trim_end())
 }
 
 #[cfg(test)]
@@ -635,10 +600,14 @@ mod tests {
             failed_tasks: 1,
             total_tasks: 5,
             files_modified: vec![],
+            tokens_input: 100,
+            tokens_output: 200,
         };
         assert_eq!(result.total_retries, 2);
         assert_eq!(result.failed_tasks, 1);
         assert_eq!(result.total_tasks, 5);
+        assert_eq!(result.tokens_input, 100);
+        assert_eq!(result.tokens_output, 200);
     }
 
     #[test]
@@ -651,6 +620,8 @@ mod tests {
             failed_tasks: 0,
             total_tasks: 0,
             files_modified: vec![],
+            tokens_input: 0,
+            tokens_output: 0,
         };
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: TeamResult = serde_json::from_str(&json).unwrap();
@@ -665,16 +636,19 @@ mod tests {
                 task_id: "1".into(),
                 output: r#"Created file: {"path": "src/main.rs"}"#.into(),
                 success: true,
+                hit_tool_limit: false,
             },
             TaskResult {
                 task_id: "2".into(),
                 output: r#"{"path": "src/lib.rs", "content": "..."}"#.into(),
                 success: true,
+                hit_tool_limit: false,
             },
             TaskResult {
                 task_id: "3".into(),
                 output: "No files modified".into(),
                 success: true,
+                hit_tool_limit: false,
             },
         ];
         let files = extract_modified_files(&results);
@@ -688,11 +662,13 @@ mod tests {
                 task_id: "1".into(),
                 output: r#"{"path": "src/main.rs"}"#.into(),
                 success: true,
+                hit_tool_limit: false,
             },
             TaskResult {
                 task_id: "2".into(),
                 output: r#"{"path": "src/main.rs"}"#.into(),
                 success: true,
+                hit_tool_limit: false,
             },
         ];
         let files = extract_modified_files(&results);

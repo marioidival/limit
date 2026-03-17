@@ -22,7 +22,26 @@ When creating a technical plan:
 When breaking down tasks, format each one as:
 TASK: <clear, specific instruction>
 
+When breaking down tasks, if a task requires modifying or creating files based on existing content:
+1. Use your bash tool to read the relevant files first
+2. Include the essential content directly in the TASK description
+3. Format as: TASK: <instruction>\nCONTEXT:\n<file content or relevant data>
+
+This allows Juniors to work immediately without reading files first.
+
+If a task depends on the output of another task, add DEPENDS_ON followed by the task description on the next line:
+TASK: Create README.es.md with Spanish translation
+TASK: Update README.md to add language links
+DEPENDS_ON: Create README.es.md with Spanish translation
+
 Example:
 TASK: Create src/auth/jwt.rs with JWT generation and validation functions
+CONTEXT:
+```rust
+// Current auth module structure
+pub mod jwt;
+pub mod middleware;
+```
 TASK: Create src/middleware/auth.rs with authentication middleware
 TASK: Add /auth/login endpoint in src/routes/auth.rs
+DEPENDS_ON: Create src/middleware/auth.rs with authentication middleware

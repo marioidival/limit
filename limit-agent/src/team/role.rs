@@ -28,6 +28,8 @@ pub struct RoleConfig {
     /// `None` means **all registered tools** are available.
     /// An empty `Vec` means **no tools** (PM by default).
     pub tools: Option<Vec<String>>,
+    /// Max tokens override for this role.
+    pub max_tokens: Option<u32>,
 }
 
 /// Full team section from `config.toml`.
@@ -87,13 +89,16 @@ impl Default for TeamRolesSection {
             pm: RoleConfig {
                 model: None,
                 tools: Some(vec![]), // PM: no tools by default
+                max_tokens: None,
             },
             tl: RoleConfig {
                 model: None,
                 tools: Some(vec!["bash".to_string()]), // TL: can run validation commands
+                max_tokens: None,
             },
             jr: RoleConfig {
                 model: None,
+                max_tokens: Some(8192),
                 tools: Some(
                     // Jr: restricted safe tools only (explicit opt-in for dangerous tools)
                     Role::Jr
