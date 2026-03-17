@@ -106,6 +106,7 @@ pub async fn execute_workflow(
     let start = Instant::now();
 
     // ── Phase 1: PM analysis ──────────────────────────────────────────
+    let _pm_span = tracing::info_span!("pm_analysis").entered();
     tracing::info!("[team] PM — analyzing request");
     log_phase(history, WorkflowPhase::PmAnalysis).await;
     let analysis = pm
@@ -114,8 +115,10 @@ pub async fn execute_workflow(
         ))
         .await?;
     log_event(history, "PM", "analysis", &analysis).await;
+    drop(_pm_span);
 
     // ── Phase 2: TL technical plan ────────────────────────────────────
+    let _tl_span = tracing::info_span!("tl_plan").entered();
     tracing::info!("[team] TL — creating technical plan");
     log_phase(history, WorkflowPhase::TlPlan).await;
     let plan = tl
@@ -124,8 +127,10 @@ pub async fn execute_workflow(
         ))
         .await?;
     log_event(history, "TL", "plan", &plan).await;
+    drop(_tl_span);
 
     // ── Phase 3: TL task breakdown ────────────────────────────────────
+    let _breakdown_span = tracing::info_span!("tl_breakdown").entered();
     tracing::info!("[team] TL — breaking down tasks");
     log_phase(history, WorkflowPhase::TlBreakdown).await;
     let tasks = tl
@@ -142,9 +147,11 @@ pub async fn execute_workflow(
         &format!("{} tasks parsed", tasks.len()),
     )
     .await;
+    drop(_breakdown_span);
 
     if tasks.is_empty() {
         tracing::warn!("[team] TL produced no parseable tasks — delivering plan as-is");
+        let _delivery_span = tracing::info_span!("pm_delivery_no_tasks").entered();
         let delivery = pm
             .prompt(&format!(
                 "The Tech Lead produced a plan but no specific tasks. Here is the plan:\n\n{plan}\n\n\
@@ -165,6 +172,7 @@ pub async fn execute_workflow(
     }
 
     // ── Phase 4: Jr parallel execution ────────────────────────────────
+    let _jr_span = tracing::info_span!("jr_execution", tasks = tasks.len()).entered();
     log_phase(history, WorkflowPhase::JrExecution).await;
     tracing::info!(
         "[team] Jr — executing {} tasks (max {max_parallel} parallel)",
@@ -197,9 +205,11 @@ pub async fn execute_workflow(
         .collect::<Vec<_>>()
         .join("\n");
     log_event(history, "Jr", "execution", &results_summary).await;
+    drop(_jr_span);
 
     log_phase(history, WorkflowPhase::TlValidation).await;
     // ── Phase 5: TL validation ────────────────────────────────────────
+    let _validation_span = tracing::info_span!("tl_validation").entered();
     tracing::info!("[team] TL — validating results");
     let validation = tl
         .prompt(&format!(
@@ -208,9 +218,11 @@ pub async fn execute_workflow(
         ))
         .await?;
     log_event(history, "TL", "validation", &validation).await;
+    drop(_validation_span);
 
     log_phase(history, WorkflowPhase::PmDelivery).await;
     // ── Phase 6: PM delivery ──────────────────────────────────────────
+    let _delivery_span = tracing::info_span!("pm_delivery").entered();
     tracing::info!("[team] PM — preparing delivery");
     let delivery = pm
         .prompt(&format!(
