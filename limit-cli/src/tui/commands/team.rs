@@ -12,8 +12,9 @@ use crate::error::CliError;
 use crate::tui::commands::registry::{Command, CommandContext, CommandResult};
 use limit_agent::team::{EventLevel, Team, TeamConfig, TeamSnapshot, TeamStore};
 use limit_tui::components::Message;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Stored team together with its configuration.
 struct TeamEntry {
@@ -54,13 +55,7 @@ impl TeamCommand {
 
     /// Load teams from disk into memory.
     fn load_from_store(&self, ctx: &mut CommandContext) {
-        let store = match self.store.lock() {
-            Ok(s) => s,
-            Err(_) => {
-                ctx.add_system_message("⚠️  Failed to access team store".to_string());
-                return;
-            }
-        };
+        let store = self.store.lock();
         let names = match store.list() {
             Ok(n) => n,
             Err(e) => {
@@ -69,13 +64,7 @@ impl TeamCommand {
             }
         };
 
-        let mut teams = match self.teams.lock() {
-            Ok(t) => t,
-            Err(poisoned) => {
-                tracing::warn!("Teams mutex was poisoned, recovering...");
-                poisoned.into_inner()
-            }
-        };
+        let mut teams = self.teams.lock();
         for name in &names {
             if teams.contains_key(name) {
                 continue; // already loaded
@@ -190,23 +179,19 @@ impl TeamCommand {
             roles: Default::default(),
         };
 
-        let mut teams = match self.teams.lock() {
-            Ok(t) => t,
-            Err(poisoned) => {
-                tracing::warn!("Teams mutex was poisoned, recovering...");
-                poisoned.into_inner()
-            }
-        };
+        let mut teams = self.teams.lock();
         if teams.contains_key(&name) {
             ctx.add_system_message(format!("⚠️  Team '{}' already exists", name));
         } else {
             let team = create_placeholder_team(&name, &config);
 
             // Persist to disk
-            if let Ok(store) = self.store.lock() {
-                if let Err(e) = store.save(&TeamSnapshot::new(&name, config.clone())) {
-                    tracing::warn!("Failed to persist team '{}': {}", name, e);
-                }
+            if let Err(e) = self
+                .store
+                .lock()
+                .save(&TeamSnapshot::new(&name, config.clone()))
+            {
+                tracing::warn!("Failed to persist team '{}': {}", name, e);
             }
 
             teams.insert(name.clone(), TeamEntry { team, config });
@@ -231,19 +216,11 @@ impl TeamCommand {
         }
 
         // Remove from disk
-        if let Ok(store) = self.store.lock() {
-            if let Err(e) = store.delete(name) {
-                tracing::warn!("Failed to delete team '{}' from disk: {}", name, e);
-            }
+        if let Err(e) = self.store.lock().delete(name) {
+            tracing::warn!("Failed to delete team '{}' from disk: {}", name, e);
         }
 
-        let mut teams = match self.teams.lock() {
-            Ok(t) => t,
-            Err(poisoned) => {
-                tracing::warn!("Teams mutex was poisoned, recovering...");
-                poisoned.into_inner()
-            }
-        };
+        let mut teams = self.teams.lock();
         if teams.remove(name).is_some() {
             ctx.add_system_message(format!("✅ Team '{}' deleted", name));
         } else {
@@ -257,13 +234,7 @@ impl TeamCommand {
         // Load persisted teams first
         self.load_from_store(ctx);
 
-        let teams = match self.teams.lock() {
-            Ok(t) => t,
-            Err(poisoned) => {
-                tracing::warn!("Teams mutex was poisoned, recovering...");
-                poisoned.into_inner()
-            }
-        };
+        let teams = self.teams.lock();
         if teams.is_empty() {
             ctx.add_system_message("No teams created yet. Use /team create --name <name>".into());
         } else {
@@ -288,13 +259,7 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let teams = match self.teams.lock() {
-            Ok(t) => t,
-            Err(poisoned) => {
-                tracing::warn!("Teams mutex was poisoned, recovering...");
-                poisoned.into_inner()
-            }
-        };
+        let teams = self.teams.lock();
         match teams.get(name) {
             Some(entry) => {
                 ctx.add_system_message(format!(
@@ -371,10 +336,7 @@ impl TeamCommand {
 
         // Validate team exists before spawning background work
         {
-            let teams = match self.teams.lock() {
-                Ok(t) => t,
-                Err(poisoned) => poisoned.into_inner(),
-            };
+            let teams = self.teams.lock();
             if !teams.contains_key(&name_clone) {
                 ctx.add_system_message(format!("⚠️  Team '{}' not found", name_clone));
                 return Ok(CommandResult::Continue);
@@ -463,9 +425,7 @@ impl TeamCommand {
                                 // Update the execution history for this team
                                 // Clone history before acquiring the lock to avoid holding it across await
                                 let history_clone = (*team.history.read().await).clone();
-                                if let Ok(mut histories) = execution_histories.lock() {
-                                    histories.insert(name_clone.clone(), history_clone);
-                                }
+                                execution_histories.lock().insert(name_clone.clone(), history_clone);
 
                                 let mut summary = format!(
                                     "✅ Team '{}' completed in {:.1}s",
@@ -561,13 +521,7 @@ impl TeamCommand {
 
         // Read from execution_histories (populated after team runs)
         let events_result = {
-            let histories = match self.execution_histories.lock() {
-                Ok(h) => h,
-                Err(poisoned) => {
-                    tracing::warn!("Execution histories mutex was poisoned, recovering...");
-                    poisoned.into_inner()
-                }
-            };
+            let histories = self.execution_histories.lock();
             histories.get(name).map(|history| history.events().to_vec())
         };
 
