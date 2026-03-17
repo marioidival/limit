@@ -8,6 +8,8 @@ pub mod diff;
 pub mod file_autocomplete;
 pub mod progress;
 pub mod prompt;
+pub mod team_progress;
+pub mod team_progress_types;
 
 pub use activity::ActivityFeed;
 pub use chat::{ChatView, Message, Role};
