@@ -17,6 +17,83 @@ const MAX_RETRIES: usize = 3;
 /// Base delay between retries (doubles on each attempt: 1s, 2s, 4s).
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 
+/// Accumulates tool-call deltas from streaming responses.
+///
+/// Tool calls arrive as deltas with id, name, and arguments fragments.
+/// This accumulator tracks the current tool being accumulated and
+/// returns completed tool calls when a new tool starts or on flush.
+#[derive(Default)]
+struct ToolCallAccumulator {
+    current_tool_id: String,
+    current_tool_name: String,
+    current_tool_args: String,
+}
+
+impl ToolCallAccumulator {
+    /// Process a tool-call delta and return a completed ToolCall if a new tool started.
+    ///
+    /// Returns `Some(ToolCall)` when a new tool id is received (meaning the previous
+    /// tool is complete), or `None` if still accumulating the current tool.
+    fn process_delta(
+        &mut self,
+        id: String,
+        name: String,
+        arguments: Value,
+    ) -> Option<limit_llm::ToolCall> {
+        // Flush previous tool call if starting a new one
+        let completed = if id != self.current_tool_id && !self.current_tool_id.is_empty() {
+            Some(limit_llm::ToolCall {
+                id: std::mem::take(&mut self.current_tool_id),
+                tool_type: "function".to_string(),
+                function: limit_llm::FunctionCall {
+                    name: std::mem::take(&mut self.current_tool_name),
+                    arguments: std::mem::take(&mut self.current_tool_args),
+                },
+            })
+        } else {
+            None
+        };
+
+        self.current_tool_id = id;
+        self.current_tool_name = name;
+
+        // Accumulate arguments from all deltas (handles both Object and String fragments)
+        match &arguments {
+            Value::Object(_) | Value::Array(_) | Value::Bool(_) | Value::Number(_) => {
+                // Structured value - serialize it
+                self.current_tool_args = serde_json::to_string(&arguments).unwrap_or_default();
+            }
+            Value::String(s) => {
+                // String fragment - append it
+                self.current_tool_args.push_str(s);
+            }
+            Value::Null => {
+                // Null - ignore
+            }
+        }
+
+        completed
+    }
+
+    /// Flush the current tool call if any remains.
+    ///
+    /// Call this after the stream ends to get the final tool call.
+    fn flush(&mut self) -> Option<limit_llm::ToolCall> {
+        if self.current_tool_id.is_empty() {
+            None
+        } else {
+            Some(limit_llm::ToolCall {
+                id: std::mem::take(&mut self.current_tool_id),
+                tool_type: "function".to_string(),
+                function: limit_llm::FunctionCall {
+                    name: std::mem::take(&mut self.current_tool_name),
+                    arguments: std::mem::take(&mut self.current_tool_args),
+                },
+            })
+        }
+    }
+}
+
 /// A specialized agent that acts as a single member of a team.
 pub struct TeamAgent {
     role: Role,
@@ -274,9 +351,7 @@ impl TeamAgent {
 
         let mut content = String::new();
         let mut tool_calls: Vec<limit_llm::ToolCall> = Vec::new();
-        let mut current_tool_id = String::new();
-        let mut current_tool_name = String::new();
-        let mut current_tool_args = String::new();
+        let mut accumulator = ToolCallAccumulator::default();
 
         while let Some(chunk) = stream.next().await {
             match chunk {
@@ -288,33 +363,8 @@ impl TeamAgent {
                     name,
                     arguments,
                 }) => {
-                    // Flush previous tool call if starting a new one
-                    if id != current_tool_id && !current_tool_id.is_empty() {
-                        tool_calls.push(limit_llm::ToolCall {
-                            id: current_tool_id.clone(),
-                            tool_type: "function".to_string(),
-                            function: limit_llm::FunctionCall {
-                                name: current_tool_name.clone(),
-                                arguments: current_tool_args.clone(),
-                            },
-                        });
-                    }
-                    current_tool_id = id;
-                    current_tool_name = name;
-                    // Accumulate arguments from all deltas (handles both Object and String fragments)
-                    match &arguments {
-                        Value::Object(_) | Value::Array(_) | Value::Bool(_) | Value::Number(_) => {
-                            // Structured value - serialize it
-                            current_tool_args =
-                                serde_json::to_string(&arguments).unwrap_or_default();
-                        }
-                        Value::String(s) => {
-                            // String fragment - append it
-                            current_tool_args.push_str(s);
-                        }
-                        Value::Null => {
-                            // Null - ignore
-                        }
+                    if let Some(completed) = accumulator.process_delta(id, name, arguments) {
+                        tool_calls.push(completed);
                     }
                 }
                 Ok(limit_llm::ProviderResponseChunk::Done(_)) => {
@@ -330,15 +380,8 @@ impl TeamAgent {
         drop(stream);
 
         // Flush last tool call if any
-        if !current_tool_id.is_empty() {
-            tool_calls.push(limit_llm::ToolCall {
-                id: current_tool_id.clone(),
-                tool_type: "function".to_string(),
-                function: limit_llm::FunctionCall {
-                    name: current_tool_name.clone(),
-                    arguments: current_tool_args.clone(),
-                },
-            });
+        if let Some(completed) = accumulator.flush() {
+            tool_calls.push(completed);
         }
 
         // Store assistant message
@@ -457,9 +500,7 @@ impl TeamAgent {
 
                 let mut content = String::new();
                 let mut tool_calls: Vec<limit_llm::ToolCall> = Vec::new();
-                let mut current_tool_id = String::new();
-                let mut current_tool_name = String::new();
-                let mut current_tool_args = String::new();
+                let mut accumulator = ToolCallAccumulator::default();
 
                 while let Some(chunk) = stream.next().await {
                     match chunk {
@@ -472,31 +513,8 @@ impl TeamAgent {
                             name,
                             arguments,
                         }) => {
-                            if id != current_tool_id && !current_tool_id.is_empty() {
-                                tool_calls.push(limit_llm::ToolCall {
-                                    id: current_tool_id.clone(),
-                                    tool_type: "function".to_string(),
-                                    function: limit_llm::FunctionCall {
-                                        name: current_tool_name.clone(),
-                                        arguments: current_tool_args.clone(),
-                                    },
-                                });
-                            }
-                            current_tool_id = id;
-                            current_tool_name = name;
-                            // Accumulate arguments from all deltas (handles both Object and String fragments)
-                            match &arguments {
-                                Value::Object(_) | Value::Array(_) | Value::Bool(_) | Value::Number(_) => {
-                                    // Structured value - serialize it
-                                    current_tool_args = serde_json::to_string(&arguments).unwrap_or_default();
-                                }
-                                Value::String(s) => {
-                                    // String fragment - append it
-                                    current_tool_args.push_str(s);
-                                }
-                                Value::Null => {
-                                    // Null - ignore
-                                }
+                            if let Some(completed) = accumulator.process_delta(id, name, arguments) {
+                                tool_calls.push(completed);
                             }
                         }
                         Ok(ProviderResponseChunk::Done(_)) => break,
@@ -509,15 +527,9 @@ impl TeamAgent {
                 }
                 drop(stream);
 
-                if !current_tool_id.is_empty() {
-                    tool_calls.push(limit_llm::ToolCall {
-                        id: current_tool_id,
-                        tool_type: "function".to_string(),
-                        function: limit_llm::FunctionCall {
-                            name: current_tool_name,
-                            arguments: current_tool_args,
-                        },
-                    });
+                // Flush last tool call if any
+                if let Some(completed) = accumulator.flush() {
+                    tool_calls.push(completed);
                 }
 
                 // Store assistant message
@@ -679,5 +691,87 @@ mod tests {
     fn test_retry_constants() {
         const _: () = assert!(MAX_RETRIES >= 2);
         const _: () = assert!(!RETRY_BASE_DELAY.is_zero());
+    }
+
+    #[test]
+    fn test_tool_call_accumulator_single_tool() {
+        let mut acc = ToolCallAccumulator::default();
+
+        // No completed tool yet
+        assert!(acc
+            .process_delta(
+                "id1".into(),
+                "test_tool".into(),
+                Value::String("arg".into())
+            )
+            .is_none());
+
+        // Flush returns the completed tool
+        let tool = acc.flush();
+        assert!(tool.is_some());
+        let tool = tool.unwrap();
+        assert_eq!(tool.id, "id1");
+        assert_eq!(tool.function.name, "test_tool");
+        assert_eq!(tool.function.arguments, "arg");
+    }
+
+    #[test]
+    fn test_tool_call_accumulator_multiple_tools() {
+        let mut acc = ToolCallAccumulator::default();
+
+        // First tool delta
+        assert!(acc
+            .process_delta("id1".into(), "tool1".into(), Value::String("arg1".into()))
+            .is_none());
+
+        // Second tool delta completes first tool
+        let completed =
+            acc.process_delta("id2".into(), "tool2".into(), Value::String("arg2".into()));
+        assert!(completed.is_some());
+        let tool1 = completed.unwrap();
+        assert_eq!(tool1.id, "id1");
+        assert_eq!(tool1.function.name, "tool1");
+        assert_eq!(tool1.function.arguments, "arg1");
+
+        // Flush returns second tool
+        let tool2 = acc.flush();
+        assert!(tool2.is_some());
+        let tool2 = tool2.unwrap();
+        assert_eq!(tool2.id, "id2");
+        assert_eq!(tool2.function.name, "tool2");
+        assert_eq!(tool2.function.arguments, "arg2");
+    }
+
+    #[test]
+    fn test_tool_call_accumulator_structured_args() {
+        let mut acc = ToolCallAccumulator::default();
+
+        // Structured argument (object)
+        acc.process_delta(
+            "id1".into(),
+            "tool1".into(),
+            serde_json::json!({"key": "value"}),
+        );
+
+        let tool = acc.flush().unwrap();
+        assert_eq!(tool.function.arguments, r#"{"key":"value"}"#);
+    }
+
+    #[test]
+    fn test_tool_call_accumulator_string_fragments() {
+        let mut acc = ToolCallAccumulator::default();
+
+        // Multiple string fragments accumulate
+        acc.process_delta("id1".into(), "tool1".into(), Value::String("part1".into()));
+        acc.process_delta("id1".into(), "tool1".into(), Value::String("part2".into()));
+
+        let tool = acc.flush().unwrap();
+        assert_eq!(tool.function.arguments, "part1part2");
+    }
+
+    #[test]
+    fn test_tool_call_accumulator_flush_empty() {
+        let mut acc = ToolCallAccumulator::default();
+        assert!(acc.flush().is_none());
     }
 }
