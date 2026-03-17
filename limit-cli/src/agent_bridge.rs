@@ -670,7 +670,7 @@ impl AgentBridge {
     }
 
     /// Get the schema (description and parameters) for a tool
-    fn get_tool_schema(name: &str) -> (String, serde_json::Value) {
+    pub fn get_tool_schema(name: &str) -> (String, serde_json::Value) {
         match name {
             "file_read" => (
                 "Read the contents of a file".to_string(),

@@ -15,6 +15,7 @@ use limit_tui::components::Message;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 /// Stored team together with its configuration.
 struct TeamEntry {
@@ -328,8 +329,13 @@ impl TeamCommand {
 
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
+        // Create progress channel and set receiver for TUI rendering
+        let (progress_tx, progress_rx) = mpsc::unbounded_channel();
+        *ctx.team_progress_rx.lock() = Some(progress_rx);
+
         // Prepare cloned values for the background thread
         let chat_view = ctx.chat_view.clone();
+        let messages = ctx.messages.clone();
         let name_clone = team_name;
         let task_clone = task;
         let execution_histories = Arc::clone(&self.execution_histories);
@@ -350,19 +356,19 @@ impl TeamCommand {
         // 1. The TUI event loop is synchronous
         // 2. We need async execution without blocking the UI
         // 3. Team execution is infrequent and long-running, so overhead is acceptable
+        let name_for_monitor = name_clone.clone();
         let spawn_result = std::thread::Builder::new()
             .name(format!("team-{}-executor", name_clone))
             .spawn(move || {
                 let rt = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(e) => {
-                        chat_view
-                            .lock()
-                            .unwrap()
-                            .add_message(Message::system(format!(
+                        if let Ok(mut cv) = chat_view.lock() {
+                            cv.add_message(Message::system(format!(
                                 "❌ Failed to create runtime: {}",
                                 e
                             )));
+                        }
                         return;
                     }
                 };
@@ -377,14 +383,13 @@ impl TeamCommand {
                 let real_provider: Box<dyn limit_llm::LlmProvider> = match provider {
                     Ok(p) => p,
                     Err(e) => {
-                        chat_view
-                            .lock()
-                            .unwrap()
-                            .add_message(Message::system(format!(
+                        if let Ok(mut cv) = chat_view.lock() {
+                            cv.add_message(Message::system(format!(
                                 "⚠️  Failed to create LLM provider: {}\n\
                              Please check your config in ~/.limit/config.toml",
                                 e
                             )));
+                        }
                         return;
                     }
                 };
@@ -406,24 +411,11 @@ impl TeamCommand {
 
                 match new_team {
                     Ok(mut team) => {
-                        let result = team.execute(&task_clone).await;
+                        let result = team.execute(&task_clone, Some(progress_tx)).await;
 
                         match result {
                             Ok(result) => {
-                                // Report phase-by-phase progress
-                                let phase_events: Vec<_> = result.events.iter()
-                                    .filter(|e| e.role == "system" && e.action.starts_with("phase:"))
-                                    .collect();
-
-                                for evt in &phase_events {
-                                    let phase_name = evt.action.trim_start_matches("phase:");
-                                    chat_view.lock().unwrap().add_message(
-                                        Message::system(format!("🔄 {}", phase_name))
-                                    );
-                                }
-
                                 // Update the execution history for this team
-                                // Clone history before acquiring the lock to avoid holding it across await
                                 let history_clone = (*team.history.read().await).clone();
                                 execution_histories.lock().insert(name_clone.clone(), history_clone);
 
@@ -462,7 +454,23 @@ impl TeamCommand {
 
                                 summary.push_str(&format!("\n\n{}", result.solution));
 
-                                chat_view.lock().unwrap().add_message(Message::system(summary));
+                                if let Ok(mut cv) = chat_view.lock() {
+                                    cv.add_message(Message::system(summary.clone()));
+                                }
+
+                                // Also add to conversation history so the single-agent
+                                // has context about what the team did.
+                                if let Ok(mut msgs) = messages.lock() {
+                                    msgs.push(limit_llm::Message {
+                                        role: limit_llm::Role::System,
+                                        content: Some(format!(
+                                            "[Team '{}' completed]\n{}",
+                                            name_clone, summary
+                                        )),
+                                        tool_calls: None,
+                                        tool_call_id: None,
+                                    });
+                                }
                             }
                             Err(e) => {
                                 let err_msg = format!("{}", e);
@@ -478,32 +486,53 @@ impl TeamCommand {
                                     ""
                                 };
 
-                                chat_view
-                                    .lock()
-                                    .unwrap()
-                                    .add_message(Message::system(format!(
+                                if let Ok(mut cv) = chat_view.lock() {
+                                    cv.add_message(Message::system(format!(
                                         "❌ Team execution failed: {}{}",
                                         err_msg, hint
                                     )));
+                                }
                             }
                         }
                     }
                     Err(e) => {
-                        chat_view
-                            .lock()
-                            .unwrap()
-                            .add_message(Message::system(format!(
+                        if let Ok(mut cv) = chat_view.lock() {
+                            cv.add_message(Message::system(format!(
                                 "❌ Failed to create team: {}. Check your config in ~/.limit/config.toml",
                                 e
                             )));
+                        }
                     }
                 }
                 });
             });
 
-        if let Err(e) = spawn_result {
+        let handle = spawn_result.map_err(|e| {
             tracing::error!("Failed to spawn team executor thread: {}", e);
-            return Err(CliError::IoError(std::io::Error::other(e)));
+            CliError::IoError(std::io::Error::other(e))
+        })?;
+
+        // Spawn a panic monitor so thread crashes are reported to the user
+        // instead of being silently swallowed (the old code dropped the JoinHandle).
+        {
+            let monitor_chat = ctx.chat_view.clone();
+            let monitor_name = name_for_monitor;
+            let _ = std::thread::Builder::new()
+                .name(format!("team-{}-panic-monitor", monitor_name))
+                .spawn(move || {
+                    if let Err(panic_payload) = handle.join() {
+                        let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                            format!("❌ Team '{}' crashed: {}", monitor_name, s)
+                        } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                            format!("❌ Team '{}' crashed: {}", monitor_name, s)
+                        } else {
+                            format!("❌ Team '{}' thread panicked", monitor_name)
+                        };
+                        if let Ok(mut cv) = monitor_chat.lock() {
+                            cv.add_message(Message::system(msg));
+                        }
+                    }
+                });
         }
 
         Ok(CommandResult::Continue)
@@ -636,6 +665,7 @@ fn create_placeholder_team(name: &str, config: &TeamConfig) -> Team {
 
 /// Build a [`ToolRegistry`] with the same tools that the main agent uses.
 fn build_tool_registry() -> limit_agent::ToolRegistry {
+    use crate::agent_bridge::AgentBridge;
     use crate::tools::{
         AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool, GitCloneTool,
         GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool, GrepTool,
@@ -670,6 +700,14 @@ fn build_tool_registry() -> limit_agent::ToolRegistry {
     // Web tools
     let _ = registry.register(WebSearchTool::new());
     let _ = registry.register(WebFetchTool::new());
+
+    // Set proper LLM schemas so agents can generate correct tool-call arguments.
+    // Without these, tools get a generic `{"type": "object"}` schema and the LLM
+    // cannot determine the required parameters.
+    for name in registry.list() {
+        let (desc, params) = AgentBridge::get_tool_schema(&name);
+        registry.set_schema(&name, desc, params);
+    }
 
     registry
 }

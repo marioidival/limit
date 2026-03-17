@@ -5,9 +5,12 @@
 use crate::error::CliError;
 use crate::session::SessionManager;
 use crate::tui::TuiState;
+use limit_agent::team::TeamProgressEvent;
 use limit_tui::components::{ChatView, Message};
+use parking_lot::Mutex as ParkingMutex;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
 
 /// Result of executing a command
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +49,8 @@ pub struct CommandContext {
     pub total_output_tokens: Arc<Mutex<u64>>,
     /// Clipboard manager (optional)
     pub clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
+    /// Holder for team progress event receiver (shared with main loop)
+    pub team_progress_rx: Arc<ParkingMutex<Option<mpsc::UnboundedReceiver<TeamProgressEvent>>>>,
 }
 
 impl CommandContext {
@@ -60,6 +65,7 @@ impl CommandContext {
         total_input_tokens: Arc<Mutex<u64>>,
         total_output_tokens: Arc<Mutex<u64>>,
         clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
+        team_progress_rx: Arc<ParkingMutex<Option<mpsc::UnboundedReceiver<TeamProgressEvent>>>>,
     ) -> Self {
         Self {
             chat_view,
@@ -70,6 +76,7 @@ impl CommandContext {
             total_input_tokens,
             total_output_tokens,
             clipboard,
+            team_progress_rx,
         }
     }
 

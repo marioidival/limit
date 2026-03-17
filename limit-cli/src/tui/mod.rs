@@ -59,6 +59,7 @@ pub mod autocomplete;
 pub mod bridge;
 pub mod commands;
 pub mod input;
+pub mod team_progress;
 pub mod ui;
 
 // Re-export public API

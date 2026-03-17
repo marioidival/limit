@@ -7,6 +7,7 @@ use crate::error::CliError;
 use crate::tui::autocomplete::FileAutocompleteManager;
 use crate::tui::bridge::TuiBridge;
 use crate::tui::input::{InputEditor, InputHandler};
+use crate::tui::team_progress;
 use crate::tui::ui::UiRenderer;
 use crate::tui::TuiState;
 use crossterm::event::{
@@ -15,11 +16,14 @@ use crossterm::event::{
 };
 use crossterm::execute;
 use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use limit_agent::team::TeamProgressEvent;
 use limit_tui::components::Message;
+use parking_lot::Mutex as ParkingMutex;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 pub struct TuiApp {
     tui_bridge: TuiBridge,
@@ -43,6 +47,8 @@ pub struct TuiApp {
     input_handler: InputHandler,
     /// Command registry for handling /commands
     command_registry: crate::tui::commands::CommandRegistry,
+    /// Shared holder for team progress event receiver
+    team_progress_rx: Arc<ParkingMutex<Option<mpsc::UnboundedReceiver<TeamProgressEvent>>>>,
 }
 
 impl TuiApp {
@@ -99,6 +105,7 @@ impl TuiApp {
             cancellation_token: None,
             input_handler: InputHandler::new(),
             command_registry,
+            team_progress_rx: Arc::new(ParkingMutex::new(None)),
         })
     }
 
@@ -138,6 +145,12 @@ impl TuiApp {
         while self.running {
             // Process events from the agent
             self.tui_bridge.process_events()?;
+
+            // Drain team progress events
+            team_progress::drain_progress_events(
+                &self.team_progress_rx,
+                &self.tui_bridge.team_progress(),
+            );
 
             // Update spinner if in thinking state
             if matches!(self.tui_bridge.state(), TuiState::Thinking) {
@@ -757,6 +770,7 @@ impl TuiApp {
                 self.tui_bridge.total_input_tokens_arc(),
                 self.tui_bridge.total_output_tokens_arc(),
                 self.clipboard.clone(),
+                self.team_progress_rx.clone(),
             );
 
             // Execute command via registry
@@ -1040,6 +1054,7 @@ impl TuiApp {
         let cursor_blink_state = self.input_handler.cursor_blink_state();
         let tui_bridge = &self.tui_bridge;
         let file_autocomplete = self.autocomplete_manager.to_legacy_state();
+        let team_progress_snapshot = self.tui_bridge.team_progress().snapshot().to_tui_snapshot();
 
         self.terminal
             .draw(|f| {
@@ -1054,6 +1069,7 @@ impl TuiApp {
                     cursor_blink_state,
                     tui_bridge,
                     &file_autocomplete,
+                    &team_progress_snapshot,
                 );
             })
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
