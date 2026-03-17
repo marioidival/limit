@@ -66,7 +66,8 @@ pub fn render_team_progress(frame: &mut Frame, area: Rect, snapshot: &TaskProgre
         }
     }
 
-    let panel_height = lines.len().min(area.height as usize);
+    let total_needed = lines.len() + 2; // +2 for Borders::ALL
+    let panel_height = total_needed.min(area.height as usize);
     if panel_height == 0 {
         return;
     }

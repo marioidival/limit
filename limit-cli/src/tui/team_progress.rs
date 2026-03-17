@@ -3,7 +3,9 @@
 //! Consumes [`TeamProgressEvent`]s from the async workflow and exposes
 //! an immutable snapshot for the synchronous render loop.
 
-use limit_agent::team::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent, WorkflowPhase};
+use limit_agent::team::{
+    TaskProgressInfo, TaskProgressStatus, TeamProgressEvent, WorkflowPhase, PHASE_COUNT,
+};
 use parking_lot::Mutex;
 use std::time::Instant;
 use tokio::sync::mpsc;
@@ -74,9 +76,7 @@ impl TeamProgressState {
             TeamProgressEvent::Finished { success } => {
                 state.finished = true;
                 state.success = success;
-                // Don't force phases_completed to PHASE_COUNT — the last
-                // PhaseChanged(PmDelivery) already set it to 5. Forcing to 6
-                // is misleading when fewer tasks were actually executed.
+                state.phases_completed = PHASE_COUNT;
             }
             TeamProgressEvent::StatusUpdate { message } => {
                 state.status_text = message;
