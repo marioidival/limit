@@ -22,7 +22,7 @@ pub struct TeamAgent {
     role: Role,
     provider: Box<dyn LlmProvider>,
     registry: Arc<ToolRegistry>,
-    history: Vec<Message>,
+    history: Arc<Vec<Message>>,
 }
 
 impl TeamAgent {
@@ -76,7 +76,7 @@ impl TeamAgent {
             role: Role::Jr,
             provider: Box::new(NoopProvider),
             registry: Arc::new(ToolRegistry::new()),
-            history: vec![system_msg],
+            history: Arc::new(vec![system_msg]),
         }
     }
 
@@ -121,7 +121,7 @@ impl TeamAgent {
             role,
             provider,
             registry,
-            history: vec![system_msg],
+            history: Arc::new(vec![system_msg]),
         }
     }
 
@@ -135,6 +135,28 @@ impl TeamAgent {
         &self.history
     }
 
+    /// Push a message to history using copy-on-write.
+    fn push_message(&mut self, msg: Message) {
+        let mut hist = (*self.history).clone();
+        hist.push(msg);
+        self.history = Arc::new(hist);
+    }
+
+    /// Pop the last message from history using copy-on-write.
+    fn pop_message(&mut self) -> Option<Message> {
+        let mut hist = (*self.history).clone();
+        let msg = hist.pop();
+        self.history = Arc::new(hist);
+        msg
+    }
+
+    /// Helper to push to Arc<Vec<Message>> using copy-on-write.
+    fn push_to_history(history: &mut Arc<Vec<Message>>, msg: Message) {
+        let mut hist = (**history).clone();
+        hist.push(msg);
+        *history = Arc::new(hist);
+    }
+
     /// Reset conversation to just the system prompt.
     pub fn clear_history(&mut self) {
         let system_msg = Message {
@@ -143,7 +165,7 @@ impl TeamAgent {
             tool_calls: None,
             tool_call_id: None,
         };
-        self.history = vec![system_msg];
+        self.history = Arc::new(vec![system_msg]);
     }
 
     /// Trim conversation history to prevent unbounded growth.
@@ -163,7 +185,7 @@ impl TeamAgent {
             let start = self.history.len().saturating_sub(max_messages);
             let mut new_history = vec![system];
             new_history.extend(self.history[start..].to_vec());
-            self.history = new_history;
+            self.history = Arc::new(new_history);
         }
     }
 
@@ -175,7 +197,7 @@ impl TeamAgent {
     /// Transient LLM errors are retried up to [`MAX_RETRIES`] times with
     /// exponential backoff.
     pub async fn prompt(&mut self, user_input: &str) -> Result<String, AgentError> {
-        self.history.push(Message {
+        self.push_message(Message {
             role: LlmRole::User,
             content: Some(user_input.to_string()),
             tool_calls: None,
@@ -229,7 +251,7 @@ impl TeamAgent {
                         .last()
                         .is_some_and(|m| m.role == LlmRole::Assistant)
                     {
-                        self.history.pop();
+                        self.pop_message();
                     }
                     tokio::time::sleep(delay).await;
                     continue;
@@ -246,7 +268,7 @@ impl TeamAgent {
     ) -> Result<String, AgentError> {
         let mut stream = self
             .provider
-            .send(self.history.clone(), tools)
+            .send((*self.history).clone(), tools)
             .await
             .map_err(|e| AgentError::ToolError(format!("LLM error: {}", e)))?;
 
@@ -320,7 +342,7 @@ impl TeamAgent {
         }
 
         // Store assistant message
-        self.history.push(Message {
+        self.push_message(Message {
             role: LlmRole::Assistant,
             content: if content.is_empty() && !tool_calls.is_empty() {
                 None
@@ -352,7 +374,7 @@ impl TeamAgent {
                 Err(e) => format!("Error: {}", e),
             };
 
-            self.history.push(Message {
+            self.push_message(Message {
                 role: LlmRole::Tool,
                 content: Some(result_content),
                 tool_calls: None,
@@ -402,7 +424,7 @@ impl TeamAgent {
         user_input: &'a str,
     ) -> impl futures::Stream<Item = Result<String, AgentError>> + 'a {
         async_stream::stream! {
-            self.history.push(Message {
+            Self::push_to_history(&mut self.history, Message {
                 role: LlmRole::User,
                 content: Some(user_input.to_string()),
                 tool_calls: None,
@@ -413,7 +435,7 @@ impl TeamAgent {
 
             let mut attempt = 0;
             loop {
-                let stream_result = self.provider.send(self.history.clone(), tools.clone()).await;
+                let stream_result = self.provider.send((*self.history).clone(), tools.clone()).await;
 
                 let mut stream = match stream_result {
                     Ok(s) => s,
@@ -500,7 +522,7 @@ impl TeamAgent {
 
                 // Store assistant message
                 let tool_calls_clone = tool_calls.clone();
-                self.history.push(Message {
+                Self::push_to_history(&mut self.history, Message {
                     role: LlmRole::Assistant,
                     content: if content.is_empty() && !tool_calls_clone.is_empty() {
                         None
@@ -529,7 +551,7 @@ impl TeamAgent {
                             Err(e) => format!("Error: {}", e),
                         };
 
-                        self.history.push(Message {
+                        Self::push_to_history(&mut self.history, Message {
                             role: LlmRole::Tool,
                             content: Some(result_content),
                             tool_calls: None,
