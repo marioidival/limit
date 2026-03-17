@@ -198,10 +198,8 @@ impl TeamAgent {
                         .unwrap_or(false);
 
                     if has_tool_calls {
-                        if let Some(tool_calls) = self
-                            .history
-                            .last()
-                            .and_then(|msg| msg.tool_calls.clone())
+                        if let Some(tool_calls) =
+                            self.history.last().and_then(|msg| msg.tool_calls.clone())
                         {
                             return self.handle_tool_calls(&tool_calls).await;
                         }

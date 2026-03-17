@@ -98,7 +98,6 @@ impl Default for TeamRolesSection {
                     // Jr: restricted safe tools only (explicit opt-in for dangerous tools)
                     Role::Jr
                         .default_tools()
-                        .expect("Jr default_tools should return Some")
                         .into_iter()
                         .map(|s| s.to_string())
                         .collect(),
@@ -169,13 +168,12 @@ impl Role {
 
     /// Default tool whitelist for this role when no config is provided.
     ///
-    /// Returns `Some(tools)` to restrict, `None` for all tools, `Some([])`
-    /// for no tools.
-    pub fn default_tools(&self) -> Option<Vec<&'static str>> {
+    /// Returns a vector of tool names. Empty vector means no tools.
+    pub fn default_tools(&self) -> Vec<&'static str> {
         match self {
-            Role::PM => Some(vec![]),
-            Role::TL => Some(vec!["bash"]),
-            Role::Jr => Some(vec!["file_read", "file_write", "file_edit", "bash"]),
+            Role::PM => vec![],
+            Role::TL => vec!["bash"],
+            Role::Jr => vec!["file_read", "file_write", "file_edit", "bash"],
         }
     }
 
@@ -328,11 +326,11 @@ tools = ["file_read", "file_write", "bash"]
 
     #[test]
     fn test_role_default_tools() {
-        assert_eq!(Role::PM.default_tools(), Some(vec![] as Vec<&str>));
-        assert_eq!(Role::TL.default_tools(), Some(vec!["bash"]));
+        assert!(Role::PM.default_tools().is_empty());
+        assert_eq!(Role::TL.default_tools(), vec!["bash"]);
         assert_eq!(
             Role::Jr.default_tools(),
-            Some(vec!["file_read", "file_write", "file_edit", "bash"])
+            vec!["file_read", "file_write", "file_edit", "bash"]
         );
     }
 }
