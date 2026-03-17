@@ -15,7 +15,10 @@ use crate::team::orchestrator::{parse_tasks, Task, TaskResult};
 use crate::team::progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent};
 use crate::team::workflow::{TeamResult, WorkflowPhase};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
@@ -30,9 +33,12 @@ pub struct OrchestratorActor {
     progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
     result_tx: oneshot::Sender<Result<TeamResult, AgentError>>,
     user_request: String,
+    token_input: Arc<AtomicU64>,
+    token_output: Arc<AtomicU64>,
 }
 
 impl OrchestratorActor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         pm: ActorRef<TeamMessage>,
         tl: ActorRef<TeamMessage>,
@@ -42,6 +48,8 @@ impl OrchestratorActor {
         progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
         result_tx: oneshot::Sender<Result<TeamResult, AgentError>>,
         user_request: String,
+        token_input: Arc<AtomicU64>,
+        token_output: Arc<AtomicU64>,
     ) -> Self {
         Self {
             pm,
@@ -52,6 +60,8 @@ impl OrchestratorActor {
             progress_tx,
             result_tx,
             user_request,
+            token_input,
+            token_output,
         }
     }
 
@@ -110,8 +120,8 @@ impl OrchestratorActor {
                     r.total_tasks,
                     r.failed_tasks,
                     r.files_modified.len(),
-                    r.tokens_input,
-                    r.tokens_output,
+                    self.token_input.load(Ordering::Relaxed),
+                    self.token_output.load(Ordering::Relaxed),
                 );
             }
             Err(e) => {
@@ -484,6 +494,7 @@ impl OrchestratorActor {
                             output: "Task skipped: unresolvable dependencies".into(),
                             success: false,
                             hit_tool_limit: false,
+                            files_modified: vec![],
                         },
                     );
                 }
@@ -532,6 +543,7 @@ impl OrchestratorActor {
                                         output: format!("Jr mailbox closed: {e}"),
                                         success: false,
                                         hit_tool_limit: false,
+                                        files_modified: vec![],
                                     }
                                 } else {
                                     match rx.await {
@@ -541,6 +553,7 @@ impl OrchestratorActor {
                                             output: "Jr reply channel dropped".into(),
                                             success: false,
                                             hit_tool_limit: false,
+                                            files_modified: vec![],
                                         },
                                     }
                                 }
@@ -583,6 +596,7 @@ impl OrchestratorActor {
                                             output: format!("Jr mailbox closed on retry: {e}"),
                                             success: false,
                                             hit_tool_limit: false,
+                                            files_modified: vec![],
                                         }
                                     } else {
                                         match rx.await {
@@ -593,6 +607,7 @@ impl OrchestratorActor {
                                                     .into(),
                                                 success: false,
                                                 hit_tool_limit: false,
+                                                files_modified: vec![],
                                             },
                                         }
                                     };

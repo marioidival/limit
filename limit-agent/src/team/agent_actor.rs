@@ -213,12 +213,13 @@ impl Actor for AgentActor {
                             "Technical plan:\n{plan}\n\nBreak this down into at most {MAX_TASKS} specific, \
                              executable tasks. Each task should be self-contained and independently \
                              completable by a junior developer. Combine small steps into single tasks.\n\n\
-                             Before listing tasks, read any files that tasks will need to modify or reference. \
-                             Include the essential file content in each TASK using a CONTEXT block. \
-                             Format:\nTASK: <description>\nCONTEXT:\n<relevant file content>\n\n\
+                             IMPORTANT: Do NOT read any files or use tools. Do NOT include CONTEXT blocks. \
+                             Junior agents have their own tools to read files — just describe what to do.\n\n\
                              If a task depends on the output of another task, add DEPENDS_ON on the next line:\n\
                              TASK: <dependent task>\nDEPENDS_ON: <task it depends on>\n\n\
-                             Format each task on its own line as:\nTASK: <description>"
+                             CRITICAL: Count every distinct deliverable in the plan. Each one MUST have a TASK. \
+                             Never skip a deliverable. Double-check your task list against the plan before outputting.\n\n\
+                             Output ONLY the task list, starting with TASK: on each line."
                         ))
                         .await;
                     let _ = reply.send(result.map(|r| r.text));
@@ -282,12 +283,14 @@ impl Actor for AgentActor {
                             output: pr.text,
                             success: true,
                             hit_tool_limit: pr.hit_tool_limit,
+                            files_modified: pr.files_modified,
                         },
                         Err(e) => TaskResult {
                             task_id,
                             output: format!("Task failed: {}", e),
                             success: false,
                             hit_tool_limit: false,
+                            files_modified: vec![],
                         },
                     };
 

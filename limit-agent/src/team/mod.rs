@@ -270,6 +270,8 @@ impl Team {
             progress_tx,
             result_tx,
             user_request.to_string(),
+            token_input.clone(),
+            token_output.clone(),
         );
 
         let orchestrator_handle = tokio::spawn(async move {
