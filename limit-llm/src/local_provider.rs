@@ -85,6 +85,11 @@ impl LlmProvider for LocalProvider {
     fn clone_box(&self) -> Box<dyn LlmProvider> {
         Box::new(self.clone())
     }
+
+    fn with_max_tokens(&self, _max_tokens: u32) -> Box<dyn LlmProvider> {
+        // Local delegates to OpenAiProvider which has private fields.
+        self.clone_box()
+    }
 }
 
 #[cfg(test)]

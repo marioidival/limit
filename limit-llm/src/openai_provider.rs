@@ -100,6 +100,12 @@ impl LlmProvider for OpenAiProvider {
     fn clone_box(&self) -> Box<dyn LlmProvider> {
         Box::new(self.clone())
     }
+
+    fn with_max_tokens(&self, max_tokens: u32) -> Box<dyn LlmProvider> {
+        let mut cloned = self.clone();
+        cloned.max_tokens = max_tokens;
+        Box::new(cloned)
+    }
 }
 
 #[instrument(skip_all)]
