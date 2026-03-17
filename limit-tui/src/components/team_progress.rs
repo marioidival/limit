@@ -25,13 +25,20 @@ pub fn render_team_progress(frame: &mut Frame, area: Rect, snapshot: &TaskProgre
     let phase_bar = build_phase_bar(snapshot, width);
     let mut lines: Vec<Line> = vec![phase_bar];
 
-    // Status text line (dimmed, truncated agent output)
+    // Status text line (dimmed, truncated agent output — char-safe)
     if !snapshot.status_text.is_empty() {
         let mut msg = snapshot.status_text.clone();
         let max_msg_len = width.saturating_sub(2);
-        if msg.len() > max_msg_len {
-            msg.truncate(max_msg_len.saturating_sub(1));
-            msg.push('…');
+        if msg.chars().count() > max_msg_len {
+            let mut truncated = String::with_capacity(max_msg_len);
+            for (i, ch) in msg.chars().enumerate() {
+                if i >= max_msg_len.saturating_sub(1) {
+                    break;
+                }
+                truncated.push(ch);
+            }
+            truncated.push('…');
+            msg = truncated;
         }
         lines.push(Line::from(Span::styled(
             format!(" {}", msg),
@@ -186,12 +193,20 @@ fn build_task_line(
         TaskProgressStatus::Failed => ("❌", Color::Red),
     };
 
-    // Truncate description to fit
+    // Truncate description to fit (char-safe for multi-byte UTF-8)
     let max_desc_len = width.saturating_sub(10); // "  icon " + agent label
     let mut desc = task.description.clone();
-    if desc.len() > max_desc_len {
-        desc.truncate(max_desc_len.saturating_sub(1));
-        desc.push('…');
+    let desc_char_len = desc.chars().count();
+    if desc_char_len > max_desc_len {
+        let mut truncated = String::with_capacity(max_desc_len);
+        for (i, ch) in desc.chars().enumerate() {
+            if i >= max_desc_len.saturating_sub(1) {
+                break;
+            }
+            truncated.push(ch);
+        }
+        truncated.push('…');
+        desc = truncated;
     }
 
     let mut spans: Vec<Span<'static>> = vec![
