@@ -94,6 +94,10 @@ fn default_timeout() -> u64 {
     60
 }
 
+/// Maximum allowed timeout in seconds (10 minutes).
+/// Prevents accidentally high values (e.g., 300000 = 83 hours).
+const MAX_TIMEOUT_SECS: u64 = 600;
+
 fn default_max_iterations() -> usize {
     100
 }
@@ -122,6 +126,22 @@ impl ProviderConfig {
 }
 
 impl Config {
+    /// Clamp all provider timeouts to MAX_TIMEOUT_SECS and log a warning if adjusted.
+    fn clamp_timeouts(mut self) -> Self {
+        for (name, cfg) in &mut self.providers {
+            if cfg.timeout > MAX_TIMEOUT_SECS {
+                tracing::warn!(
+                    "Provider '{}' timeout {}s exceeds max {}s — clamped",
+                    name,
+                    cfg.timeout,
+                    MAX_TIMEOUT_SECS,
+                );
+                cfg.timeout = MAX_TIMEOUT_SECS;
+            }
+        }
+        self
+    }
+
     pub fn validate(&self) -> Result<(), ConfigError> {
         // Valid provider names (includes local LLM aliases)
         let valid_providers = [
@@ -198,6 +218,9 @@ impl Config {
 
         let config: Config = toml::from_str(&config_content)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        // Clamp timeout values to MAX_TIMEOUT_SECS
+        let config = Config::clamp_timeouts(config);
 
         config
             .validate()
@@ -424,6 +447,41 @@ model = "claude-3-5-sonnet-20241022"
 
         let key = provider_config.api_key_or_env("unknown");
         assert_eq!(key, None);
+    }
+
+    #[test]
+    fn test_clamp_timeouts() {
+        let config_content = r#"
+provider = "anthropic"
+
+[providers.anthropic]
+api_key = "sk-test"
+model = "claude-3-5-sonnet-20241022"
+timeout = 300000
+"#;
+        let mut config: Config = toml::from_str(config_content).unwrap();
+        let anthropic = config.providers.get("anthropic").unwrap();
+        assert_eq!(anthropic.timeout, 300000);
+
+        config = Config::clamp_timeouts(config);
+        let anthropic = config.providers.get("anthropic").unwrap();
+        assert_eq!(anthropic.timeout, MAX_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn test_clamp_timeouts_normal_value() {
+        let config_content = r#"
+provider = "anthropic"
+
+[providers.anthropic]
+api_key = "sk-test"
+model = "claude-3-5-sonnet-20241022"
+timeout = 120
+"#;
+        let config: Config = toml::from_str(config_content).unwrap();
+        let config = Config::clamp_timeouts(config);
+        let anthropic = config.providers.get("anthropic").unwrap();
+        assert_eq!(anthropic.timeout, 120);
     }
 
     #[test]
