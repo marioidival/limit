@@ -105,8 +105,27 @@ pub fn drain_progress_events(
     if let Some(ref mut receiver) = *guard {
         while let Ok(event) = receiver.try_recv() {
             tracing::debug!(
-                "[tui] team progress event received: {:?}",
-                std::mem::discriminant(&event)
+                "[tui] team progress event received: {}",
+                match &event {
+                    TeamProgressEvent::PhaseChanged { phase, .. } => {
+                        format!("PhaseChanged({:?})", phase)
+                    }
+                    TeamProgressEvent::TasksUpdate { tasks } => {
+                        format!("TasksUpdate({} tasks)", tasks.len())
+                    }
+                    TeamProgressEvent::TaskStarted {
+                        task_id, agent_index, ..
+                    } => format!("TaskStarted({}@{})", task_id, agent_index),
+                    TeamProgressEvent::TaskCompleted { task_id, success } => {
+                        format!("TaskCompleted({}:{})", task_id, success)
+                    }
+                    TeamProgressEvent::StatusUpdate { message } => {
+                        format!("StatusUpdate({:.50}…)", message)
+                    }
+                    TeamProgressEvent::Finished { success } => {
+                        format!("Finished({})", success)
+                    }
+                }
             );
             state.apply(event);
         }
