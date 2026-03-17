@@ -24,7 +24,7 @@
 //! let config = TeamConfig::default();
 //!
 //! let mut team = Team::new("my-team".into(), provider, config, tools)?;
-//! let result = team.execute("Add JWT authentication").await?;
+//! let result = team.execute("Add JWT authentication", None).await?;
 //! println!("Solution:\n{}", result.solution);
 //! # Ok(())
 //! # }
@@ -34,6 +34,7 @@ mod agent;
 mod history;
 mod orchestrator;
 mod persistence;
+mod progress;
 mod role;
 mod workflow;
 
@@ -41,6 +42,7 @@ pub use agent::TeamAgent;
 pub use history::{EventLevel, TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
 pub use persistence::{TeamSnapshot, TeamStore};
+pub use progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent, PHASE_COUNT};
 pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
 pub use workflow::{execute_workflow, TeamResult, WorkflowPhase};
 
@@ -49,7 +51,7 @@ use crate::registry::ToolRegistry;
 use limit_llm::LlmProvider;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 /// Configuration for creating a [`Team`].
 ///
@@ -152,7 +154,11 @@ impl Team {
     ///
     /// Returns a [`TeamResult`] containing the PM's delivery summary,
     /// wall-clock duration, and all recorded events.
-    pub async fn execute(&mut self, user_request: &str) -> Result<TeamResult, AgentError> {
+    pub async fn execute(
+        &mut self,
+        user_request: &str,
+        progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
+    ) -> Result<TeamResult, AgentError> {
         execute_workflow(
             &mut self.pm,
             &mut self.tl,
@@ -160,6 +166,7 @@ impl Team {
             user_request,
             &self.history,
             self.config.max_parallel_tasks,
+            progress_tx,
         )
         .await
     }

@@ -55,7 +55,7 @@ fn mock_team(name: &str) -> Team {
 #[tokio::test]
 async fn test_full_team_workflow() {
     let mut team = mock_team("full-workflow-test");
-    let result = team.execute("Add error handling").await;
+    let result = team.execute("Add error handling", None).await;
 
     assert!(result.is_ok(), "workflow failed: {:?}", result.err());
     let result = result.unwrap();
@@ -94,7 +94,7 @@ async fn test_full_team_workflow() {
 #[tokio::test]
 async fn test_workflow_phases_in_order() {
     let mut team = mock_team("phases-test");
-    let result = team.execute("test").await.unwrap();
+    let result = team.execute("test", None).await.unwrap();
 
     let phase_events: Vec<_> = result
         .events
@@ -122,7 +122,7 @@ async fn test_workflow_phases_in_order() {
 #[tokio::test]
 async fn test_workflow_records_pm_analysis_event() {
     let mut team = mock_team("pm-event-test");
-    let result = team.execute("test").await.unwrap();
+    let result = team.execute("test", None).await.unwrap();
 
     let pm_events: Vec<_> = result.events.iter().filter(|e| e.role == "PM").collect();
     assert!(
@@ -144,7 +144,7 @@ async fn test_workflow_records_pm_analysis_event() {
 #[tokio::test]
 async fn test_workflow_records_tl_events() {
     let mut team = mock_team("tl-event-test");
-    let result = team.execute("test").await.unwrap();
+    let result = team.execute("test", None).await.unwrap();
 
     let tl_events: Vec<_> = result.events.iter().filter(|e| e.role == "TL").collect();
     let actions: Vec<&str> = tl_events.iter().map(|e| e.action.as_str()).collect();
@@ -159,7 +159,7 @@ async fn test_workflow_records_tl_events() {
 #[tokio::test]
 async fn test_workflow_records_jr_events() {
     let mut team = mock_team("jr-event-test");
-    let result = team.execute("test").await.unwrap();
+    let result = team.execute("test", None).await.unwrap();
 
     let jr_events: Vec<_> = result.events.iter().filter(|e| e.role == "Jr").collect();
     assert!(
@@ -172,7 +172,7 @@ async fn test_workflow_records_jr_events() {
 #[tokio::test]
 async fn test_workflow_duration_is_positive() {
     let mut team = mock_team("duration-test");
-    let result = team.execute("test").await.unwrap();
+    let result = team.execute("test", None).await.unwrap();
 
     assert!(
         result.duration.as_millis() > 0,
@@ -196,7 +196,7 @@ async fn test_workflow_empty_tasks_returns_early() {
     let mut team =
         Team::new("empty-tasks-test".into(), provider, config, tools).expect("team creation");
 
-    let result = team.execute("simple request").await.unwrap();
+    let result = team.execute("simple request", None).await.unwrap();
     assert_eq!(result.total_tasks, 0, "no tasks should be parsed");
     assert_eq!(result.failed_tasks, 0);
     assert!(
@@ -220,7 +220,7 @@ async fn test_team_create_and_events() {
 #[tokio::test]
 async fn test_team_reset_clears_state() {
     let mut team = mock_team("reset-test");
-    team.execute("test").await.unwrap();
+    team.execute("test", None).await.unwrap();
 
     // After execution, there should be events
     let events_before = team.events().await;

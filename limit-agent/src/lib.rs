@@ -159,7 +159,8 @@ pub use error::AgentError;
 pub use events::EventBus;
 pub use registry::ToolRegistry;
 pub use team::{
-    EventLevel, Role, RoleConfig, Team, TeamAgent, TeamConfig, TeamEvent, TeamHistory, TeamResult,
-    TeamSection, TeamSnapshot, TeamStore,
+    EventLevel, Role, RoleConfig, TaskProgressInfo, TaskProgressStatus, Team, TeamAgent,
+    TeamConfig, TeamEvent, TeamHistory, TeamProgressEvent, TeamResult, TeamSection, TeamSnapshot,
+    TeamStore, WorkflowPhase, PHASE_COUNT,
 };
 pub use tool::{EchoTool, Tool};

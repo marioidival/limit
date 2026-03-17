@@ -7,15 +7,18 @@ use crate::error::AgentError;
 use crate::team::agent::TeamAgent;
 use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
 use crate::team::orchestrator::{parse_tasks, Task, TaskResult};
+use crate::team::progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 /// Maximum conversation history per agent to prevent unbounded growth.
 const MAX_HISTORY_PER_AGENT: usize = 50;
+/// Maximum tasks from TL breakdown. Prevents over-decomposition.
+const MAX_TASKS: usize = 10;
 
 /// Compiled regex for extracting file paths (lazy-initialized once).
 static FILE_PATH_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
@@ -102,6 +105,7 @@ pub async fn execute_workflow(
     user_request: &str,
     history: &Arc<RwLock<TeamHistory>>,
     max_parallel: usize,
+    progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
 ) -> Result<TeamResult, AgentError> {
     let start = Instant::now();
 
@@ -109,11 +113,24 @@ pub async fn execute_workflow(
     let _pm_span = tracing::info_span!("pm_analysis").entered();
     tracing::info!("[team] PM — analyzing request");
     log_phase(history, WorkflowPhase::PmAnalysis).await;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::PhaseChanged {
+            phase: WorkflowPhase::PmAnalysis,
+            completed: 0,
+        },
+    );
     let analysis = pm
         .prompt(&format!(
             "User request:\n{user_request}\n\nAnalyze this request and identify what needs to be done."
         ))
         .await?;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::StatusUpdate {
+            message: truncate(&analysis, 100),
+        },
+    );
     log_event(history, "PM", "analysis", &analysis).await;
     drop(_pm_span);
 
@@ -121,11 +138,24 @@ pub async fn execute_workflow(
     let _tl_span = tracing::info_span!("tl_plan").entered();
     tracing::info!("[team] TL — creating technical plan");
     log_phase(history, WorkflowPhase::TlPlan).await;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::PhaseChanged {
+            phase: WorkflowPhase::TlPlan,
+            completed: 1,
+        },
+    );
     let plan = tl
         .prompt(&format!(
             "PM analysis:\n{analysis}\n\nCreate a technical plan to implement this."
         ))
         .await?;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::StatusUpdate {
+            message: truncate(&plan, 100),
+        },
+    );
     log_event(history, "TL", "plan", &plan).await;
     drop(_tl_span);
 
@@ -133,21 +163,61 @@ pub async fn execute_workflow(
     let _breakdown_span = tracing::info_span!("tl_breakdown").entered();
     tracing::info!("[team] TL — breaking down tasks");
     log_phase(history, WorkflowPhase::TlBreakdown).await;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::PhaseChanged {
+            phase: WorkflowPhase::TlBreakdown,
+            completed: 2,
+        },
+    );
     let tasks = tl
         .prompt(&format!(
-            "Technical plan:\n{plan}\n\nBreak this down into specific, executable tasks. \
+            "Technical plan:\n{plan}\n\nBreak this down into at most {MAX_TASKS} specific, \
+             executable tasks. Each task should be self-contained and independently \
+             completable by a junior developer. Combine small steps into single tasks. \
              Format each task on its own line as:\nTASK: <description>"
         ))
         .await?;
-    let tasks: Vec<Task> = parse_tasks(&tasks);
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::StatusUpdate {
+            message: truncate(&tasks, 100),
+        },
+    );
+    let mut tasks: Vec<Task> = parse_tasks(&tasks);
+    let original_count = tasks.len();
+    tasks.truncate(MAX_TASKS);
+    if tasks.len() < original_count {
+        tracing::warn!(
+            "[team] TL produced {} tasks, truncated to {}",
+            original_count,
+            tasks.len()
+        );
+    }
     log_event(
         history,
         "TL",
         "tasks",
-        &format!("{} tasks parsed", tasks.len()),
+        &format!("{} tasks (of {} parsed)", tasks.len(), original_count),
     )
     .await;
     drop(_breakdown_span);
+
+    // Send initial task list to TUI
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::TasksUpdate {
+            tasks: tasks
+                .iter()
+                .map(|t| TaskProgressInfo {
+                    id: t.id.clone(),
+                    description: t.description.clone(),
+                    status: TaskProgressStatus::Pending,
+                    agent_index: None,
+                })
+                .collect(),
+        },
+    );
 
     if tasks.is_empty() {
         tracing::warn!("[team] TL produced no parseable tasks — delivering plan as-is");
@@ -159,6 +229,8 @@ pub async fn execute_workflow(
             ))
             .await?;
         log_event(history, "PM", "delivery", &delivery).await;
+
+        send_progress(&progress_tx, TeamProgressEvent::Finished { success: true });
 
         return Ok(TeamResult {
             solution: delivery,
@@ -174,12 +246,20 @@ pub async fn execute_workflow(
     // ── Phase 4: Jr parallel execution ────────────────────────────────
     let _jr_span = tracing::info_span!("jr_execution", tasks = tasks.len()).entered();
     log_phase(history, WorkflowPhase::JrExecution).await;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::PhaseChanged {
+            phase: WorkflowPhase::JrExecution,
+            completed: 3,
+        },
+    );
     tracing::info!(
         "[team] Jr — executing {} tasks (max {max_parallel} parallel)",
         tasks.len()
     );
     let retry_tracker = RetryTracker::new();
-    let task_results = execute_tasks_parallel(jrs, &tasks, max_parallel, &retry_tracker).await;
+    let task_results =
+        execute_tasks_parallel(jrs, &tasks, max_parallel, &retry_tracker, &progress_tx).await;
 
     // Trim Jr agent histories to prevent unbounded growth
     for jr in jrs.iter_mut() {
@@ -208,29 +288,81 @@ pub async fn execute_workflow(
     drop(_jr_span);
 
     log_phase(history, WorkflowPhase::TlValidation).await;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::PhaseChanged {
+            phase: WorkflowPhase::TlValidation,
+            completed: 4,
+        },
+    );
     // ── Phase 5: TL validation ────────────────────────────────────────
     let _validation_span = tracing::info_span!("tl_validation").entered();
     tracing::info!("[team] TL — validating results");
+    let files_list = if files_modified.is_empty() {
+        "No file paths were extracted from task results.".to_string()
+    } else {
+        format!(
+            "Files reported as modified:\n{}",
+            files_modified
+                .iter()
+                .map(|f| format!("- {f}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
     let validation = tl
         .prompt(&format!(
             "Task results:\n{results_summary}\n\n\
-             Validate the implementation. Note any issues or improvements needed."
+             {files_list}\n\n\
+             Validate the implementation based on the task results above. \
+             Do NOT use tools — just analyze the results and note any issues."
         ))
         .await?;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::StatusUpdate {
+            message: truncate(&validation, 100),
+        },
+    );
     log_event(history, "TL", "validation", &validation).await;
     drop(_validation_span);
 
     log_phase(history, WorkflowPhase::PmDelivery).await;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::PhaseChanged {
+            phase: WorkflowPhase::PmDelivery,
+            completed: 5,
+        },
+    );
     // ── Phase 6: PM delivery ──────────────────────────────────────────
     let _delivery_span = tracing::info_span!("pm_delivery").entered();
     tracing::info!("[team] PM — preparing delivery");
     let delivery = pm
         .prompt(&format!(
             "Technical solution validated by TL:\n{validation}\n\n\
-             Summarize the solution for the user in a clear, concise way."
+             Task results:\n{results_summary}\n\n\
+             Files modified:\n{}\n\n\
+             Summarize what was done: list the files created/modified and the outcome. \
+             Only suggest follow-up actions if something is genuinely incomplete or broken. \
+             Do NOT suggest improvements, refactors, or enhancements.",
+            files_modified
+                .iter()
+                .map(|f| format!("- {f}"))
+                .collect::<Vec<_>>()
+                .join("\n")
         ))
         .await?;
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::StatusUpdate {
+            message: truncate(&delivery, 100),
+        },
+    );
     log_event(history, "PM", "delivery", &delivery).await;
+
+    send_progress(&progress_tx, TeamProgressEvent::Finished { success: true });
 
     Ok(TeamResult {
         solution: delivery,
@@ -255,6 +387,7 @@ async fn execute_tasks_parallel(
     tasks: &[Task],
     max_parallel: usize,
     retry_tracker: &RetryTracker,
+    progress_tx: &Option<mpsc::UnboundedSender<TeamProgressEvent>>,
 ) -> Vec<TaskResult> {
     if jrs.is_empty() || tasks.is_empty() {
         return Vec::new();
@@ -272,6 +405,9 @@ async fn execute_tasks_parallel(
     // Clone the retry counter for use in async tasks
     let retry_counter = retry_tracker.clone_counter();
 
+    // Clone progress sender for use in async tasks
+    let progress_tx = progress_tx.clone();
+
     // Wrap each Jr agent in its own Mutex to allow parallel execution.
     // This avoids the single-mutex bottleneck that would serialize all tasks.
     let jrs: Vec<Arc<tokio::sync::Mutex<TeamAgent>>> = jrs
@@ -288,10 +424,23 @@ async fn execute_tasks_parallel(
         .map(|(i, (task_id, description))| {
             let jrs = jrs.clone();
             let retry_counter = retry_counter.clone();
+            let progress_tx = progress_tx.clone();
             async move {
                 let jr_idx = i % num_jrs;
-                let prompt_text =
-                    format!("Execute this task:\n{description}\n\nUse tools as needed.");
+
+                send_progress(
+                    &progress_tx,
+                    TeamProgressEvent::TaskStarted {
+                        task_id: task_id.clone(),
+                        agent_index: jr_idx,
+                    },
+                );
+
+                let prompt_text = format!(
+                    "Execute this task:\n{description}\n\n\
+                     Do the work efficiently. Use the minimum number of tool calls needed. \
+                     Do not verify or re-read files after writing them — trust the tool results."
+                );
 
                 let result = {
                     let jr = jrs[jr_idx].clone();
@@ -299,12 +448,22 @@ async fn execute_tasks_parallel(
                     jr_lock.prompt(&prompt_text).await
                 };
 
-                match result {
-                    Ok(output) => TaskResult {
-                        task_id,
-                        output,
-                        success: true,
-                    },
+                let task_result = match result {
+                    Ok(output) => {
+                        let success = true;
+                        send_progress(
+                            &progress_tx,
+                            TeamProgressEvent::TaskCompleted {
+                                task_id: task_id.clone(),
+                                success,
+                            },
+                        );
+                        TaskResult {
+                            task_id,
+                            output,
+                            success,
+                        }
+                    }
                     Err(e) => {
                         tracing::warn!(
                             "[team] Jr[{}] task failed on first attempt: {}. Retrying...",
@@ -320,16 +479,32 @@ async fn execute_tasks_parallel(
                             jr_lock.prompt(&prompt_text).await
                         };
                         match retry_result {
-                            Ok(output) => TaskResult {
-                                task_id,
-                                output,
-                                success: true,
-                            },
+                            Ok(output) => {
+                                send_progress(
+                                    &progress_tx,
+                                    TeamProgressEvent::TaskCompleted {
+                                        task_id: task_id.clone(),
+                                        success: true,
+                                    },
+                                );
+                                TaskResult {
+                                    task_id,
+                                    output,
+                                    success: true,
+                                }
+                            }
                             Err(retry_err) => {
                                 tracing::error!(
                                     "[team] Jr[{}] task failed after retry: {}",
                                     jr_idx,
                                     retry_err
+                                );
+                                send_progress(
+                                    &progress_tx,
+                                    TeamProgressEvent::TaskCompleted {
+                                        task_id: task_id.clone(),
+                                        success: false,
+                                    },
                                 );
                                 TaskResult {
                                     task_id,
@@ -342,7 +517,9 @@ async fn execute_tasks_parallel(
                             }
                         }
                     }
-                }
+                };
+
+                task_result
             }
         })
         .buffer_unordered(max_parallel)
@@ -392,6 +569,36 @@ async fn log_phase(history: &Arc<RwLock<TeamHistory>>, phase: WorkflowPhase) {
         content: format!("entered phase: {}", phase),
         level: EventLevel::Info,
     });
+}
+
+/// Send a progress event to the TUI (non-blocking, ignores send errors).
+fn send_progress(tx: &Option<mpsc::UnboundedSender<TeamProgressEvent>>, event: TeamProgressEvent) {
+    if let Some(tx) = tx {
+        tracing::debug!(
+            "[team] sending progress event: {:?}",
+            std::mem::discriminant(&event)
+        );
+        let _ = tx.send(event);
+    }
+}
+
+/// Truncate a string to `max` bytes, breaking at the last newline or space within limit.
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut end = s[..max]
+        .char_indices()
+        .last()
+        .map(|(i, _)| i)
+        .unwrap_or(max);
+    if let Some(nl) = s[..end].rfind('\n') {
+        end = nl;
+    } else if let Some(sp) = s[..end].rfind(' ') {
+        end = sp;
+    }
+    // Strip trailing whitespace at break point
+    format!("{}...", s[..end].trim_end())
 }
 
 #[cfg(test)]
@@ -497,5 +704,36 @@ mod tests {
         let results: Vec<TaskResult> = vec![];
         let files = extract_modified_files(&results);
         assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_truncate_short() {
+        assert_eq!(truncate("hello", 100), "hello");
+    }
+
+    #[test]
+    fn test_truncate_exact() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_long() {
+        let s = "abcdefghij".repeat(12);
+        let result = truncate(&s, 50);
+        assert!(result.ends_with("..."));
+        assert!(result.len() < s.len());
+    }
+
+    #[test]
+    fn test_truncate_breaks_at_newline() {
+        let s = "line one\nline two\nline three";
+        let result = truncate(s, 20);
+        assert!(result.contains("line one"));
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_empty() {
+        assert_eq!(truncate("", 100), "");
     }
 }
