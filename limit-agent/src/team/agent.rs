@@ -198,12 +198,18 @@ impl TeamAgent {
                         .unwrap_or(false);
 
                     if has_tool_calls {
-                        let tool_calls = self
+                        if let Some(tool_calls) = self
                             .history
                             .last()
                             .and_then(|msg| msg.tool_calls.clone())
-                            .expect("tool_calls exist");
-                        return self.handle_tool_calls(&tool_calls).await;
+                        {
+                            return self.handle_tool_calls(&tool_calls).await;
+                        }
+                        tracing::warn!(
+                            "[team] {:?} has_tool_calls was true but no tool_calls found in last message",
+                            self.role
+                        );
+                        // Continue with normal response flow
                     }
 
                     return Ok(response);
