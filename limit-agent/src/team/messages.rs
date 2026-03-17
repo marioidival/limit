@@ -145,22 +145,13 @@ pub fn truncate(s: &str, max: usize) -> String {
     format!("{}...", s[..end].trim_end())
 }
 
-/// Extract file paths from Jr task outputs by looking for common
-/// file-path patterns in tool-call results.
+/// Extract file paths from Jr task results.
+/// Uses the `files_modified` field tracked during tool execution.
 pub fn extract_modified_files(results: &[TaskResult]) -> Vec<String> {
-    use regex::Regex;
-    use std::sync::OnceLock;
-
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE
-        .get_or_init(|| Regex::new(r#""path"\s*:\s*"([^"]+)""#).expect("invalid file path regex"));
-
-    let mut files = Vec::new();
-    for r in results {
-        for cap in re.captures_iter(&r.output) {
-            files.push(cap[1].to_string());
-        }
-    }
+    let mut files: Vec<String> = results
+        .iter()
+        .flat_map(|r| r.files_modified.clone())
+        .collect();
     files.sort();
     files.dedup();
     files

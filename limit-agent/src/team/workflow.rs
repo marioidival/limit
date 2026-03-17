@@ -474,6 +474,7 @@ async fn execute_tasks_parallel(
                             output: pr.text,
                             success,
                             hit_tool_limit: pr.hit_tool_limit,
+                            files_modified: pr.files_modified,
                         }
                     }
                     Err(e) => {
@@ -503,6 +504,7 @@ async fn execute_tasks_parallel(
                                     output: pr.text,
                                     success: true,
                                     hit_tool_limit: pr.hit_tool_limit,
+                                    files_modified: pr.files_modified,
                                 }
                             }
                             Err(retry_err) => {
@@ -526,6 +528,7 @@ async fn execute_tasks_parallel(
                                     ),
                                     success: false,
                                     hit_tool_limit: false,
+                                    files_modified: vec![],
                                 }
                             }
                         }
@@ -637,18 +640,21 @@ mod tests {
                 output: r#"Created file: {"path": "src/main.rs"}"#.into(),
                 success: true,
                 hit_tool_limit: false,
+                files_modified: vec!["src/main.rs".into()],
             },
             TaskResult {
                 task_id: "2".into(),
                 output: r#"{"path": "src/lib.rs", "content": "..."}"#.into(),
                 success: true,
                 hit_tool_limit: false,
+                files_modified: vec!["src/lib.rs".into()],
             },
             TaskResult {
                 task_id: "3".into(),
                 output: "No files modified".into(),
                 success: true,
                 hit_tool_limit: false,
+                files_modified: vec![],
             },
         ];
         let files = extract_modified_files(&results);
@@ -663,12 +669,14 @@ mod tests {
                 output: r#"{"path": "src/main.rs"}"#.into(),
                 success: true,
                 hit_tool_limit: false,
+                files_modified: vec!["src/main.rs".into()],
             },
             TaskResult {
                 task_id: "2".into(),
                 output: r#"{"path": "src/main.rs"}"#.into(),
                 success: true,
                 hit_tool_limit: false,
+                files_modified: vec!["src/main.rs".into()],
             },
         ];
         let files = extract_modified_files(&results);

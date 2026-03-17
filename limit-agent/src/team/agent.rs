@@ -29,6 +29,8 @@ pub struct PromptResult {
     pub usage: Usage,
     /// Whether the tool-call limit ([`MAX_TOOL_ROUNDS`]) was hit.
     pub hit_tool_limit: bool,
+    /// File paths modified by file_write or file_edit tool calls.
+    pub files_modified: Vec<String>,
 }
 
 fn zero_usage() -> Usage {
@@ -338,6 +340,7 @@ impl TeamAgent {
                         text: response,
                         usage,
                         hit_tool_limit: false,
+                        files_modified: vec![],
                     });
                 }
                 Err(ref e) if is_retryable(e) && attempt < MAX_RETRIES => {
@@ -441,8 +444,11 @@ impl TeamAgent {
         tool_calls: &[limit_llm::ToolCall],
         mut usage: Usage,
     ) -> Result<PromptResult, AgentError> {
+        let mut files_modified: Vec<String> = Vec::new();
+
         for tc in tool_calls {
             let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
+            Self::track_file(&mut files_modified, &tc.function.name, &args);
             tracing::debug!(
                 "[team] {:?} calling tool '{}' with args: {}",
                 self.role,
@@ -502,6 +508,7 @@ impl TeamAgent {
                     text: response,
                     usage,
                     hit_tool_limit: true,
+                    files_modified,
                 });
             }
 
@@ -534,6 +541,7 @@ impl TeamAgent {
             for tc in &more_calls {
                 let args: Value =
                     serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
+                Self::track_file(&mut files_modified, &tc.function.name, &args);
                 tracing::debug!("[team] {:?} calling tool '{}'", self.role, tc.function.name);
                 let result = self.registry.execute(&tc.function.name, args).await;
                 let result_content = match result {
@@ -558,7 +566,19 @@ impl TeamAgent {
             text: response,
             usage,
             hit_tool_limit: false,
+            files_modified,
         })
+    }
+
+    /// Track file paths from file_write/file_edit tool calls.
+    fn track_file(files: &mut Vec<String>, tool_name: &str, args: &Value) {
+        if tool_name == "file_write" || tool_name == "file_edit" {
+            if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+                if !files.contains(&path.to_string()) {
+                    files.push(path.to_string());
+                }
+            }
+        }
     }
 
     /// Build LLM tool definitions from the registry's tool list.

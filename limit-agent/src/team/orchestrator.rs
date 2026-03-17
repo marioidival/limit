@@ -55,6 +55,8 @@ pub struct TaskResult {
     pub success: bool,
     /// Whether the agent hit the tool-call limit.
     pub hit_tool_limit: bool,
+    /// Files modified by file_write or file_edit tool calls.
+    pub files_modified: Vec<String>,
 }
 
 /// Parse `TASK: <description>` lines from a TL response into a list of [`Task`]s.
