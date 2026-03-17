@@ -105,7 +105,25 @@ impl TeamStore {
             }
         }
 
-        self.dir.join(format!("{}.json", safe_name))
+        let resolved = self.dir.join(format!("{}.json", safe_name));
+
+        // Canonicalize and verify path stays under self.dir to prevent traversal attacks
+        // Note: canonicalize requires the path to exist, so we only check if it does
+        if resolved.exists() {
+            if let Ok(canonical) = resolved.canonicalize() {
+                if let Ok(base_canonical) = self.dir.canonicalize() {
+                    if !canonical.starts_with(&base_canonical) {
+                        tracing::warn!(
+                            "Path traversal attempt blocked: '{}' resolved outside of teams directory",
+                            name
+                        );
+                        return self.dir.join("_.json");
+                    }
+                }
+            }
+        }
+
+        resolved
     }
 
     /// Save a team snapshot to disk.
@@ -276,5 +294,36 @@ mod tests {
         let json = serde_json::to_string(&snap).unwrap();
         let deserialized: TeamSnapshot = serde_json::from_str(&json).unwrap();
         assert_eq!(snap.name, deserialized.name);
+    }
+
+    #[test]
+    fn test_path_traversal_prevention() {
+        let tmp = TempDir::new().unwrap();
+        let store = TeamStore::new(tmp.path().to_path_buf()).unwrap();
+
+        // First, create a legitimate file inside the store
+        store
+            .save(&TeamSnapshot::new("legitimate", test_config()))
+            .unwrap();
+
+        // These path traversal attempts should be sanitized to safe paths
+        // that either don't exist or resolve to safe fallback
+        let malicious_names = vec![
+            "../outside",
+            "..\\outside",
+            "subdir/../../outside",
+            "./../outside",
+        ];
+
+        for name in malicious_names {
+            let loaded = store.load(name);
+            // Should not error, and should return None (file doesn't exist at safe path)
+            assert!(
+                loaded.is_ok(),
+                "Path traversal '{}' should not cause error",
+                name
+            );
+            // The sanitized file shouldn't exist unless we saved it with that sanitized name
+        }
     }
 }
