@@ -16,6 +16,9 @@ use std::time::Duration;
 const MAX_RETRIES: usize = 3;
 /// Base delay between retries (doubles on each attempt: 1s, 2s, 4s).
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
+/// Maximum tool-call rounds per `prompt()` call before forcing a text response.
+/// Prevents infinite loops where the LLM keeps requesting more tool calls.
+const MAX_TOOL_ROUNDS: usize = 5;
 
 /// Accumulates tool-call deltas from streaming responses.
 ///
@@ -178,9 +181,12 @@ impl TeamAgent {
             let mut filtered = ToolRegistry::new();
             for name in whitelist {
                 if let Some(tool) = registry.get(name) {
-                    // We can't extract the inner dyn Tool from Arc,
-                    // so we clone the Arc into the filtered registry.
                     filtered.register_arc(tool);
+                    // Also copy the schema so the agent can build proper
+                    // LLM tool definitions (description + parameters).
+                    if let Some((desc, params)) = registry.get_schema(name) {
+                        filtered.set_schema(name, desc.clone(), params.clone());
+                    }
                 }
             }
             Arc::new(filtered)
@@ -410,11 +416,34 @@ impl TeamAgent {
     ) -> Result<String, AgentError> {
         for tc in tool_calls {
             let args: Value = serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
+            tracing::debug!(
+                "[team] {:?} calling tool '{}' with args: {}",
+                self.role,
+                tc.function.name,
+                tc.function.arguments
+            );
             let result = self.registry.execute(&tc.function.name, args).await;
 
             let result_content = match result {
-                Ok(val) => serde_json::to_string(&val).unwrap_or_else(|_| "ok".to_string()),
-                Err(e) => format!("Error: {}", e),
+                Ok(val) => {
+                    let s = serde_json::to_string(&val).unwrap_or_else(|_| "ok".to_string());
+                    tracing::debug!(
+                        "[team] {:?} tool '{}' succeeded: {}",
+                        self.role,
+                        tc.function.name,
+                        &s[..s.len().min(200)]
+                    );
+                    s
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "[team] {:?} tool '{}' failed: {}",
+                        self.role,
+                        tc.function.name,
+                        e
+                    );
+                    format!("Error: {}", e)
+                }
             };
 
             self.push_message(Message {
@@ -425,30 +454,96 @@ impl TeamAgent {
             });
         }
 
-        // Continue conversation with tool results
+        // Continue conversation with tool results, looping if the LLM
+        // requests more tool calls (e.g., read file then edit it).
         let tools = self.build_llm_tools();
-        let response = self.send_and_collect(tools).await?;
+        let mut response = self.send_and_collect(tools.clone()).await?;
+        let mut tool_rounds = 1;
+
+        // Loop: if the response contains more tool calls, execute them.
+        // Bounded by MAX_TOOL_ROUNDS to prevent infinite loops.
+        loop {
+            if tool_rounds >= MAX_TOOL_ROUNDS {
+                tracing::warn!(
+                    "[team] {:?} hit tool-call limit ({}) — stopping",
+                    self.role,
+                    MAX_TOOL_ROUNDS
+                );
+                break;
+            }
+
+            let has_more = self
+                .history
+                .last()
+                .and_then(|msg| msg.tool_calls.as_ref())
+                .map(|tc| !tc.is_empty())
+                .unwrap_or(false);
+
+            if !has_more {
+                break;
+            }
+
+            let more_calls = self
+                .history
+                .last()
+                .and_then(|msg| msg.tool_calls.clone())
+                .unwrap_or_default();
+
+            tool_rounds += 1;
+            tracing::debug!(
+                "[team] {:?} tool round {}/{} ({} calls)",
+                self.role,
+                tool_rounds,
+                MAX_TOOL_ROUNDS,
+                more_calls.len()
+            );
+
+            for tc in &more_calls {
+                let args: Value =
+                    serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);
+                tracing::debug!("[team] {:?} calling tool '{}'", self.role, tc.function.name);
+                let result = self.registry.execute(&tc.function.name, args).await;
+                let result_content = match result {
+                    Ok(val) => serde_json::to_string(&val).unwrap_or_else(|_| "ok".to_string()),
+                    Err(e) => format!("Error: {}", e),
+                };
+                self.push_message(Message {
+                    role: LlmRole::Tool,
+                    content: Some(result_content),
+                    tool_calls: None,
+                    tool_call_id: Some(tc.id.clone()),
+                });
+            }
+
+            response = self.send_and_collect(tools.clone()).await?;
+        }
+
         Ok(response)
     }
 
     /// Build LLM tool definitions from the registry's tool list.
     fn build_llm_tools(&self) -> Vec<limit_llm::Tool> {
         // Build tool definitions from the registry for providers that need them.
-        // Some providers (like OpenAI) can work without explicit tool definitions,
-        // but providing them ensures consistent behavior across all providers.
+        // Uses stored schemas (description + JSON Schema) when available,
+        // falling back to generic definitions.
         self.registry
             .list()
             .into_iter()
             .filter_map(|name| {
-                // Get tool from registry to build its definition
                 self.registry.get(&name).map(|_tool| {
-                    let desc = format!("Tool: {}", name);
+                    let (description, parameters) =
+                        self.registry.get_schema(&name).cloned().unwrap_or_else(|| {
+                            (
+                                format!("Tool: {}", name),
+                                serde_json::json!({"type": "object"}),
+                            )
+                        });
                     limit_llm::Tool {
                         tool_type: "function".to_string(),
                         function: limit_llm::ToolFunction {
                             name,
-                            description: desc,
-                            parameters: serde_json::json!({"type": "object"}),
+                            description,
+                            parameters,
                         },
                     }
                 })
@@ -477,6 +572,7 @@ impl TeamAgent {
             let tools = self.build_llm_tools(); // Build tool definitions for provider
 
             let mut attempt = 0;
+            let mut tool_rounds = 0;
             loop {
                 let stream_result = self.provider.send((*self.history).clone(), tools.clone()).await;
 
@@ -551,6 +647,16 @@ impl TeamAgent {
 
                 // If there are tool calls, execute them and continue
                 if !tool_calls.is_empty() {
+                    tool_rounds += 1;
+                    if tool_rounds >= MAX_TOOL_ROUNDS {
+                        tracing::warn!(
+                            "[team] {:?} stream hit tool-call limit ({}) — stopping",
+                            self.role,
+                            MAX_TOOL_ROUNDS
+                        );
+                        return;
+                    }
+
                     for tc in &tool_calls {
                         let args: Value =
                             serde_json::from_str(&tc.function.arguments).unwrap_or(Value::Null);

@@ -7,6 +7,9 @@ use std::sync::Arc;
 /// Registry for managing tools
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
+    /// Optional per-tool schemas: (description, JSON Schema parameters).
+    /// Used by team agents to build proper LLM tool definitions.
+    schemas: HashMap<String, (String, Value)>,
 }
 
 impl ToolRegistry {
@@ -14,6 +17,7 @@ impl ToolRegistry {
     pub fn new() -> Self {
         ToolRegistry {
             tools: HashMap::new(),
+            schemas: HashMap::new(),
         }
     }
 
@@ -54,6 +58,22 @@ impl ToolRegistry {
     pub fn register_arc(&mut self, tool: Arc<dyn Tool>) {
         let name = tool.name().to_string();
         self.tools.insert(name, tool);
+    }
+
+    /// Store a tool's LLM schema (description + JSON Schema parameters).
+    ///
+    /// Used by team agents to build proper tool definitions for the LLM
+    /// provider. Without schemas, tools are sent with a generic
+    /// `{"type": "object"}` parameter definition, which prevents the LLM
+    /// from generating correct tool-call arguments.
+    pub fn set_schema(&mut self, name: &str, description: String, parameters: Value) {
+        self.schemas
+            .insert(name.to_string(), (description, parameters));
+    }
+
+    /// Retrieve the stored schema for a tool, if one was set.
+    pub fn get_schema(&self, name: &str) -> Option<&(String, Value)> {
+        self.schemas.get(name)
     }
 }
 
