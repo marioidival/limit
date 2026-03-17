@@ -363,8 +363,7 @@ impl TeamCommand {
 
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
-        // Spawn team execution in a background thread to avoid blocking the TUI.
-        // This follows the same pattern as the main LLM processing in handle_enter.
+        // Prepare cloned values for the background thread
         let chat_view = ctx.chat_view.clone();
         let name_clone = team_name;
         let task_clone = task;
@@ -382,22 +381,31 @@ impl TeamCommand {
             }
         }
 
-        std::thread::spawn(move || {
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(rt) => rt,
-                Err(e) => {
-                    chat_view
-                        .lock()
-                        .unwrap()
-                        .add_message(Message::system(format!(
-                            "❌ Failed to create runtime: {}",
-                            e
-                        )));
-                    return;
-                }
-            };
+        // Spawn team execution in a background thread.
+        //
+        // This creates a dedicated tokio runtime for team execution. While creating
+        // a runtime per execution has overhead, it's necessary because:
+        // 1. The TUI event loop is synchronous
+        // 2. We need async execution without blocking the UI
+        // 3. Team execution is infrequent and long-running, so overhead is acceptable
+        let spawn_result = std::thread::Builder::new()
+            .name(format!("team-{}-executor", name_clone))
+            .spawn(move || {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        chat_view
+                            .lock()
+                            .unwrap()
+                            .add_message(Message::system(format!(
+                                "❌ Failed to create runtime: {}",
+                                e
+                            )));
+                        return;
+                    }
+                };
 
-            rt.block_on(async move {
+                rt.block_on(async move {
                 let config_result = limit_llm::Config::load();
                 let provider = match &config_result {
                     Ok(cfg) => limit_llm::ProviderFactory::create_provider(cfg),
@@ -530,8 +538,13 @@ impl TeamCommand {
                             )));
                     }
                 }
+                });
             });
-        });
+
+        if let Err(e) = spawn_result {
+            tracing::error!("Failed to spawn team executor thread: {}", e);
+            return Err(CliError::IoError(std::io::Error::other(e)));
+        }
 
         Ok(CommandResult::Continue)
     }
