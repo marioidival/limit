@@ -56,10 +56,12 @@ pub fn spawn<A: Actor<Message = M>, M: Send + 'static>(
 
     let handle = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
+            let start = std::time::Instant::now();
             if let Err(e) = actor.handle(msg).await {
-                tracing::error!("[actor] actor shutting down: {}", e);
+                tracing::error!("[actor] actor error after {:?}: {}", start.elapsed(), e);
                 break;
             }
+            tracing::trace!("[actor] message handled in {:?}", start.elapsed());
         }
     });
 

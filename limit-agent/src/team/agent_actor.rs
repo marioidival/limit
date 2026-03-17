@@ -61,13 +61,36 @@ impl AgentActor {
     }
 
     async fn prompt(&mut self, input: &str) -> Result<PromptResult, AgentError> {
+        let start = std::time::Instant::now();
         let result = self.agent.prompt(input).await;
-        if let Ok(ref pr) = result {
-            self.token_input
-                .fetch_add(pr.usage.input_tokens, Ordering::Relaxed);
-            self.token_output
-                .fetch_add(pr.usage.output_tokens, Ordering::Relaxed);
+        let elapsed = start.elapsed();
+
+        match &result {
+            Ok(pr) => {
+                self.token_input
+                    .fetch_add(pr.usage.input_tokens, Ordering::Relaxed);
+                self.token_output
+                    .fetch_add(pr.usage.output_tokens, Ordering::Relaxed);
+                tracing::info!(
+                    "[team] {:?} prompt completed in {:?} ({}in/{}out tokens{}), response: {} chars",
+                    self.role,
+                    elapsed,
+                    pr.usage.input_tokens,
+                    pr.usage.output_tokens,
+                    if pr.hit_tool_limit { " [TOOL-LIMIT]" } else { "" },
+                    pr.text.len(),
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "[team] {:?} prompt failed after {:?}: {}",
+                    self.role,
+                    elapsed,
+                    e
+                );
+            }
         }
+
         result
     }
 
@@ -86,14 +109,15 @@ impl Actor for AgentActor {
         Box::pin(async move {
             match msg {
                 TeamMessage::Shutdown => {
-                    tracing::info!("[actor] {:?} shutting down", self.role);
+                    tracing::info!("[actor] {:?} received Shutdown", self.role);
                     Err(AgentError::ActorError(format!(
                         "{:?} received shutdown",
                         self.role
                     )))
                 }
 
-                TeamMessage::PmAnalyze { request, reply } => {
+                TeamMessage::PmAnalyze { request, reply, .. } => {
+                    tracing::info!("[actor] PM received PmAnalyze ({} chars)", request.len());
                     let result = self
                         .prompt(&format!(
                             "User request:\n{request}\n\nAnalyze this request and identify what needs to be done."
@@ -114,6 +138,10 @@ impl Actor for AgentActor {
                     files_modified,
                     reply,
                 } => {
+                    tracing::info!(
+                        "[actor] PM received PmDeliver ({} files)",
+                        files_modified.len()
+                    );
                     let files_list = if files_modified.is_empty() {
                         "No files modified.".to_string()
                     } else {
@@ -142,7 +170,11 @@ impl Actor for AgentActor {
                     Ok(())
                 }
 
-                TeamMessage::PmDeliverNoTasks { plan, reply } => {
+                TeamMessage::PmDeliverNoTasks { plan, reply, .. } => {
+                    tracing::info!(
+                        "[actor] PM received PmDeliverNoTasks ({} chars)",
+                        plan.len()
+                    );
                     let result = self
                         .prompt(&format!(
                             "The Tech Lead produced a plan but no specific tasks. Here is the plan:\n\n{plan}\n\n\
@@ -159,6 +191,7 @@ impl Actor for AgentActor {
                 }
 
                 TeamMessage::TlPlan { analysis, reply } => {
+                    tracing::info!("[actor] TL received TlPlan ({} chars)", analysis.len());
                     let result = self
                         .prompt(&format!(
                             "PM analysis:\n{analysis}\n\nCreate a technical plan to implement this."
@@ -174,6 +207,7 @@ impl Actor for AgentActor {
                 }
 
                 TeamMessage::TlBreakdown { plan, reply } => {
+                    tracing::info!("[actor] TL received TlBreakdown ({} chars)", plan.len());
                     let result = self
                         .prompt(&format!(
                             "Technical plan:\n{plan}\n\nBreak this down into at most {MAX_TASKS} specific, \
@@ -196,6 +230,11 @@ impl Actor for AgentActor {
                     files_list,
                     reply,
                 } => {
+                    tracing::info!(
+                        "[actor] TL received TlValidate ({} chars, {} chars files list)",
+                        results_summary.len(),
+                        files_list.len()
+                    );
                     let result = self
                         .prompt(&format!(
                             "Task results:\n{results_summary}\n\n\
@@ -215,6 +254,19 @@ impl Actor for AgentActor {
 
                 TeamMessage::JrExecute { task, reply } => {
                     let task_id = task.id.clone();
+                    let desc_preview: String = task
+                        .description
+                        .lines()
+                        .next()
+                        .unwrap_or(&task.description)
+                        .chars()
+                        .take(60)
+                        .collect();
+                    tracing::info!(
+                        "[actor] Jr received task {} — {:.60}…",
+                        task_id,
+                        desc_preview
+                    );
                     let prompt_text = format!(
                         "Execute this task:\n{}\n\n\
                          Do the work efficiently. Use the minimum number of tool calls needed (aim for 1-3). \

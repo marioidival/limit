@@ -61,12 +61,20 @@ impl OrchestratorActor {
         msg: TeamMessage,
         rx: oneshot::Receiver<Result<String, AgentError>>,
     ) -> Result<String, AgentError> {
+        let start = std::time::Instant::now();
         self.pm
             .send(msg)
             .await
             .map_err(|e| AgentError::ActorError(format!("PM mailbox closed: {e}")))?;
-        rx.await
-            .map_err(|_| AgentError::ActorError("PM reply channel dropped".into()))?
+        let result = rx
+            .await
+            .map_err(|_| AgentError::ActorError("PM reply channel dropped".into()))?;
+        tracing::info!(
+            "[orchestrator] PM replied in {:?} ({} chars)",
+            start.elapsed(),
+            result.as_ref().map(|s| s.len()).unwrap_or(0)
+        );
+        result
     }
 
     async fn ask_tl(
@@ -74,17 +82,46 @@ impl OrchestratorActor {
         msg: TeamMessage,
         rx: oneshot::Receiver<Result<String, AgentError>>,
     ) -> Result<String, AgentError> {
+        let start = std::time::Instant::now();
         self.tl
             .send(msg)
             .await
             .map_err(|e| AgentError::ActorError(format!("TL mailbox closed: {e}")))?;
-        rx.await
-            .map_err(|_| AgentError::ActorError("TL reply channel dropped".into()))?
+        let result = rx
+            .await
+            .map_err(|_| AgentError::ActorError("TL reply channel dropped".into()))?;
+        tracing::info!(
+            "[orchestrator] TL replied in {:?} ({} chars)",
+            start.elapsed(),
+            result.as_ref().map(|s| s.len()).unwrap_or(0)
+        );
+        result
     }
 
     /// Execute the full 6-phase workflow.
     pub async fn run_workflow(mut self) {
+        let start = std::time::Instant::now();
         let result = self.execute().await;
+        match &result {
+            Ok(r) => {
+                tracing::info!(
+                    "[orchestrator] workflow completed in {:?} — {} tasks ({} failed), {} files modified, {}in/{}out tokens",
+                    start.elapsed(),
+                    r.total_tasks,
+                    r.failed_tasks,
+                    r.files_modified.len(),
+                    r.tokens_input,
+                    r.tokens_output,
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "[orchestrator] workflow failed after {:?}: {}",
+                    start.elapsed(),
+                    e
+                );
+            }
+        }
         let _ = self.result_tx.send(result);
     }
 
@@ -456,7 +493,13 @@ impl OrchestratorActor {
             // Execute ready tasks in parallel (up to max_parallel)
             use futures::stream::{self, StreamExt};
 
-            let _batch_size = ready.len();
+            let batch_size = ready.len();
+            tracing::info!(
+                "[orchestrator] executing batch of {} task(s) ({} remaining)",
+                batch_size,
+                remaining.len()
+            );
+            let batch_start = std::time::Instant::now();
             let batch_results: Vec<TaskResult> =
                 stream::iter(ready.into_iter().enumerate())
                     .map(|(batch_i, (task, orig_idx))| {
@@ -574,9 +617,15 @@ impl OrchestratorActor {
                             }
                         }
                     })
-                    .buffer_unordered(max_parallel.max(1).min(_batch_size))
+                    .buffer_unordered(max_parallel.max(1).min(batch_size))
                     .collect()
                     .await;
+
+            tracing::info!(
+                "[orchestrator] batch completed in {:?} ({} results)",
+                batch_start.elapsed(),
+                batch_results.len()
+            );
 
             // Mark completed and collect results
             for r in &batch_results {
