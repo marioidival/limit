@@ -1710,6 +1710,7 @@ dependencies = [
  "limit-llm",
  "limit-tui",
  "lsp-types",
+ "parking_lot",
  "ratatui",
  "regex",
  "reqwest",
