@@ -45,7 +45,6 @@ mod orchestrator;
 mod orchestrator_actor;
 mod progress;
 mod role;
-mod supervisor;
 pub mod workflow;
 
 pub use agent::{PromptResult, TeamAgent};
@@ -269,7 +268,6 @@ impl Team {
             Role::PM,
             pm,
             self.history.clone(),
-            progress_tx.clone(),
             token_input.clone(),
             token_output.clone(),
         );
@@ -279,7 +277,6 @@ impl Team {
             Role::TL,
             tl,
             self.history.clone(),
-            progress_tx.clone(),
             token_input.clone(),
             token_output.clone(),
         );
@@ -292,7 +289,6 @@ impl Team {
                 Role::Jr,
                 jr,
                 self.history.clone(),
-                progress_tx.clone(),
                 token_input.clone(),
                 token_output.clone(),
             );

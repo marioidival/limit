@@ -16,14 +16,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::RwLock;
 
 /// An actor wrapping a [`TeamAgent`] that processes [`TeamMessage`]s.
 pub struct AgentActor {
     role: Role,
     agent: TeamAgent,
     history: Arc<RwLock<TeamHistory>>,
-    progress_tx: Option<mpsc::UnboundedSender<crate::team::progress::TeamProgressEvent>>,
     /// Shared counter for accumulating input tokens across prompts.
     token_input: Arc<AtomicU64>,
     /// Shared counter for accumulating output tokens across prompts.
@@ -35,7 +34,6 @@ impl AgentActor {
         role: Role,
         agent: TeamAgent,
         history: Arc<RwLock<TeamHistory>>,
-        progress_tx: Option<mpsc::UnboundedSender<crate::team::progress::TeamProgressEvent>>,
         token_input: Arc<AtomicU64>,
         token_output: Arc<AtomicU64>,
     ) -> Self {
@@ -43,7 +41,6 @@ impl AgentActor {
             role,
             agent,
             history,
-            progress_tx,
             token_input,
             token_output,
         }

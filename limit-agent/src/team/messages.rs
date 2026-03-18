@@ -48,35 +48,9 @@ pub enum TeamMessage {
         task: Task,
         reply: oneshot::Sender<TaskResult>,
     },
-    // Lifecycle
+    // Lifecycle (matched by AgentActor::handle; sent via task abort in practice)
+    #[allow(dead_code)]
     Shutdown,
-}
-
-/// Commands to the Orchestrator actor.
-pub enum OrchestratorCommand {
-    /// Start the workflow execution.
-    Run,
-    /// Stop the workflow.
-    Shutdown,
-}
-
-/// Messages to the Supervisor actor for child lifecycle management.
-pub enum SupervisorMessage {
-    Register {
-        name: String,
-        handle: tokio::task::JoinHandle<()>,
-        actor_ref: crate::team::actor::ActorRef<TeamMessage>,
-        restart_fn: Box<
-            dyn FnOnce() -> (
-                    crate::team::actor::ActorRef<TeamMessage>,
-                    tokio::task::JoinHandle<()>,
-                ) + Send,
-        >,
-    },
-    Unregister {
-        name: String,
-    },
-    ShutdownAll,
 }
 
 /// Maximum tasks from TL breakdown.
