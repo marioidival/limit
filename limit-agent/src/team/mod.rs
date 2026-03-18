@@ -288,6 +288,7 @@ impl Team {
             self.history.clone(),
             token_input.clone(),
             token_output.clone(),
+            None,
         );
         let (pm_ref, pm_handle) = spawn(pm_actor, 32);
 
@@ -297,6 +298,7 @@ impl Team {
             self.history.clone(),
             token_input.clone(),
             token_output.clone(),
+            None,
         );
         let (tl_ref, tl_handle) = spawn(tl_actor, 32);
 
@@ -309,6 +311,7 @@ impl Team {
                 self.history.clone(),
                 token_input.clone(),
                 token_output.clone(),
+                None,
             );
             let (jr_ref, jr_handle) = spawn(jr_actor, 32);
             jr_refs.push(jr_ref);

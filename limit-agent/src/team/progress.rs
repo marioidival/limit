@@ -37,6 +37,12 @@ pub enum TeamProgressEvent {
     },
     /// Status text shown after each phase completes (truncated agent output).
     StatusUpdate { message: String, nesting: u32 },
+    /// Per-task sub-status update (e.g., "Editing src/main.rs...").
+    TaskSubStatusUpdate {
+        task_id: String,
+        message: String,
+        nesting: u32,
+    },
     /// The entire team workflow has finished.
     Finished { success: bool, nesting: u32 },
 }
@@ -48,6 +54,7 @@ pub struct TaskProgressInfo {
     pub description: String,
     pub status: TaskProgressStatus,
     pub agent_index: Option<usize>,
+    pub sub_status: String,
 }
 
 /// Status of a single task.
@@ -89,6 +96,13 @@ impl TeamProgressEvent {
                 nesting,
             },
             Self::StatusUpdate { message, .. } => Self::StatusUpdate { message, nesting },
+            Self::TaskSubStatusUpdate {
+                task_id, message, ..
+            } => Self::TaskSubStatusUpdate {
+                task_id,
+                message,
+                nesting,
+            },
             Self::Finished { success, .. } => Self::Finished { success, nesting },
         }
     }

@@ -22,6 +22,7 @@ pub struct TaskProgressInfo {
     pub description: String,
     pub status: TaskProgressStatus,
     pub agent_index: Option<usize>,
+    pub sub_status: String,
 }
 
 /// Phase of the team workflow.
@@ -59,4 +60,8 @@ pub struct TaskProgressSnapshot {
     pub finished: bool,
     pub success: bool,
     pub status_text: String,
+    pub spinner_frame: usize,
+    pub finish_summary: String,
+    pub task_scroll_offset: usize,
+    pub task_list_expanded: bool,
 }

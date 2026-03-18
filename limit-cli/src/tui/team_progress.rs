@@ -25,6 +25,10 @@ pub struct TeamProgressSnapshot {
     pub finished_at: Option<Instant>,
     pub success: bool,
     pub status_text: String,
+    pub spinner_tick: usize,
+    pub finish_summary: String,
+    pub task_scroll_offset: usize,
+    pub task_list_expanded: bool,
 }
 
 /// Thread-safe state that receives events and produces snapshots.
@@ -52,7 +56,7 @@ impl TeamProgressState {
                 }
             }
         }
-        snap
+        snap.tick_spinner()
     }
 
     /// Apply an event from the workflow channel.
@@ -93,11 +97,54 @@ impl TeamProgressState {
                     };
                 }
             }
+            TeamProgressEvent::TaskSubStatusUpdate {
+                task_id, message, ..
+            } => {
+                if let Some(task) = state.tasks.iter_mut().find(|t| t.id == task_id) {
+                    task.sub_status = message;
+                }
+            }
             TeamProgressEvent::Finished { success, .. } => {
                 state.finished = true;
                 state.success = success;
                 state.phases_completed = PHASE_COUNT;
                 state.finished_at = Some(Instant::now());
+
+                // Compute finish summary
+                if let Some(started_at) = state.started_at {
+                    let elapsed = started_at.elapsed().as_secs();
+                    let elapsed_str = if elapsed < 60 {
+                        format!("{}s", elapsed)
+                    } else {
+                        let mins = elapsed / 60;
+                        let secs = elapsed % 60;
+                        format!("{}m{}s", mins, secs)
+                    };
+
+                    let completed = state
+                        .tasks
+                        .iter()
+                        .filter(|t| t.status == TaskProgressStatus::Completed)
+                        .count();
+                    let failed = state
+                        .tasks
+                        .iter()
+                        .filter(|t| t.status == TaskProgressStatus::Failed)
+                        .count();
+                    let total = state.tasks.len();
+
+                    if success {
+                        state.finish_summary = format!(
+                            "✅ Done in {} — {}/{} tasks completed",
+                            elapsed_str, completed, total
+                        );
+                    } else {
+                        state.finish_summary = format!(
+                            "⚠️ Done in {} — {}/{} tasks failed",
+                            elapsed_str, failed, total
+                        );
+                    }
+                }
             }
             TeamProgressEvent::StatusUpdate { message, .. } => {
                 state.status_text = message;
@@ -108,6 +155,21 @@ impl TeamProgressState {
     /// Reset state (after user sees final result).
     pub fn reset(&self) {
         *self.inner.lock() = TeamProgressSnapshot::default();
+    }
+
+    /// Adjust task scroll offset.
+    pub fn adjust_scroll(&self, delta: isize) {
+        let mut snap = self.inner.lock();
+        let new_offset = snap.task_scroll_offset as isize + delta;
+        if new_offset >= 0 {
+            snap.task_scroll_offset = new_offset as usize;
+        }
+    }
+
+    /// Toggle task list expansion.
+    pub fn toggle_expand(&self) {
+        let mut snap = self.inner.lock();
+        snap.task_list_expanded = !snap.task_list_expanded;
     }
 }
 
@@ -144,6 +206,11 @@ pub fn drain_progress_events(
                     } => {
                         format!("TaskCompleted({}:{})", task_id, success)
                     }
+                    TeamProgressEvent::TaskSubStatusUpdate {
+                        task_id, message, ..
+                    } => {
+                        format!("TaskSubStatusUpdate({}: {:.30}…)", task_id, message)
+                    }
                     TeamProgressEvent::StatusUpdate { message, .. } => {
                         format!("StatusUpdate({:.50}…)", message)
                     }
@@ -158,6 +225,13 @@ pub fn drain_progress_events(
 }
 
 impl TeamProgressSnapshot {
+    /// Increment the spinner tick and return a new snapshot.
+    fn tick_spinner(&self) -> TeamProgressSnapshot {
+        let mut snap = self.clone();
+        snap.spinner_tick = (snap.spinner_tick + 1) % 10;
+        snap
+    }
+
     /// Convert to the TUI widget snapshot type for rendering.
     pub fn to_tui_snapshot(
         &self,
@@ -191,12 +265,17 @@ impl TeamProgressSnapshot {
                         limit_agent::team::TaskProgressStatus::Failed => TuiStatus::Failed,
                     },
                     agent_index: t.agent_index,
+                    sub_status: t.sub_status.clone(),
                 })
                 .collect(),
             started_at: self.started_at,
             finished: self.finished,
             success: self.success,
             status_text: self.status_text.clone(),
+            spinner_frame: self.spinner_tick,
+            finish_summary: self.finish_summary.clone(),
+            task_scroll_offset: self.task_scroll_offset,
+            task_list_expanded: self.task_list_expanded,
         }
     }
 }

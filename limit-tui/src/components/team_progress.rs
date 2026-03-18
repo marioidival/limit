@@ -2,6 +2,7 @@
 //!
 //! Displays workflow phase, task list, and elapsed time during team execution.
 
+use crate::components::progress::SPINNER_FRAMES;
 use crate::components::team_progress_types::{
     TaskProgressSnapshot, TaskProgressStatus, PHASE_COUNT,
 };
@@ -25,25 +26,41 @@ pub fn render_team_progress(frame: &mut Frame, area: Rect, snapshot: &TaskProgre
     let phase_bar = build_phase_bar(snapshot, width);
     let mut lines: Vec<Line> = vec![phase_bar];
 
-    // Status text line (dimmed, truncated agent output — char-safe)
-    if !snapshot.status_text.is_empty() {
-        let mut msg = snapshot.status_text.clone();
-        let max_msg_len = width.saturating_sub(2);
-        if msg.chars().count() > max_msg_len {
-            let mut truncated = String::with_capacity(max_msg_len);
-            for (i, ch) in msg.chars().enumerate() {
-                if i >= max_msg_len.saturating_sub(1) {
-                    break;
-                }
-                truncated.push(ch);
-            }
-            truncated.push('…');
-            msg = truncated;
-        }
+    // Finish summary line (when workflow is finished)
+    if snapshot.finished {
+        let color = if snapshot.success {
+            Color::Green
+        } else {
+            Color::Yellow
+        };
         lines.push(Line::from(Span::styled(
-            format!(" {}", msg),
-            Style::default().fg(Color::DarkGray),
+            format!(" {}", snapshot.finish_summary),
+            Style::default().fg(color),
         )));
+    }
+
+    // Status text lines (dimmed, truncated agent output — char-safe, multi-line support)
+    if !snapshot.status_text.is_empty() {
+        let lines_to_render: Vec<&str> = snapshot.status_text.lines().take(2).collect();
+        for msg in lines_to_render {
+            let mut msg_str = msg.to_string();
+            let max_msg_len = width.saturating_sub(2);
+            if msg_str.chars().count() > max_msg_len {
+                let mut truncated = String::with_capacity(max_msg_len);
+                for (i, ch) in msg_str.chars().enumerate() {
+                    if i >= max_msg_len.saturating_sub(1) {
+                        break;
+                    }
+                    truncated.push(ch);
+                }
+                truncated.push('…');
+                msg_str = truncated;
+            }
+            lines.push(Line::from(Span::styled(
+                format!(" {}", msg_str),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
     }
 
     // Add task list (max 6 visible tasks)
@@ -100,17 +117,19 @@ pub fn panel_height(snapshot: &TaskProgressSnapshot) -> u16 {
         return 0;
     }
     let border = 2u16; // Borders::ALL: top + bottom
-    let status_line = if snapshot.status_text.is_empty() {
+    let finish_summary_line = if snapshot.finished { 1 } else { 0 };
+    // Multi-line status support: render up to 2 lines
+    let status_lines = if snapshot.status_text.is_empty() {
         0
     } else {
-        1
+        snapshot.status_text.lines().take(2).count() as u16
     };
     let content = if snapshot.tasks.is_empty() {
-        1 + status_line // phase bar only
+        1 + finish_summary_line + status_lines // phase bar only
     } else {
         let task_lines = (snapshot.tasks.len().min(6) as u16) + 1; // +1 for "Tasks:" header
         let more_line = if snapshot.tasks.len() > 6 { 1 } else { 0 };
-        1 + status_line + task_lines + more_line // phase bar + status + tasks
+        1 + finish_summary_line + status_lines + task_lines + more_line // phase bar + status + tasks
     };
     (border + content).clamp(3, 11)
 }
@@ -118,30 +137,40 @@ pub fn panel_height(snapshot: &TaskProgressSnapshot) -> u16 {
 fn build_phase_bar(snapshot: &TaskProgressSnapshot, width: usize) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
 
-    // Phase name
+    // Phase name with spinner
     let phase_name = snapshot
         .current_phase
         .map(|p| format!("{}", p))
         .unwrap_or_else(|| "Starting".to_string());
+    let spinner = SPINNER_FRAMES[snapshot.spinner_frame % SPINNER_FRAMES.len()];
     spans.push(Span::styled(
-        format!(" {} ", phase_name),
+        format!(" {} ", format!("{} {}", spinner, phase_name)),
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
     ));
 
-    // Progress bar: [███░░░░░░░░░░] 3/6
+    // Progress bar with color-coded phases: [███░░░░░░░░░░] 3/6
+    // Phase colors: PM=Magenta, TL=Blue, Jr=Yellow, Validation/Delivery=Green
     let completed = snapshot.phases_completed;
     let bar_width = 12usize;
     let filled = ((completed * bar_width) / PHASE_COUNT).min(bar_width);
     let empty = bar_width - filled;
 
-    spans.push(Span::raw(" ["));
-    if filled > 0 {
-        spans.push(Span::styled(
-            "█".repeat(filled),
-            Style::default().fg(Color::Green),
-        ));
+    spans.push(Span::raw("["));
+    for i in 0..filled {
+        // Map bar position to phase index (0-5) and assign color
+        let phase_index = (i * PHASE_COUNT as usize) / bar_width;
+        let color = match phase_index {
+            0 => Color::Magenta, // PM Analysis
+            1 => Color::Blue,    // TL Plan
+            2 => Color::Blue,    // TL Breakdown
+            3 => Color::Yellow,  // Jr Execution
+            4 => Color::Green,   // TL Validation
+            5 => Color::Green,   // PM Delivery
+            _ => Color::Green,
+        };
+        spans.push(Span::styled("█", Style::default().fg(color)));
     }
     if empty > 0 {
         spans.push(Span::styled(

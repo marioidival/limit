@@ -450,9 +450,11 @@ impl TuiApp {
 
         // Handle autocomplete navigation FIRST (before general scrolling)
         let autocomplete_active = self.autocomplete_manager.is_active();
+        let team_progress_active = self.tui_bridge.team_progress().snapshot().is_active;
         tracing::debug!(
-            "Key handling: autocomplete_active={}, is_busy={}, history_len={}",
+            "Key handling: autocomplete_active={}, team_progress_active={}, is_busy={}, history_len={}",
             autocomplete_active,
+            team_progress_active,
             self.tui_bridge.is_busy(),
             self.input_editor.history().len()
         );
@@ -527,6 +529,11 @@ impl TuiApp {
                 return Ok(());
             }
             KeyCode::Up => {
+                // If team progress is active, scroll tasks up
+                if team_progress_active {
+                    self.tui_bridge.team_progress().adjust_scroll(-1);
+                    return Ok(());
+                }
                 // Use for history navigation
                 tracing::debug!(
                     "Up arrow: navigating history up, history_len={}",
@@ -541,6 +548,11 @@ impl TuiApp {
                 return Ok(());
             }
             KeyCode::Down => {
+                // If team progress is active, scroll tasks down
+                if team_progress_active {
+                    self.tui_bridge.team_progress().adjust_scroll(1);
+                    return Ok(());
+                }
                 // Use for history navigation
                 tracing::debug!(
                     "Down arrow: navigating history down, is_navigating={}",
@@ -596,8 +608,20 @@ impl TuiApp {
                 self.input_editor.move_to_end();
             }
             KeyCode::Enter => {
+                // If team progress is active, toggle expand/collapse
+                if team_progress_active {
+                    self.tui_bridge.team_progress().toggle_expand();
+                    return Ok(());
+                }
                 // If autocomplete is active, it's already handled above
                 self.handle_enter()?;
+            }
+            KeyCode::Char('+') => {
+                // Toggle task list expansion when team progress is active
+                if team_progress_active {
+                    self.tui_bridge.team_progress().toggle_expand();
+                    return Ok(());
+                }
             }
             // Regular character input (including UTF-8)
             KeyCode::Char(c)

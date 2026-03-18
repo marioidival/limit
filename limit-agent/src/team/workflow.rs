@@ -228,6 +228,7 @@ pub async fn execute_workflow(
                     description: t.description.clone(),
                     status: TaskProgressStatus::Pending,
                     agent_index: None,
+                    sub_status: String::new(),
                 })
                 .collect(),
             nesting: 0,
