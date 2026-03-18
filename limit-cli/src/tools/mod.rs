@@ -3,6 +3,7 @@ mod bash;
 pub mod browser;
 mod file;
 mod git;
+mod team_start;
 mod web_fetch;
 mod web_search;
 
@@ -17,5 +18,6 @@ pub use git::{
     GitAddTool, GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool,
     GitStatusTool,
 };
+pub use team_start::TeamStartTool;
 pub use web_fetch::WebFetchTool;
 pub use web_search::WebSearchTool;
