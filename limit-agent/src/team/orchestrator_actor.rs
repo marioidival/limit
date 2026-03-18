@@ -365,7 +365,7 @@ impl OrchestratorActor {
         let total_tasks = task_results.len();
         let files_modified = extract_modified_files(&task_results);
 
-        // ── Build check (TL-suggested command) ───────────────────────
+        // ── Build command suggestion (TL-suggested) ──────────────────
         tracing::info!("[team] asking TL for build verification command");
         let (tx, rx) = oneshot::channel();
         let build_cmd_response = self
@@ -379,17 +379,10 @@ impl OrchestratorActor {
             .await?;
 
         let build_cmd = build_cmd_response.trim().to_string();
-        let build_output = if build_cmd == "NONE" || build_cmd.is_empty() {
+        if build_cmd.is_empty() || build_cmd == "NONE" {
             tracing::info!("[team] TL suggested no build command");
-            None
         } else {
-            tracing::info!("[team] running TL-suggested build command: {}", build_cmd);
-            run_command(build_cmd.as_str()).await
-        };
-        if let Some(ref output) = build_output {
-            tracing::warn!("[team] build check failed:\n{}", output);
-        } else if !build_cmd.is_empty() && build_cmd != "NONE" {
-            tracing::info!("[team] build check passed");
+            tracing::info!("[team] TL suggested build command: {}", build_cmd);
         }
 
         let results_summary: String = task_results
@@ -436,7 +429,7 @@ impl OrchestratorActor {
                 TeamMessage::TlValidate {
                     results_summary: results_summary.clone(),
                     files_list,
-                    build_output: build_output.clone(),
+                    build_cmd: build_cmd.clone(),
                     reply: tx,
                 },
                 rx,
@@ -727,44 +720,6 @@ impl OrchestratorActor {
 
         // Return results in original task order
         tasks.iter().filter_map(|t| results.remove(&t.id)).collect()
-    }
-}
-
-/// Run a shell command and capture its output.
-///
-/// Returns `Some(output)` on failure (stderr+stdout), `None` on success.
-async fn run_command(cmd: &str) -> Option<String> {
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(120),
-        tokio::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .output(),
-    )
-    .await
-    {
-        Ok(Ok(output)) => {
-            if output.status.success() {
-                None
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let combined = format!("{}{}", stdout, stderr);
-                if combined.trim().is_empty() {
-                    Some("command exited with non-zero status".to_string())
-                } else {
-                    Some(combined)
-                }
-            }
-        }
-        Ok(Err(e)) => {
-            tracing::warn!("[team] build command failed to run: {}", e);
-            Some(format!("Failed to run command: {}", e))
-        }
-        Err(_) => {
-            tracing::warn!("[team] build command timed out after 120s");
-            Some("Build command timed out after 120s".to_string())
-        }
     }
 }
 

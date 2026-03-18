@@ -114,11 +114,11 @@ impl Default for TeamRolesSection {
             },
             tl: RoleConfig {
                 model: None,
-                tools: Some(vec![]), // TL: no tools by default (plan from PM analysis)
+                tools: Some(vec!["bash".to_string(), "file_read".to_string()]), // TL: tools for validation phase
                 max_tokens: None,
                 provider: None,
                 base_url: None,
-                max_tool_rounds: Some(12),
+                max_tool_rounds: Some(15),
             },
             jr: RoleConfig {
                 model: None,
@@ -241,7 +241,7 @@ impl Role {
     pub fn default_tools(&self) -> Vec<&'static str> {
         match self {
             Role::PM => vec![],
-            Role::TL => vec![],
+            Role::TL => vec!["bash", "file_read"],
             Role::Jr => vec!["file_read", "file_write", "file_edit", "bash"],
         }
     }
@@ -415,9 +415,13 @@ model = "gpt-4o-mini"
         let mut section = section;
         section.normalize_tools();
 
-        // PM/TL with no TOML entry → serde default (None) → normalized to empty
+        // PM with no TOML entry → serde default (None) → normalized to empty
         assert_eq!(section.roles.pm.tools.as_deref(), Some([].as_slice()));
-        assert_eq!(section.roles.tl.tools.as_deref(), Some([].as_slice()));
+        // TL with no TOML entry → serde default (None) → normalized to bash + file_read
+        assert!(section.roles.tl.tools.is_some());
+        let tl_tools = section.roles.tl.tools.as_deref().unwrap();
+        assert!(tl_tools.contains(&"bash".to_string()));
+        assert!(tl_tools.contains(&"file_read".to_string()));
         // Jr with partial TOML → None → normalized to restricted tools
         assert!(section.roles.jr.tools.is_some());
         let jr_tools = section.roles.jr.tools.as_deref().unwrap();
@@ -498,7 +502,8 @@ base_url = "https://custom-endpoint.example.com/v1"
     #[test]
     fn test_role_default_tools() {
         assert!(Role::PM.default_tools().is_empty());
-        assert!(Role::TL.default_tools().is_empty());
+        assert!(Role::TL.default_tools().contains(&"bash"));
+        assert!(Role::TL.default_tools().contains(&"file_read"));
         assert_eq!(
             Role::Jr.default_tools(),
             vec!["file_read", "file_write", "file_edit", "bash"]

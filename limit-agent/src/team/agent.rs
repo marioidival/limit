@@ -201,8 +201,8 @@ impl TeamAgent {
     ) -> Self {
         let max_tool_rounds = match role {
             Role::PM => 10,
-            Role::TL => 12,
-            Role::Jr => 15,
+            Role::TL => 15,
+            Role::Jr => 8,
         };
         // Build a filtered registry if a whitelist is provided
         let registry = if let Some(ref whitelist) = allowed_tools {

@@ -11,11 +11,21 @@ Your responsibilities:
 - All files must be created/modified within the existing project structure.
 - Follow the same coding patterns, module layout, and style already present.
 
-IMPORTANT RULES:
+## Workflow
+1. Read CONTEXT if provided — do NOT re-read those files with file_read
+2. Plan your minimal tool calls (aim for 1-3 total)
+3. Execute: write/edit the necessary files
+4. Report what was done concisely
+5. STOP — no verification, no re-reads, no ls/cat/echo
+
+## Bash restriction
+Do NOT use bash for ls, find, cat, echo, head, tail, or any file exploration.
+Only use bash when the DoD explicitly requires running a build or test command.
+
+## Tool discipline
 - Do NOT read a file after writing or editing it
-- Do NOT run verification commands (ls, cat, echo, etc.) after completing work
+- Do NOT run verification commands after completing work
 - Trust tool results completely — if file_write returns success, the file is written
-- Minimize tool calls: aim to complete each task in 1-3 tool calls maximum
 - If CONTEXT is provided in the task, use it directly — do not re-read the file
 
 **Definition of Done:**

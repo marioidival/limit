@@ -41,7 +41,7 @@ pub enum TeamMessage {
     TlValidate {
         results_summary: String,
         files_list: String,
-        build_output: Option<String>,
+        build_cmd: String,
         reply: oneshot::Sender<Result<String, AgentError>>,
     },
     TlSuggestBuildCommand {

@@ -156,7 +156,16 @@ impl Actor for AgentActor {
                     tracing::info!("[actor] PM received PmAnalyze ({} chars)", request.len());
                     let result = self
                         .prompt(&format!(
-                            "User request:\n{request}\n\nAnalyze this request and identify what needs to be done."
+                            "User request:\n{request}\n\n\
+                             Analyze this request. Structure your output as:\n\n\
+                             ## Core Problem\n<1-2 sentences>\n\n\
+                             ## Key Requirements\n- <requirement 1>\n- <requirement 2>\n- ...\n\n\
+                             ## Constraints & Assumptions\n\
+                             - <constraints from existing project>\n\
+                             - <assumptions>\n\n\
+                             ## Success Criteria\n\
+                             - <measurable outcome 1>\n\
+                             - <measurable outcome 2>"
                         ))
                         .await;
                     self.log_event(
@@ -251,8 +260,7 @@ impl Actor for AgentActor {
                             "Technical plan:\n{plan}\n\nBreak this down into at most {MAX_TASKS} specific, \
                              executable tasks. Each task should be self-contained and independently \
                              completable by a junior developer. Combine small steps into single tasks.\n\n\
-                             IMPORTANT: Do NOT read any files or use tools. Do NOT include CONTEXT blocks. \
-                             Junior agents have their own tools to read files — just describe what to do.\n\n\
+                             IMPORTANT: Do NOT read any files or use tools. Junior agents have their own tools.\n\n\
                              For EACH task, include a DEFINITION_OF_DONE line with 2-4 concrete acceptance criteria.\n\
                              Format:\n\
                              TASK: <description>\n\
@@ -260,6 +268,14 @@ impl Actor for AgentActor {
                              - <specific, verifiable criterion>\n\
                              - <e.g., \"file compiles without errors\">\n\
                              - <e.g., \"module exports the required public API\">\n\n\
+                             Include CONTEXT blocks with relevant file contents Juniors need \
+                             (project structure, existing types, signatures they must match). \
+                             This prevents Juniors from wasting tool calls exploring.\n\
+                             Format:\n\
+                             CONTEXT:\n\
+                             ```<language>\n\
+                             <relevant file contents>\n\
+                             ```\n\n\
                              If a task depends on the output of another task, add DEPENDS_ON on the next line:\
                              \nTASK: <dependent task>\nDEPENDS_ON: <task it depends on>\n\n\
                              CRITICAL: Count every distinct deliverable in the plan. Each one MUST have a TASK. \
@@ -309,7 +325,7 @@ impl Actor for AgentActor {
                 TeamMessage::TlValidate {
                     results_summary,
                     files_list,
-                    build_output,
+                    build_cmd,
                     reply,
                 } => {
                     tracing::info!(
@@ -317,28 +333,20 @@ impl Actor for AgentActor {
                         results_summary.len(),
                         files_list.len()
                     );
-                    let build_section = match &build_output {
-                        Some(output) => {
-                            let trimmed = if output.len() > 3000 {
-                                format!("{}...\n[truncated]", &output[..3000])
-                            } else {
-                                output.clone()
-                            };
-                            format!("\n\nBUILD STATUS: FAILED\n```\n{trimmed}\n```\n",)
-                        }
-                        None => "\n\nBUILD STATUS: PASSED".to_string(),
-                    };
                     let result = self
                         .prompt(&format!(
                             "Evaluate each task against its Definition of Done.\n\n\
                              Task results:\n{results_summary}\n\n\
                              {files_list}\n\n\
-                             {build_section}\n\n\
+                             BUILD COMMAND TO RUN: {build_cmd}\n\n\
+                             Use your tools to verify:\n\
+                             1. Run the build command above with bash\n\
+                             2. Read relevant files with file_read to check DoD compliance\n\
+                             3. Judge each task\n\n\
                              RULES:\n\
-                             - If build FAILED: ALL tasks that modified files with errors are FAIL\n\
+                             - If build fails: ALL tasks that modified files with errors are FAIL\n\
                              - If a task modified no files: FAIL (no deliverable produced)\n\
                              - Otherwise: PASS only if DoD criteria are met\n\n\
-                             Do NOT use tools.\n\n\
                              Output format:\n\
                              ## Task: <task_id>\n\
                              - Status: **PASS** or **FAIL**\n\
@@ -395,7 +403,8 @@ impl Actor for AgentActor {
                          Do the work efficiently. Use the minimum number of tool calls needed (aim for 1-3). \
                          Do not verify or re-read files after writing them — trust the tool results. \
                          If CONTEXT is provided in the task, use it directly instead of reading the file. \
-                         Do not run ls/cat/echo to verify your work.",
+                         Do not use bash for ls, find, cat, echo, head, tail, or any file exploration. \
+                         Only use bash when the DoD explicitly requires running a build or test command.",
                         task.description
                     );
 
