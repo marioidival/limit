@@ -276,6 +276,7 @@ impl TeamCommand {
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
         // Create progress channel and set receiver for TUI rendering
+        ctx.team_progress.reset();
         let (progress_tx, progress_rx) = mpsc::unbounded_channel();
         *ctx.team_progress_rx.lock() = Some(progress_rx);
 

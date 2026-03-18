@@ -771,6 +771,7 @@ impl TuiApp {
                 self.tui_bridge.total_output_tokens_arc(),
                 self.clipboard.clone(),
                 self.team_progress_rx.clone(),
+                self.tui_bridge.team_progress(),
             );
 
             // Execute command via registry

@@ -4,6 +4,7 @@
 
 use crate::error::CliError;
 use crate::session::SessionManager;
+use crate::tui::team_progress::TeamProgressState;
 use crate::tui::TuiState;
 use limit_agent::team::TeamProgressEvent;
 use limit_tui::components::{ChatView, Message};
@@ -51,6 +52,8 @@ pub struct CommandContext {
     pub clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
     /// Holder for team progress event receiver (shared with main loop)
     pub team_progress_rx: Arc<ParkingMutex<Option<mpsc::UnboundedReceiver<TeamProgressEvent>>>>,
+    /// Team progress state for resetting between runs
+    pub team_progress: Arc<TeamProgressState>,
 }
 
 impl CommandContext {
@@ -66,6 +69,7 @@ impl CommandContext {
         total_output_tokens: Arc<Mutex<u64>>,
         clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
         team_progress_rx: Arc<ParkingMutex<Option<mpsc::UnboundedReceiver<TeamProgressEvent>>>>,
+        team_progress: Arc<TeamProgressState>,
     ) -> Self {
         Self {
             chat_view,
@@ -77,6 +81,7 @@ impl CommandContext {
             total_output_tokens,
             clipboard,
             team_progress_rx,
+            team_progress,
         }
     }
 
