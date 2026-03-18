@@ -41,12 +41,14 @@ pub enum TeamMessage {
     TlValidate {
         results_summary: String,
         files_list: String,
+        compilation_output: Option<String>,
         reply: oneshot::Sender<Result<String, AgentError>>,
     },
     // Jr
     JrExecute {
         task: Task,
         reply: oneshot::Sender<TaskResult>,
+        progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
     },
     // Lifecycle (matched by AgentActor::handle; sent via task abort in practice)
     #[allow(dead_code)]
@@ -92,6 +94,11 @@ pub fn send_progress(
                 crate::team::progress::TeamProgressEvent::StatusUpdate { message, .. } => {
                     format!("StatusUpdate({:.50}…)", message)
                 }
+                crate::team::progress::TeamProgressEvent::TaskSubStatusUpdate {
+                    task_id,
+                    message,
+                    ..
+                } => format!("TaskSubStatusUpdate({}: {:.50}…)", task_id, message),
                 crate::team::progress::TeamProgressEvent::Finished { success, .. } => {
                     format!("Finished({})", success)
                 }

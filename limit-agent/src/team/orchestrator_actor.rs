@@ -190,7 +190,7 @@ impl OrchestratorActor {
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
-                message: truncate(&analysis, 100),
+                message: truncate(&analysis, 200),
                 nesting: 0,
             },
         );
@@ -222,7 +222,7 @@ impl OrchestratorActor {
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
-                message: truncate(&plan, 100),
+                message: truncate(&plan, 200),
                 nesting: 0,
             },
         );
@@ -254,7 +254,7 @@ impl OrchestratorActor {
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
-                message: truncate(&tasks_text, 100),
+                message: truncate(&tasks_text, 200),
                 nesting: 0,
             },
         );
@@ -293,6 +293,7 @@ impl OrchestratorActor {
                         description: t.description.clone(),
                         status: TaskProgressStatus::Pending,
                         agent_index: None,
+                        sub_status: String::new(),
                     })
                     .collect(),
                 nesting: 0,
@@ -352,6 +353,14 @@ impl OrchestratorActor {
         let total_tasks = task_results.len();
         let files_modified = extract_modified_files(&task_results);
 
+        // ── Compilation check ──────────────────────────────────────
+        let compilation_output = run_compilation_check().await;
+        if let Some(ref output) = compilation_output {
+            tracing::warn!("[team] compilation check failed:\n{}", output);
+        } else {
+            tracing::info!("[team] compilation check passed");
+        }
+
         let results_summary: String = task_results
             .iter()
             .map(|r| {
@@ -396,6 +405,7 @@ impl OrchestratorActor {
                 TeamMessage::TlValidate {
                     results_summary: results_summary.clone(),
                     files_list,
+                    compilation_output: compilation_output.clone(),
                     reply: tx,
                 },
                 rx,
@@ -405,7 +415,7 @@ impl OrchestratorActor {
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
-                message: truncate(&validation, 100),
+                message: truncate(&validation, 200),
                 nesting: 0,
             },
         );
@@ -439,7 +449,7 @@ impl OrchestratorActor {
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
-                message: truncate(&delivery, 100),
+                message: truncate(&delivery, 200),
                 nesting: 0,
             },
         );
@@ -558,6 +568,7 @@ impl OrchestratorActor {
                                     .send(TeamMessage::JrExecute {
                                         task: task.clone(),
                                         reply: tx,
+                                        progress_tx: self.progress_tx.clone(),
                                     })
                                     .await
                                 {
@@ -611,6 +622,7 @@ impl OrchestratorActor {
                                         .send(TeamMessage::JrExecute {
                                             task: retry_task,
                                             reply: tx,
+                                            progress_tx: self.progress_tx.clone(),
                                         })
                                         .await
                                     {
@@ -677,6 +689,63 @@ impl OrchestratorActor {
 
         // Return results in original task order
         tasks.iter().filter_map(|t| results.remove(&t.id)).collect()
+    }
+}
+
+/// Detect the build system in CWD and run a compilation check.
+///
+/// Returns `Some(output)` on failure (stderr/stdout), `None` on success or
+/// when no build system is detected.
+async fn run_compilation_check() -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    let (cmd, args): (&str, Vec<&str>) = if cwd.join("Cargo.toml").exists() {
+        ("cargo", vec!["check", "2>&1"])
+    } else if cwd.join("package.json").exists() {
+        ("npm", vec!["run", "build", "2>&1"])
+    } else if cwd.join("pyproject.toml").exists() {
+        // Run py_compile on modified .py files in CWD
+        ("python3", vec!["-m", "py_compile", "."])
+    } else if cwd.join("go.mod").exists() {
+        ("go", vec!["build", "./..."])
+    } else {
+        tracing::info!("[team] no build system detected, skipping compilation check");
+        return None;
+    };
+
+    tracing::info!(
+        "[team] running compilation check: {} {}",
+        cmd,
+        args.join(" ")
+    );
+
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        tokio::process::Command::new(cmd).args(&args).output(),
+    )
+    .await
+    {
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                None
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let combined = format!("{}{}", stdout, stderr);
+                if combined.trim().is_empty() {
+                    Some(format!("command `{}` exited with non-zero status", cmd))
+                } else {
+                    Some(combined)
+                }
+            }
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("[team] compilation check failed to run: {}", e);
+            Some(format!("Failed to run `{}`: {}", cmd, e))
+        }
+        Err(_) => {
+            tracing::warn!("[team] compilation check timed out after 120s");
+            Some(format!("`{}` timed out after 120s", cmd))
+        }
     }
 }
 
