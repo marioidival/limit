@@ -230,7 +230,9 @@ impl Actor for AgentActor {
                     tracing::info!("[actor] TL received TlPlan ({} chars)", analysis.len());
                     let result = self
                         .prompt(&format!(
-                            "PM analysis:\n{analysis}\n\nCreate a technical plan to implement this."
+                            "PM analysis:\n{analysis}\n\nCreate a detailed technical plan to implement this. \
+                             Output the plan directly — do NOT say you will explore, read files, or investigate. \
+                             You have no tools. Produce the plan now based on the analysis above."
                         ))
                         .await;
                     self.log_event(

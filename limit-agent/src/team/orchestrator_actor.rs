@@ -209,6 +209,7 @@ impl OrchestratorActor {
         );
 
         let (tx, rx) = oneshot::channel();
+        let analysis_clone = analysis.clone();
         let plan = self
             .ask_tl(
                 TeamMessage::TlPlan {
@@ -218,6 +219,17 @@ impl OrchestratorActor {
                 rx,
             )
             .await?;
+
+        // Guard against empty/exploratory TL plans
+        let plan_for_breakdown = if plan.len() < 200 || plan.to_lowercase().contains("explore") {
+            tracing::warn!(
+                "[team] TL plan too short ({}) or exploratory — using PM analysis for breakdown",
+                plan.len()
+            );
+            analysis_clone
+        } else {
+            plan.clone()
+        };
 
         send_progress(
             &self.progress_tx,
@@ -244,7 +256,7 @@ impl OrchestratorActor {
         let tasks_text = self
             .ask_tl(
                 TeamMessage::TlBreakdown {
-                    plan: plan.clone(),
+                    plan: plan_for_breakdown,
                     reply: tx,
                 },
                 rx,
@@ -431,6 +443,11 @@ impl OrchestratorActor {
             )
             .await?;
 
+        let validation_failures = parse_validation_failures(&validation);
+        if validation_failures > 0 {
+            tracing::warn!("[team] TL validation found {} FAIL(s)", validation_failures);
+        }
+
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
@@ -474,10 +491,12 @@ impl OrchestratorActor {
         );
         self.log_event("PM", "delivery", &delivery).await;
 
+        let total_failures = failed_tasks + validation_failures;
+
         send_progress(
             &self.progress_tx,
             TeamProgressEvent::Finished {
-                success: true,
+                success: total_failures == 0,
                 nesting: 0,
             },
         );
@@ -487,7 +506,7 @@ impl OrchestratorActor {
             duration: start.elapsed(),
             events: self.history.read().await.events().to_vec(),
             total_retries: 0,
-            failed_tasks,
+            failed_tasks: total_failures,
             total_tasks,
             files_modified,
             tokens_input: 0,
@@ -780,6 +799,14 @@ fn truncate_context(description: &str, max_chars: usize) -> String {
     }
 }
 
+/// Count **FAIL** entries in TL validation output.
+fn parse_validation_failures(validation: &str) -> usize {
+    validation
+        .lines()
+        .filter(|l| l.contains("Status:") && l.contains("**FAIL**"))
+        .count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -810,5 +837,17 @@ mod tests {
         let desc = "TASK: Create auth module\nCONTEXT:\n```rust\npub mod auth;\n```";
         let result = truncate_context(desc, 100);
         assert!(result.starts_with("TASK: Create auth module\nCONTEXT:\n"));
+    }
+
+    #[test]
+    fn test_parse_validation_failures_none() {
+        let v = "## Task: 1\n- Status: **PASS**\n- Reason: all good";
+        assert_eq!(parse_validation_failures(v), 0);
+    }
+
+    #[test]
+    fn test_parse_validation_failures_some() {
+        let v = "## Task: 1\n- Status: **FAIL**\n- Reason: bad\n\n## Task: 2\n- Status: **PASS**\n- Reason: ok\n\n## Task: 3\n- Status: **FAIL**\n- Reason: also bad";
+        assert_eq!(parse_validation_failures(v), 2);
     }
 }
