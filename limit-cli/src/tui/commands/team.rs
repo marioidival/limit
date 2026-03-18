@@ -398,7 +398,7 @@ impl TeamCommand {
                 let team_section = config_result
                     .as_ref()
                     .ok()
-                    .and_then(|cfg| cfg.team_raw.as_ref())
+                    .and_then(|cfg| cfg.team.as_ref())
                     .map(limit_agent::team::TeamSection::from_raw)
                     .unwrap_or_default();
                 let team_config = TeamConfig::from_section(&team_section);
@@ -407,7 +407,11 @@ impl TeamCommand {
                 let tool_registry = build_tool_registry();
                 let tools = Arc::new(tool_registry);
 
-                let new_team = Team::new(name_clone.clone(), real_provider, team_config.clone(), tools);
+                let providers = config_result
+                    .as_ref()
+                    .map(|c| c.providers.clone())
+                    .unwrap_or_default();
+                let new_team = Team::new(name_clone.clone(), real_provider, team_config.clone(), tools, providers);
 
                 match new_team {
                     Ok(mut team) => {
@@ -659,8 +663,14 @@ fn create_placeholder_team(name: &str, config: &TeamConfig) -> Team {
     let provider: Box<dyn limit_llm::LlmProvider> = Box::new(NoopProvider);
     let tools = Arc::new(limit_agent::ToolRegistry::new());
 
-    Team::new(name.to_string(), provider, config.clone(), tools)
-        .expect("placeholder team creation should not fail")
+    Team::new(
+        name.to_string(),
+        provider,
+        config.clone(),
+        tools,
+        Default::default(),
+    )
+    .expect("placeholder team creation should not fail")
 }
 
 /// Build a [`ToolRegistry`] with the same tools that the main agent uses.

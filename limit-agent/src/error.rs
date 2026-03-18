@@ -38,3 +38,9 @@ impl From<std::io::Error> for AgentError {
         AgentError::IoError(err.to_string())
     }
 }
+
+impl From<limit_llm::LlmError> for AgentError {
+    fn from(err: limit_llm::LlmError) -> Self {
+        AgentError::LlmError(err.to_string())
+    }
+}

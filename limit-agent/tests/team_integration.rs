@@ -49,7 +49,14 @@ fn mock_team(name: &str) -> Team {
     let config = TeamConfig::default();
     let provider: Box<dyn limit_llm::LlmProvider> = Box::new(mock_provider_for_workflow());
     let tools = test_registry();
-    Team::new(name.to_string(), provider, config, tools).expect("team creation")
+    Team::new(
+        name.to_string(),
+        provider,
+        config,
+        tools,
+        Default::default(),
+    )
+    .expect("team creation")
 }
 
 #[tokio::test]
@@ -193,8 +200,14 @@ async fn test_workflow_empty_tasks_returns_early() {
     );
     let config = TeamConfig::default();
     let tools = test_registry();
-    let mut team =
-        Team::new("empty-tasks-test".into(), provider, config, tools).expect("team creation");
+    let mut team = Team::new(
+        "empty-tasks-test".into(),
+        provider,
+        config,
+        tools,
+        Default::default(),
+    )
+    .expect("team creation");
 
     let result = team.execute("simple request", None).await.unwrap();
     assert_eq!(result.total_tasks, 0, "no tasks should be parsed");

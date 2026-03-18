@@ -19,9 +19,15 @@ pub enum Role {
 ///
 /// Any field set to `None` falls back to the active provider's default
 /// model (the same one used by the single-agent mode).
+///
+/// When `provider` is `Some`, a **separate** LLM provider instance is
+/// created for this role (cross-provider mixing). When `None`, the main
+/// provider is cloned with an optional `max_tokens` override.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoleConfig {
     /// Model override for this role (e.g. `"gpt-4o-mini"` for Jr to save cost).
+    ///
+    /// **Required** when `provider` is set.
     pub model: Option<String>,
     /// Tool names this role is allowed to use.
     ///
@@ -30,6 +36,13 @@ pub struct RoleConfig {
     pub tools: Option<Vec<String>>,
     /// Max tokens override for this role.
     pub max_tokens: Option<u32>,
+    /// Override the provider type for this role (e.g. `"openai"`, `"anthropic"`).
+    ///
+    /// When set, `model` must also be set. The API key is resolved from
+    /// environment variables (`{PROVIDER}_API_KEY`).
+    pub provider: Option<String>,
+    /// Custom base URL for the role's provider endpoint.
+    pub base_url: Option<String>,
 }
 
 /// Full team section from `config.toml`.
@@ -43,7 +56,7 @@ pub struct RoleConfig {
 /// [team.roles]
 /// pm = { tools = [] }
 /// tl = { tools = ["bash"] }
-/// jr = { model = "gpt-4o-mini", tools = ["file_read", "file_write", "file_edit", "bash"] }
+/// jr = { provider = "openai", model = "gpt-4o-mini", max_tokens = 8192 }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamSection {
@@ -90,11 +103,15 @@ impl Default for TeamRolesSection {
                 model: None,
                 tools: Some(vec![]), // PM: no tools by default
                 max_tokens: None,
+                provider: None,
+                base_url: None,
             },
             tl: RoleConfig {
                 model: None,
                 tools: Some(vec!["bash".to_string()]), // TL: can run validation commands
                 max_tokens: None,
+                provider: None,
+                base_url: None,
             },
             jr: RoleConfig {
                 model: None,
@@ -107,13 +124,15 @@ impl Default for TeamRolesSection {
                         .map(|s| s.to_string())
                         .collect(),
                 ),
+                provider: None,
+                base_url: None,
             },
         }
     }
 }
 
 impl TeamSection {
-    /// Parse from a raw `toml::Value` (typically from `Config::team_raw`).
+    /// Parse from a raw `toml::Value` (typically from `Config::team`).
     ///
     /// Returns the default section if the value is missing or unparseable.
     pub fn from_raw(value: &toml::Value) -> Self {
@@ -327,6 +346,46 @@ tools = ["file_read", "file_write", "bash"]
         assert_eq!(Role::PM.default_model(), "gpt-4");
         assert_eq!(Role::TL.default_model(), "gpt-4");
         assert_eq!(Role::Jr.default_model(), "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_role_config_with_provider_override() {
+        let toml = r#"
+[roles]
+[roles.pm]
+tools = []
+
+[roles.tl]
+tools = ["bash"]
+
+[roles.jr]
+provider = "openai"
+model = "gpt-4o-mini"
+max_tokens = 8192
+tools = ["file_read", "bash"]
+"#;
+        let section: TeamSection = toml::from_str(toml).unwrap();
+        assert_eq!(section.roles.jr.provider.as_deref(), Some("openai"));
+        assert_eq!(section.roles.jr.model.as_deref(), Some("gpt-4o-mini"));
+        assert_eq!(section.roles.jr.max_tokens, Some(8192));
+        assert!(section.roles.pm.provider.is_none());
+        assert!(section.roles.tl.provider.is_none());
+    }
+
+    #[test]
+    fn test_role_config_with_base_url() {
+        let toml = r#"
+[roles]
+[roles.jr]
+provider = "openai"
+model = "gpt-4o-mini"
+base_url = "https://custom-endpoint.example.com/v1"
+"#;
+        let section: TeamSection = toml::from_str(toml).unwrap();
+        assert_eq!(
+            section.roles.jr.base_url.as_deref(),
+            Some("https://custom-endpoint.example.com/v1")
+        );
     }
 
     #[test]

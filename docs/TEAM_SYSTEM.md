@@ -14,11 +14,11 @@ struggle with.
 
 Instead of one agent doing everything, responsibilities are split:
 
-| Role | Responsibility | Tools | Default Model |
-|------|---------------|-------|---------------|
-| **PM** (Product Manager) | Analyze requirements, deliver summary | None | `gpt-4` |
-| **TL** (Tech Lead) | Plan architecture, break down tasks, validate results | `bash` | `gpt-4` |
-| **Jr** (Junior Developer) | Execute tasks with full tool access | All tools | `gpt-4o-mini` |
+| Role | Responsibility | Tools |
+|------|---------------|-------|
+| **PM** (Product Manager) | Analyze requirements, deliver summary | None |
+| **TL** (Tech Lead) | Plan architecture, break down tasks, validate results | `bash` |
+| **Jr** (Junior Developer) | Execute tasks with full tool access | All tools |
 
 ---
 
@@ -137,6 +137,11 @@ patterns like `{"path": "src/main.rs"}`.
 All team settings live in `~/.limit/config.toml` under the `[team]` section:
 
 ```toml
+provider = "anthropic"
+
+[providers.anthropic]
+model = "claude-sonnet-4-20250514"
+
 [team]
 default_juniors = 2          # Number of Jr agents
 max_parallel_tasks = 4       # Max concurrent tasks
@@ -150,7 +155,9 @@ tools = []                    # No tools
 tools = ["bash"]              # Can run commands for validation
 
 [team.roles.jr]
-model = "gpt-4o-mini"         # Cheaper model for execution
+provider = "openai"           # Use a different provider for this role
+model = "gpt-4o-mini"        # Model on the overridden provider
+max_tokens = 8192
 # tools = None                # All tools (default)
 ```
 
@@ -158,15 +165,76 @@ model = "gpt-4o-mini"         # Cheaper model for execution
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `model` | `Option<String>` | Override provider model for this role |
+| `provider` | `Option<String>` | Override the LLM provider for this role (e.g. `"openai"`, `"anthropic"`, `"local"`) |
+| `model` | `Option<String>` | Model to use. **Required** when `provider` is set. Optional override when using the main provider. |
+| `base_url` | `Option<String>` | Custom endpoint URL for the role's provider |
+| `max_tokens` | `Option<u32>` | Max tokens override for this role (default: 4096 when `provider` is set) |
 | `tools` | `Option<Vec<String>>` | `None` = all tools, `Some([])` = no tools, `Some([...])` = whitelist |
+
+### Per-Role Provider Selection
+
+Each role can use a **different LLM provider** than the main `provider`. This enables
+cross-provider mixing — e.g., PM on Claude, TL on GPT-4, Jr on a local model.
+
+When `provider` is set on a role:
+- A new provider instance is created independently (no config section needed)
+- `model` is **required** (the system will error without it)
+- The API key is resolved from environment variables:
+
+  | Provider | Env Var |
+  |----------|---------|
+  | `anthropic` | `ANTHROPIC_API_KEY` |
+  | `openai` | `OPENAI_API_KEY` |
+  | `zai` | `ZAI_API_KEY` |
+  | `local` / `ollama` / `lmstudio` / `vllm` | Not required |
+
+- Default timeout is 60s
+- Default `max_tokens` is 4096 (override with the `max_tokens` field)
+
+When `provider` is **omitted**, the role uses the main provider (cloned) with an
+optional `max_tokens` override.
+
+#### Example: Cost-optimized team
+
+```toml
+provider = "anthropic"
+
+[providers.anthropic]
+model = "claude-sonnet-4-20250514"
+
+[team.roles.pm]
+# Uses main provider (Claude Sonnet) — no override needed
+
+[team.roles.tl]
+max_tokens = 16384            # Give TL more room for detailed plans
+
+[team.roles.jr]
+provider = "openai"           # Cheaper provider for task execution
+model = "gpt-4o-mini"
+max_tokens = 8192
+```
+
+#### Example: Local Jr with remote PM/TL
+
+```toml
+provider = "anthropic"
+
+[providers.anthropic]
+model = "claude-sonnet-4-20250514"
+
+[team.roles.jr]
+provider = "ollama"
+model = "llama3"
+base_url = "http://localhost:11434"
+max_tokens = 4096
+```
 
 ### Config Parsing Flow
 
 ```
 config.toml
   └─ [team] section
-       └─ Config::team_raw (Option<toml::Value>)
+       └─ Config::team (Option<toml::Value>)
             └─ TeamSection::from_raw()
                  └─ TeamConfig::from_section()
 ```
@@ -395,7 +463,7 @@ Total LLM calls: **5 + N** (N calls run in parallel).
 | `tokio::sync::Mutex` for Jr agents | Async-aware lock avoids `await_holding_lock` clippy warning |
 | `NoopProvider` for pre-start teams | `list`/`status` work without a real LLM provider |
 | Background thread for execution | Non-blocking TUI via `std::thread::spawn` + `tokio::runtime::Runtime` |
-| Opaque `team_raw` in config | Decouples `limit-llm` config from `limit-agent` team types |
+| Opaque `team` in config | Decouples `limit-llm` config from `limit-agent` team types |
 | Per-role tool whitelists | PM shouldn't edit files; Jr needs full access |
 
 ---

@@ -28,7 +28,7 @@
 //! let tools = Arc::new(ToolRegistry::new());
 //! let config = TeamConfig::default();
 //!
-//! let mut team = Team::new("my-team".into(), provider, config, tools)?;
+//! let mut team = Team::new("my-team".into(), provider, config, tools, Default::default())?;
 //! let result = team.execute("Add JWT authentication", None).await?;
 //! println!("Solution:\n{}", result.solution);
 //! # Ok(())
@@ -63,7 +63,7 @@ use crate::team::actor::{spawn, ActorRef};
 use crate::team::agent_actor::AgentActor;
 use crate::team::messages::TeamMessage;
 use crate::team::orchestrator_actor::OrchestratorActor;
-use limit_llm::LlmProvider;
+use limit_llm::{LlmProvider, ProviderConfig, ProviderFactory};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -129,6 +129,8 @@ pub struct Team {
     pub history: Arc<RwLock<TeamHistory>>,
     /// Configuration used when creating this team.
     pub config: TeamConfig,
+    /// Main config provider sections (for inheriting api_key/base_url in per-role overrides).
+    providers: std::collections::HashMap<String, ProviderConfig>,
 }
 
 impl Team {
@@ -142,6 +144,7 @@ impl Team {
         provider: Box<dyn LlmProvider>,
         config: TeamConfig,
         tools: Arc<ToolRegistry>,
+        providers: std::collections::HashMap<String, ProviderConfig>,
     ) -> Result<Self, AgentError> {
         let pm_tools = config.roles.pm.tools.clone();
         let tl_tools = config.roles.tl.tools.clone();
@@ -172,7 +175,48 @@ impl Team {
             tools,
             history: Arc::new(RwLock::new(TeamHistory::new())),
             config,
+            providers,
         })
+    }
+
+    /// Build a provider for a specific role.
+    ///
+    /// If the role specifies a `provider`, a new provider instance is created
+    /// via [`ProviderFactory::create_for_role`], inheriting `api_key`,
+    /// `base_url`, and `timeout` from the main config's provider section.
+    /// Otherwise the main provider is cloned with an optional `max_tokens`
+    /// override.
+    fn build_role_provider(
+        main_provider: &dyn LlmProvider,
+        role_config: &RoleConfig,
+        providers: &std::collections::HashMap<String, ProviderConfig>,
+    ) -> Result<Box<dyn LlmProvider>, AgentError> {
+        match &role_config.provider {
+            Some(provider_type) => {
+                let model = role_config.model.as_deref().ok_or_else(|| {
+                    AgentError::TeamError(format!(
+                        "role specifies provider '{}' but no model",
+                        provider_type
+                    ))
+                })?;
+                let max_tokens = role_config.max_tokens.unwrap_or(4096);
+                let provider_config = providers.get(provider_type);
+                Ok(ProviderFactory::create_for_role(
+                    provider_type,
+                    model,
+                    role_config.base_url.as_deref(),
+                    max_tokens,
+                    provider_config,
+                )?)
+            }
+            None => {
+                let mut provider = main_provider.clone_box();
+                if let Some(m) = role_config.max_tokens {
+                    provider = provider.with_max_tokens(m);
+                }
+                Ok(provider)
+            }
+        }
     }
 
     /// Execute a user request through the full team workflow.
@@ -190,12 +234,12 @@ impl Team {
         let token_output = Arc::new(AtomicU64::new(0));
 
         // 1. Build fresh agents from stored config
-        let pm_provider = self.provider.clone_box();
-        let tl_provider = self.provider.clone_box();
-        let jr_provider: Box<dyn LlmProvider> = match self.config.roles.jr.max_tokens {
-            Some(m) => self.provider.with_max_tokens(m),
-            None => self.provider.clone_box(),
-        };
+        let pm_provider =
+            Self::build_role_provider(&*self.provider, &self.config.roles.pm, &self.providers)?;
+        let tl_provider =
+            Self::build_role_provider(&*self.provider, &self.config.roles.tl, &self.providers)?;
+        let jr_provider =
+            Self::build_role_provider(&*self.provider, &self.config.roles.jr, &self.providers)?;
 
         let pm = TeamAgent::with_allowed_tools(
             Role::PM,
