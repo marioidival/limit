@@ -353,12 +353,31 @@ impl OrchestratorActor {
         let total_tasks = task_results.len();
         let files_modified = extract_modified_files(&task_results);
 
-        // ── Compilation check ──────────────────────────────────────
-        let compilation_output = run_compilation_check().await;
-        if let Some(ref output) = compilation_output {
-            tracing::warn!("[team] compilation check failed:\n{}", output);
+        // ── Build check (TL-suggested command) ───────────────────────
+        tracing::info!("[team] asking TL for build verification command");
+        let (tx, rx) = oneshot::channel();
+        let build_cmd_response = self
+            .ask_tl(
+                TeamMessage::TlSuggestBuildCommand {
+                    files_modified: files_modified.clone(),
+                    reply: tx,
+                },
+                rx,
+            )
+            .await?;
+
+        let build_cmd = build_cmd_response.trim().to_string();
+        let build_output = if build_cmd == "NONE" || build_cmd.is_empty() {
+            tracing::info!("[team] TL suggested no build command");
+            None
         } else {
-            tracing::info!("[team] compilation check passed");
+            tracing::info!("[team] running TL-suggested build command: {}", build_cmd);
+            run_command(build_cmd.as_str()).await
+        };
+        if let Some(ref output) = build_output {
+            tracing::warn!("[team] build check failed:\n{}", output);
+        } else if !build_cmd.is_empty() && build_cmd != "NONE" {
+            tracing::info!("[team] build check passed");
         }
 
         let results_summary: String = task_results
@@ -405,7 +424,7 @@ impl OrchestratorActor {
                 TeamMessage::TlValidate {
                     results_summary: results_summary.clone(),
                     files_list,
-                    compilation_output: compilation_output.clone(),
+                    build_output: build_output.clone(),
                     reply: tx,
                 },
                 rx,
@@ -692,35 +711,16 @@ impl OrchestratorActor {
     }
 }
 
-/// Detect the build system in CWD and run a compilation check.
+/// Run a shell command and capture its output.
 ///
-/// Returns `Some(output)` on failure (stderr/stdout), `None` on success or
-/// when no build system is detected.
-async fn run_compilation_check() -> Option<String> {
-    let cwd = std::env::current_dir().ok()?;
-    let (cmd, args): (&str, Vec<&str>) = if cwd.join("Cargo.toml").exists() {
-        ("cargo", vec!["check"])
-    } else if cwd.join("package.json").exists() {
-        ("npm", vec!["run", "build"])
-    } else if cwd.join("pyproject.toml").exists() {
-        // Run py_compile on modified .py files in CWD
-        ("python3", vec!["-m", "py_compile", "."])
-    } else if cwd.join("go.mod").exists() {
-        ("go", vec!["build", "./..."])
-    } else {
-        tracing::info!("[team] no build system detected, skipping compilation check");
-        return None;
-    };
-
-    tracing::info!(
-        "[team] running compilation check: {} {}",
-        cmd,
-        args.join(" ")
-    );
-
+/// Returns `Some(output)` on failure (stderr+stdout), `None` on success.
+async fn run_command(cmd: &str) -> Option<String> {
     match tokio::time::timeout(
         std::time::Duration::from_secs(120),
-        tokio::process::Command::new(cmd).args(&args).output(),
+        tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .output(),
     )
     .await
     {
@@ -732,19 +732,19 @@ async fn run_compilation_check() -> Option<String> {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let combined = format!("{}{}", stdout, stderr);
                 if combined.trim().is_empty() {
-                    Some(format!("command `{}` exited with non-zero status", cmd))
+                    Some(format!("command exited with non-zero status"))
                 } else {
                     Some(combined)
                 }
             }
         }
         Ok(Err(e)) => {
-            tracing::warn!("[team] compilation check failed to run: {}", e);
-            Some(format!("Failed to run `{}`: {}", cmd, e))
+            tracing::warn!("[team] build command failed to run: {}", e);
+            Some(format!("Failed to run command: {}", e))
         }
         Err(_) => {
-            tracing::warn!("[team] compilation check timed out after 120s");
-            Some(format!("`{}` timed out after 120s", cmd))
+            tracing::warn!("[team] build command timed out after 120s");
+            Some("Build command timed out after 120s".to_string())
         }
     }
 }

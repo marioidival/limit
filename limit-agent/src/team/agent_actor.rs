@@ -262,10 +262,45 @@ impl Actor for AgentActor {
                     Ok(())
                 }
 
+                TeamMessage::TlSuggestBuildCommand {
+                    files_modified,
+                    reply,
+                } => {
+                    tracing::info!(
+                        "[actor] TL received TlSuggestBuildCommand ({} files)",
+                        files_modified.len()
+                    );
+                    let files_list = if files_modified.is_empty() {
+                        "No files were modified.".to_string()
+                    } else {
+                        files_modified
+                            .iter()
+                            .map(|f| format!("- {f}"))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    };
+                    let result = self
+                        .prompt(&format!(
+                            "Files modified during task execution:\n{files_list}\n\n\
+                             Based on the project structure, suggest a single shell command to verify \
+                             that the changes compile/build correctly.\n\n\
+                             Output ONLY the command, nothing else. No explanation, no markdown, no code blocks.\n\
+                             If no build system is detected or files weren't modified, output: NONE"
+                        ))
+                        .await;
+                    self.log_event(
+                        "build_command",
+                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                    )
+                    .await;
+                    let _ = reply.send(result.map(|r| r.text));
+                    Ok(())
+                }
+
                 TeamMessage::TlValidate {
                     results_summary,
                     files_list,
-                    compilation_output,
+                    build_output,
                     reply,
                 } => {
                     tracing::info!(
@@ -273,23 +308,23 @@ impl Actor for AgentActor {
                         results_summary.len(),
                         files_list.len()
                     );
-                    let compilation_section = match &compilation_output {
+                    let build_section = match &build_output {
                         Some(output) => format!(
-                            "\n\nCompilation check result (FAILED):\n```\n{}\n```\n\n\
-                             You MUST mark tasks that caused compilation errors as FAIL.",
+                            "\n\nBuild check result (FAILED):\n```\n{}\n```\n\n\
+                             You MUST mark tasks that caused build errors as FAIL.",
                             output
                         ),
-                        None => "\n\nCompilation check result: PASSED".to_string(),
+                        None => "\n\nBuild check result: PASSED".to_string(),
                     };
                     let result = self
                         .prompt(&format!(
                             "Task results:\n{results_summary}\n\n\
                              {files_list}\n\n\
-                             {compilation_section}\n\n\
+                             {build_section}\n\n\
                              Do NOT use tools. Evaluate each task and output a structured assessment:\n\n\
-                             For each task, state:\n- **PASS** if the task was completed correctly and the code compiles\n\
-                             - **FAIL** if the task has errors, missing implementations, or caused compilation failures\n\n\
-                             If compilation failed, identify which tasks contributed to the errors and mark them FAIL.\n\
+                             For each task, state:\n- **PASS** if the task was completed correctly and the build passes\n\
+                             - **FAIL** if the task has errors, missing implementations, or caused build failures\n\n\
+                             If build failed, identify which tasks contributed to the errors and mark them FAIL.\n\
                              Be strict — if something is broken, say so."
                         ))
                         .await;
