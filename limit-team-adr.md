@@ -2,7 +2,7 @@
 
 > **Status:** ✅ Completed  
 > **Date:** 2026-03-16  
-> **Last Updated:** 2026-03-16  
+> **Last Updated:** 2026-03-18
 > **Decision Makers:** Mário Idival  
 > **ADR Number:** 001  
 
@@ -243,11 +243,14 @@ enable_streaming = true
 tools = []                          # no tools
 
 [team.roles.tl]
-tools = ["bash"]                    # model = "gpt-4" (optional)
+tools = []                          # no tools by default (planning role)
 
 [team.roles.jr]
 model = "gpt-4o-mini"              # optional model override
 # tools = None                      # None = all tools
+
+# Per-role max tool rounds: PM=10, TL=12, Jr=15
+# max_recursion_depth (TeamConfig, default: 2) — controls team-as-a-tool nesting
 ```
 
 Parsing: `Config::team_raw` (`Option<toml::Value>`) → `TeamSection::from_raw()` → `TeamConfig::from_section()`
@@ -298,6 +301,7 @@ Parsing: `Config::team_raw` (`Option<toml::Value>`) → `TeamSection::from_raw()
 | Per-role model override (`RoleConfig::model`) | ✅ Done |
 | `TeamConfig::from_section()` — build from parsed TOML | ✅ Done |
 | `ToolRegistry::register_arc()` — share tools via `Arc` | ✅ Done |
+| `ToolRegistry` interior mutability via `RwLock` — `register()`, `register_arc()`, `set_schema()` take `&self` | ✅ Done |
 | Error recovery: exponential backoff (3 retries, 1s/2s/4s) | ✅ Done |
 | Jr task retry-once on failure | ✅ Done |
 | `EventLevel` for history events | ✅ Done |
@@ -389,11 +393,12 @@ Parsing: `Config::team_raw` (`Option<toml::Value>`) → `TeamSection::from_raw()
 
 ### Phase 5: Advanced Orchestration
 
+- [x] Team-as-a-tool (`team_start` implemented — enables recursive team nesting)
 - [ ] Dynamic role assignment
 - [ ] Task dependencies (DAG execution)
 - [ ] Agent communication protocols
 - [ ] Learning from past executions
-- [ ] Cost tracking / token counting per role
+- [x] Cost tracking / token counting per role
 
 ### Phase 6: Team Templates
 

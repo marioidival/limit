@@ -17,7 +17,7 @@ Instead of one agent doing everything, responsibilities are split:
 | Role | Responsibility | Tools |
 |------|---------------|-------|
 | **PM** (Product Manager) | Analyze requirements, deliver summary | None |
-| **TL** (Tech Lead) | Plan architecture, break down tasks, validate results | `bash` |
+| **TL** (Tech Lead) | Plan architecture, break down tasks, validate results | None |
 | **Jr** (Junior Developer) | Execute tasks with full tool access | All tools |
 
 ---
@@ -146,13 +146,14 @@ model = "claude-sonnet-4-20250514"
 default_juniors = 2          # Number of Jr agents
 max_parallel_tasks = 4       # Max concurrent tasks
 enable_streaming = true      # Streaming output
+max_recursion_depth = 2      # default: 2 — max child team nesting
 
 [team.roles]
 [team.roles.pm]
 tools = []                    # No tools
 
 [team.roles.tl]
-tools = ["bash"]              # Can run commands for validation
+tools = []                    # No tools
 
 [team.roles.jr]
 provider = "openai"           # Use a different provider for this role
@@ -170,6 +171,7 @@ max_tokens = 8192
 | `base_url` | `Option<String>` | Custom endpoint URL for the role's provider |
 | `max_tokens` | `Option<u32>` | Max tokens override for this role (default: 4096 when `provider` is set) |
 | `tools` | `Option<Vec<String>>` | `None` = all tools, `Some([])` = no tools, `Some([...])` = whitelist |
+| `max_tool_rounds` | `Option<usize>` | Max tool-call rounds per prompt (PM=10, TL=12, Jr=15) |
 
 ### Per-Role Provider Selection
 
@@ -244,6 +246,26 @@ This indirection avoids coupling `limit-llm` (which owns the config parser) to
 
 ---
 
+### Recursive Teams (`team_start`)
+
+Jr agents can call the `team_start` tool to delegate sub-tasks to a child
+team (full PM → TL → Jr workflow). This enables hierarchical delegation
+for complex requests.
+
+**Recursion guard:** `max_recursion_depth` (default: 2) limits nesting.
+
+**Tool schema:**
+- `task` (required) — description for the child team
+- `juniors` (optional) — number of Jr agents
+- `max_parallel` (optional) — max concurrent tasks
+
+**Output:** `{ success, solution, files_modified, duration_secs, tasks_total, tasks_failed, tokens_input, tokens_output }`
+
+Child teams inherit the same `ToolRegistry`, so child Jrs also have
+`team_start` available (up to the depth limit).
+
+---
+
 ## Architecture
 
 ### Module Layout
@@ -268,6 +290,8 @@ limit-agent/src/team/
 #### `TeamAgent`
 
 Wraps an `LlmProvider` + `ToolRegistry` with a role-specific system prompt.
+`ToolRegistry` uses `RwLock` interior mutability, so `register`/`register_arc`/`set_schema`
+take `&self` instead of `&mut self`.
 
 ```rust
 pub struct TeamAgent {
