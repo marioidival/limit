@@ -164,10 +164,6 @@ impl Tool for FileEditTool {
             return Err(AgentError::ToolError(format!("File not found: {}", path)));
         }
 
-        // Read file content
-        let current_content = fs::read_to_string(&path)
-            .map_err(|e| AgentError::IoError(format!("Failed to read file: {}", e)))?;
-
         // Check file size
         let metadata = fs::metadata(&path)
             .map_err(|e| AgentError::IoError(format!("Failed to read file metadata: {}", e)))?;
@@ -180,33 +176,60 @@ impl Tool for FileEditTool {
             )));
         }
 
-        // Check for binary content
-        if current_content.contains('\0') {
-            return Err(AgentError::ToolError(format!(
-                "Binary file detected: {}",
-                path
-            )));
+        const MAX_RETRIES: usize = 3;
+        let mut last_error = None;
+
+        for attempt in 0..MAX_RETRIES {
+            // Read current file content (re-read on each attempt to catch concurrent edits)
+            let current_content = fs::read_to_string(&path)
+                .map_err(|e| AgentError::IoError(format!("Failed to read file: {}", e)))?;
+
+            // Check for binary content
+            if current_content.contains('\0') {
+                return Err(AgentError::ToolError(format!(
+                    "Binary file detected: {}",
+                    path
+                )));
+            }
+
+            // Check if old_text exists in file
+            if !current_content.contains(&old_text) {
+                last_error = Some(AgentError::ToolError(
+                    "old_text not found in file".to_string(),
+                ));
+                if attempt < MAX_RETRIES - 1 {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    continue;
+                }
+                break;
+            }
+
+            let replacements = current_content.matches(&old_text).count();
+
+            // Replace old_text with new_text
+            let new_content = current_content.replace(&old_text, &new_text);
+
+            // Write modified content back
+            match fs::write(&path, &new_content) {
+                Ok(()) => {
+                    return Ok(serde_json::json!({
+                        "success": true,
+                        "path": path,
+                        "replacements": replacements
+                    }));
+                }
+                Err(e) => {
+                    last_error = Some(AgentError::IoError(format!("Failed to write file: {}", e)));
+                    if attempt < MAX_RETRIES - 1 {
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        continue;
+                    }
+                }
+            }
         }
 
-        // Check if old_text exists in file
-        if !current_content.contains(&old_text) {
-            return Err(AgentError::ToolError(
-                "old_text not found in file".to_string(),
-            ));
-        }
-
-        // Replace old_text with new_text
-        let new_content = current_content.replace(&old_text, &new_text);
-
-        // Write modified content back
-        fs::write(&path, new_content)
-            .map_err(|e| AgentError::IoError(format!("Failed to write file: {}", e)))?;
-
-        Ok(serde_json::json!({
-            "success": true,
-            "path": path,
-            "replacements": current_content.matches(&old_text).count()
-        }))
+        Err(last_error
+            .unwrap_or_else(|| AgentError::ToolError("file_edit failed after retries".to_string())))
     }
 }
 
