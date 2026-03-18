@@ -200,7 +200,7 @@ impl TeamAgent {
         allowed_tools: Option<Vec<String>>,
     ) -> Self {
         let max_tool_rounds = match role {
-            Role::PM => 10,
+            Role::PM => 5,
             Role::TL => 15,
             Role::Jr => 8,
         };

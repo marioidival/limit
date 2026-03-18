@@ -144,7 +144,7 @@ fn build_phase_bar(snapshot: &TaskProgressSnapshot, width: usize) -> Line<'stati
         .unwrap_or_else(|| "Starting".to_string());
     let spinner = SPINNER_FRAMES[snapshot.spinner_frame % SPINNER_FRAMES.len()];
     spans.push(Span::styled(
-        format!(" {} ", format!("{} {}", spinner, phase_name)),
+        format!(" {} {} ", spinner, phase_name),
         Style::default()
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
@@ -160,7 +160,7 @@ fn build_phase_bar(snapshot: &TaskProgressSnapshot, width: usize) -> Line<'stati
     spans.push(Span::raw("["));
     for i in 0..filled {
         // Map bar position to phase index (0-5) and assign color
-        let phase_index = (i * PHASE_COUNT as usize) / bar_width;
+        let phase_index = (i * PHASE_COUNT) / bar_width;
         let color = match phase_index {
             0 => Color::Magenta, // PM Analysis
             1 => Color::Blue,    // TL Plan

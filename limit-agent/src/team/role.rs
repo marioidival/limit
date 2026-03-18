@@ -106,11 +106,11 @@ impl Default for TeamRolesSection {
         Self {
             pm: RoleConfig {
                 model: None,
-                tools: Some(vec![]), // PM: no tools by default
+                tools: Some(vec!["bash".to_string(), "file_read".to_string()]), // PM: tools for project exploration
                 max_tokens: None,
                 provider: None,
                 base_url: None,
-                max_tool_rounds: Some(10),
+                max_tool_rounds: Some(5),
             },
             tl: RoleConfig {
                 model: None,
@@ -240,7 +240,7 @@ impl Role {
     /// Returns a vector of tool names. Empty vector means no tools.
     pub fn default_tools(&self) -> Vec<&'static str> {
         match self {
-            Role::PM => vec![],
+            Role::PM => vec!["bash", "file_read"],
             Role::TL => vec!["bash", "file_read"],
             Role::Jr => vec!["file_read", "file_write", "file_edit", "bash"],
         }
@@ -365,7 +365,9 @@ tools = ["file_read", "file_write", "bash"]
         let section = TeamSection::default();
         let pm_cfg = Role::config_from(Role::PM, &section);
         assert!(pm_cfg.model.is_none());
-        assert_eq!(pm_cfg.tools.as_deref(), Some([].as_slice()));
+        let pm_tools = pm_cfg.tools.as_deref().unwrap();
+        assert!(pm_tools.contains(&"bash".to_string()));
+        assert!(pm_tools.contains(&"file_read".to_string()));
 
         let jr_cfg = Role::config_from(Role::Jr, &section);
         assert!(jr_cfg.model.is_none());
@@ -415,8 +417,11 @@ model = "gpt-4o-mini"
         let mut section = section;
         section.normalize_tools();
 
-        // PM with no TOML entry → serde default (None) → normalized to empty
-        assert_eq!(section.roles.pm.tools.as_deref(), Some([].as_slice()));
+        // PM with no TOML entry → serde default (None) → normalized to bash + file_read
+        assert!(section.roles.pm.tools.is_some());
+        let pm_tools = section.roles.pm.tools.as_deref().unwrap();
+        assert!(pm_tools.contains(&"bash".to_string()));
+        assert!(pm_tools.contains(&"file_read".to_string()));
         // TL with no TOML entry → serde default (None) → normalized to bash + file_read
         assert!(section.roles.tl.tools.is_some());
         let tl_tools = section.roles.tl.tools.as_deref().unwrap();
@@ -501,7 +506,8 @@ base_url = "https://custom-endpoint.example.com/v1"
 
     #[test]
     fn test_role_default_tools() {
-        assert!(Role::PM.default_tools().is_empty());
+        assert!(Role::PM.default_tools().contains(&"bash"));
+        assert!(Role::PM.default_tools().contains(&"file_read"));
         assert!(Role::TL.default_tools().contains(&"bash"));
         assert!(Role::TL.default_tools().contains(&"file_read"));
         assert_eq!(

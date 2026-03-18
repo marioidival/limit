@@ -157,7 +157,11 @@ impl Actor for AgentActor {
                     let result = self
                         .prompt(&format!(
                             "User request:\n{request}\n\n\
-                             Analyze this request. Structure your output as:\n\n\
+                             First, use your tools to explore the project: read Cargo.toml/package.json/go.mod \
+                             to identify the language and framework, and ls the directory structure.\
+                             \n\n\
+                             Then analyze the request. Structure your output as:\n\n\
+                             ## Project Context\n<language, framework, key dependencies>\n\n\
                              ## Core Problem\n<1-2 sentences>\n\n\
                              ## Key Requirements\n- <requirement 1>\n- <requirement 2>\n- ...\n\n\
                              ## Constraints & Assumptions\n\
