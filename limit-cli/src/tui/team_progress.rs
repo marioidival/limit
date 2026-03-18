@@ -44,7 +44,9 @@ impl TeamProgressState {
     pub fn apply(&self, event: TeamProgressEvent) {
         let mut state = self.inner.lock();
         match event {
-            TeamProgressEvent::PhaseChanged { phase, completed } => {
+            TeamProgressEvent::PhaseChanged {
+                phase, completed, ..
+            } => {
                 if !state.is_active {
                     state.is_active = true;
                     state.started_at = Some(Instant::now());
@@ -52,19 +54,22 @@ impl TeamProgressState {
                 state.current_phase = Some(phase);
                 state.phases_completed = completed;
             }
-            TeamProgressEvent::TasksUpdate { tasks } => {
+            TeamProgressEvent::TasksUpdate { tasks, .. } => {
                 state.tasks = tasks;
             }
             TeamProgressEvent::TaskStarted {
                 task_id,
                 agent_index,
+                ..
             } => {
                 if let Some(task) = state.tasks.iter_mut().find(|t| t.id == task_id) {
                     task.status = TaskProgressStatus::InProgress;
                     task.agent_index = Some(agent_index);
                 }
             }
-            TeamProgressEvent::TaskCompleted { task_id, success } => {
+            TeamProgressEvent::TaskCompleted {
+                task_id, success, ..
+            } => {
                 if let Some(task) = state.tasks.iter_mut().find(|t| t.id == task_id) {
                     task.status = if success {
                         TaskProgressStatus::Completed
@@ -73,12 +78,12 @@ impl TeamProgressState {
                     };
                 }
             }
-            TeamProgressEvent::Finished { success } => {
+            TeamProgressEvent::Finished { success, .. } => {
                 state.finished = true;
                 state.success = success;
                 state.phases_completed = PHASE_COUNT;
             }
-            TeamProgressEvent::StatusUpdate { message } => {
+            TeamProgressEvent::StatusUpdate { message, .. } => {
                 state.status_text = message;
             }
         }
@@ -110,7 +115,7 @@ pub fn drain_progress_events(
                     TeamProgressEvent::PhaseChanged { phase, .. } => {
                         format!("PhaseChanged({:?})", phase)
                     }
-                    TeamProgressEvent::TasksUpdate { tasks } => {
+                    TeamProgressEvent::TasksUpdate { tasks, .. } => {
                         format!("TasksUpdate({} tasks)", tasks.len())
                     }
                     TeamProgressEvent::TaskStarted {
@@ -118,13 +123,15 @@ pub fn drain_progress_events(
                         agent_index,
                         ..
                     } => format!("TaskStarted({}@{})", task_id, agent_index),
-                    TeamProgressEvent::TaskCompleted { task_id, success } => {
+                    TeamProgressEvent::TaskCompleted {
+                        task_id, success, ..
+                    } => {
                         format!("TaskCompleted({}:{})", task_id, success)
                     }
-                    TeamProgressEvent::StatusUpdate { message } => {
+                    TeamProgressEvent::StatusUpdate { message, .. } => {
                         format!("StatusUpdate({:.50}…)", message)
                     }
-                    TeamProgressEvent::Finished { success } => {
+                    TeamProgressEvent::Finished { success, .. } => {
                         format!("Finished({})", success)
                     }
                 }

@@ -35,6 +35,9 @@ pub struct OrchestratorActor {
     user_request: String,
     token_input: Arc<AtomicU64>,
     token_output: Arc<AtomicU64>,
+    /// Nesting depth for this team (0 = top-level, 1 = child, etc.).
+    #[allow(dead_code)]
+    nesting: u32,
 }
 
 impl OrchestratorActor {
@@ -62,6 +65,7 @@ impl OrchestratorActor {
             user_request,
             token_input,
             token_output,
+            nesting: 0,
         }
     }
 
@@ -168,6 +172,7 @@ impl OrchestratorActor {
             TeamProgressEvent::PhaseChanged {
                 phase: WorkflowPhase::PmAnalysis,
                 completed: 0,
+                nesting: 0,
             },
         );
 
@@ -186,6 +191,7 @@ impl OrchestratorActor {
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
                 message: truncate(&analysis, 100),
+                nesting: 0,
             },
         );
         self.log_event("PM", "analysis", &analysis).await;
@@ -198,6 +204,7 @@ impl OrchestratorActor {
             TeamProgressEvent::PhaseChanged {
                 phase: WorkflowPhase::TlPlan,
                 completed: 1,
+                nesting: 0,
             },
         );
 
@@ -216,6 +223,7 @@ impl OrchestratorActor {
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
                 message: truncate(&plan, 100),
+                nesting: 0,
             },
         );
         self.log_event("TL", "plan", &plan).await;
@@ -228,6 +236,7 @@ impl OrchestratorActor {
             TeamProgressEvent::PhaseChanged {
                 phase: WorkflowPhase::TlBreakdown,
                 completed: 2,
+                nesting: 0,
             },
         );
 
@@ -246,6 +255,7 @@ impl OrchestratorActor {
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
                 message: truncate(&tasks_text, 100),
+                nesting: 0,
             },
         );
 
@@ -285,6 +295,7 @@ impl OrchestratorActor {
                         agent_index: None,
                     })
                     .collect(),
+                nesting: 0,
             },
         );
 
@@ -300,7 +311,10 @@ impl OrchestratorActor {
 
             send_progress(
                 &self.progress_tx,
-                TeamProgressEvent::Finished { success: true },
+                TeamProgressEvent::Finished {
+                    success: true,
+                    nesting: 0,
+                },
             );
 
             return Ok(TeamResult {
@@ -323,6 +337,7 @@ impl OrchestratorActor {
             TeamProgressEvent::PhaseChanged {
                 phase: WorkflowPhase::JrExecution,
                 completed: 3,
+                nesting: 0,
             },
         );
         tracing::info!(
@@ -357,6 +372,7 @@ impl OrchestratorActor {
             TeamProgressEvent::PhaseChanged {
                 phase: WorkflowPhase::TlValidation,
                 completed: 4,
+                nesting: 0,
             },
         );
         tracing::info!("[team] TL — validating results");
@@ -390,6 +406,7 @@ impl OrchestratorActor {
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
                 message: truncate(&validation, 100),
+                nesting: 0,
             },
         );
         self.log_event("TL", "validation", &validation).await;
@@ -401,6 +418,7 @@ impl OrchestratorActor {
             TeamProgressEvent::PhaseChanged {
                 phase: WorkflowPhase::PmDelivery,
                 completed: 5,
+                nesting: 0,
             },
         );
         tracing::info!("[team] PM — preparing delivery");
@@ -422,13 +440,17 @@ impl OrchestratorActor {
             &self.progress_tx,
             TeamProgressEvent::StatusUpdate {
                 message: truncate(&delivery, 100),
+                nesting: 0,
             },
         );
         self.log_event("PM", "delivery", &delivery).await;
 
         send_progress(
             &self.progress_tx,
-            TeamProgressEvent::Finished { success: true },
+            TeamProgressEvent::Finished {
+                success: true,
+                nesting: 0,
+            },
         );
 
         Ok(TeamResult {
@@ -526,6 +548,7 @@ impl OrchestratorActor {
                                 TeamProgressEvent::TaskStarted {
                                     task_id: task_id.clone(),
                                     agent_index: jr_idx,
+                                nesting: 0,
                                 },
                             );
 
@@ -617,6 +640,7 @@ impl OrchestratorActor {
                                     TeamProgressEvent::TaskCompleted {
                                         task_id: task_id.clone(),
                                         success: retry_result.success,
+                                    nesting: 0,
                                     },
                                 );
                                 retry_result
@@ -626,6 +650,7 @@ impl OrchestratorActor {
                                     TeamProgressEvent::TaskCompleted {
                                         task_id: task_id.clone(),
                                         success,
+                                    nesting: 0,
                                     },
                                 );
                                 task_result

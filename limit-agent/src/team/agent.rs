@@ -18,7 +18,7 @@ const MAX_RETRIES: usize = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 /// Maximum tool-call rounds per `prompt()` call before forcing a text response.
 /// Prevents infinite loops where the LLM keeps requesting more tool calls.
-const MAX_TOOL_ROUNDS: usize = 10;
+const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 
 /// Result from [`TeamAgent::prompt`] including token usage and tool-limit status.
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct PromptResult {
     pub text: String,
     /// Token usage accumulated across all rounds.
     pub usage: Usage,
-    /// Whether the tool-call limit ([`MAX_TOOL_ROUNDS`]) was hit.
+    /// Whether the per-role tool-call limit was hit.
     pub hit_tool_limit: bool,
     /// File paths modified by file_write or file_edit tool calls.
     pub files_modified: Vec<String>,
@@ -123,6 +123,8 @@ pub struct TeamAgent {
     provider: Box<dyn LlmProvider>,
     registry: Arc<ToolRegistry>,
     history: Arc<Vec<Message>>,
+    /// Maximum tool-call rounds per prompt (per-role configurable).
+    max_tool_rounds: usize,
 }
 
 impl TeamAgent {
@@ -177,6 +179,7 @@ impl TeamAgent {
             provider: Box::new(NoopProvider),
             registry: Arc::new(ToolRegistry::new()),
             history: Arc::new(vec![system_msg]),
+            max_tool_rounds: DEFAULT_MAX_TOOL_ROUNDS,
         }
     }
 
@@ -196,16 +199,21 @@ impl TeamAgent {
         registry: Arc<ToolRegistry>,
         allowed_tools: Option<Vec<String>>,
     ) -> Self {
+        let max_tool_rounds = match role {
+            Role::PM => 10,
+            Role::TL => 12,
+            Role::Jr => 15,
+        };
         // Build a filtered registry if a whitelist is provided
         let registry = if let Some(ref whitelist) = allowed_tools {
-            let mut filtered = ToolRegistry::new();
+            let filtered = ToolRegistry::new();
             for name in whitelist {
                 if let Some(tool) = registry.get(name) {
                     filtered.register_arc(tool);
                     // Also copy the schema so the agent can build proper
                     // LLM tool definitions (description + parameters).
                     if let Some((desc, params)) = registry.get_schema(name) {
-                        filtered.set_schema(name, desc.clone(), params.clone());
+                        filtered.set_schema(name, desc, params);
                     }
                 }
             }
@@ -225,7 +233,14 @@ impl TeamAgent {
             provider,
             registry,
             history: Arc::new(vec![system_msg]),
+            max_tool_rounds,
         }
+    }
+
+    /// Override the default max tool-call rounds (from `RoleConfig`).
+    pub fn with_max_tool_rounds(mut self, rounds: usize) -> Self {
+        self.max_tool_rounds = rounds;
+        self
     }
 
     /// The agent's role.
@@ -496,13 +511,13 @@ impl TeamAgent {
         let mut tool_rounds = 1;
 
         // Loop: if the response contains more tool calls, execute them.
-        // Bounded by MAX_TOOL_ROUNDS to prevent infinite loops.
+        // Bounded by self.max_tool_rounds to prevent infinite loops.
         loop {
-            if tool_rounds >= MAX_TOOL_ROUNDS {
+            if tool_rounds >= self.max_tool_rounds {
                 tracing::warn!(
                     "[team] {:?} hit tool-call limit ({}) — stopping",
                     self.role,
-                    MAX_TOOL_ROUNDS
+                    self.max_tool_rounds
                 );
                 return Ok(PromptResult {
                     text: response,
@@ -534,7 +549,7 @@ impl TeamAgent {
                 "[team] {:?} tool round {}/{} ({} calls)",
                 self.role,
                 tool_rounds,
-                MAX_TOOL_ROUNDS,
+                self.max_tool_rounds,
                 more_calls.len()
             );
 
@@ -592,7 +607,7 @@ impl TeamAgent {
             .filter_map(|name| {
                 self.registry.get(&name).map(|_tool| {
                     let (description, parameters) =
-                        self.registry.get_schema(&name).cloned().unwrap_or_else(|| {
+                        self.registry.get_schema(&name).unwrap_or_else(|| {
                             (
                                 format!("Tool: {}", name),
                                 serde_json::json!({"type": "object"}),
@@ -708,11 +723,11 @@ impl TeamAgent {
                 // If there are tool calls, execute them and continue
                 if !tool_calls.is_empty() {
                     tool_rounds += 1;
-                    if tool_rounds >= MAX_TOOL_ROUNDS {
+                    if tool_rounds >= self.max_tool_rounds {
                         tracing::warn!(
                             "[team] {:?} stream hit tool-call limit ({}) — stopping",
                             self.role,
-                            MAX_TOOL_ROUNDS
+                            self.max_tool_rounds
                         );
                         return;
                     }

@@ -82,6 +82,8 @@ pub struct TeamConfig {
     pub enable_streaming: bool,
     /// Per-role overrides (model, tool whitelist, max_tokens).
     pub roles: TeamRolesSection,
+    /// Maximum depth for recursive `team_start` calls (default: 2).
+    pub max_recursion_depth: usize,
 }
 
 impl Default for TeamConfig {
@@ -91,6 +93,7 @@ impl Default for TeamConfig {
             max_parallel_tasks: 4,
             enable_streaming: true,
             roles: TeamRolesSection::default(),
+            max_recursion_depth: 2,
         }
     }
 }
@@ -103,6 +106,7 @@ impl TeamConfig {
             max_parallel_tasks: section.max_parallel_tasks,
             enable_streaming: section.enable_streaming,
             roles: section.roles.clone(),
+            max_recursion_depth: 2,
         }
     }
 }
@@ -149,10 +153,16 @@ impl Team {
         let tl_tools = config.roles.tl.tools.clone();
         let jr_tools = config.roles.jr.tools.clone();
 
+        let pm_max = config.roles.pm.max_tool_rounds.unwrap_or(10);
+        let tl_max = config.roles.tl.max_tool_rounds.unwrap_or(12);
+        let jr_max = config.roles.jr.max_tool_rounds.unwrap_or(15);
+
         let pm =
-            TeamAgent::with_allowed_tools(Role::PM, provider.clone_box(), tools.clone(), pm_tools);
+            TeamAgent::with_allowed_tools(Role::PM, provider.clone_box(), tools.clone(), pm_tools)
+                .with_max_tool_rounds(pm_max);
         let tl =
-            TeamAgent::with_allowed_tools(Role::TL, provider.clone_box(), tools.clone(), tl_tools);
+            TeamAgent::with_allowed_tools(Role::TL, provider.clone_box(), tools.clone(), tl_tools)
+                .with_max_tool_rounds(tl_max);
 
         let jrs = (0..config.num_juniors)
             .map(|_| {
@@ -162,6 +172,7 @@ impl Team {
                     tools.clone(),
                     jr_tools.clone(),
                 )
+                .with_max_tool_rounds(jr_max)
             })
             .collect();
 
@@ -240,18 +251,24 @@ impl Team {
         let jr_provider =
             Self::build_role_provider(&*self.provider, &self.config.roles.jr, &self.providers)?;
 
+        let pm_max_rounds = self.config.roles.pm.max_tool_rounds.unwrap_or(10);
+        let tl_max_rounds = self.config.roles.tl.max_tool_rounds.unwrap_or(12);
+        let jr_max_rounds = self.config.roles.jr.max_tool_rounds.unwrap_or(15);
+
         let pm = TeamAgent::with_allowed_tools(
             Role::PM,
             pm_provider,
             self.tools.clone(),
             self.config.roles.pm.tools.clone(),
-        );
+        )
+        .with_max_tool_rounds(pm_max_rounds);
         let tl = TeamAgent::with_allowed_tools(
             Role::TL,
             tl_provider,
             self.tools.clone(),
             self.config.roles.tl.tools.clone(),
-        );
+        )
+        .with_max_tool_rounds(tl_max_rounds);
         let jrs: Vec<TeamAgent> = (0..self.config.num_juniors)
             .map(|_| {
                 TeamAgent::with_allowed_tools(
@@ -260,6 +277,7 @@ impl Team {
                     self.tools.clone(),
                     self.config.roles.jr.tools.clone(),
                 )
+                .with_max_tool_rounds(jr_max_rounds)
             })
             .collect();
 

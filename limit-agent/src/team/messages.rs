@@ -76,7 +76,7 @@ pub fn send_progress(
                 crate::team::progress::TeamProgressEvent::PhaseChanged { phase, .. } => {
                     format!("PhaseChanged({:?})", phase)
                 }
-                crate::team::progress::TeamProgressEvent::TasksUpdate { tasks } => {
+                crate::team::progress::TeamProgressEvent::TasksUpdate { tasks, .. } => {
                     format!("TasksUpdate({} tasks)", tasks.len())
                 }
                 crate::team::progress::TeamProgressEvent::TaskStarted {
@@ -89,10 +89,10 @@ pub fn send_progress(
                     success,
                     ..
                 } => format!("TaskCompleted({}:{})", task_id, success),
-                crate::team::progress::TeamProgressEvent::StatusUpdate { message } => {
+                crate::team::progress::TeamProgressEvent::StatusUpdate { message, .. } => {
                     format!("StatusUpdate({:.50}…)", message)
                 }
-                crate::team::progress::TeamProgressEvent::Finished { success } => {
+                crate::team::progress::TeamProgressEvent::Finished { success, .. } => {
                     format!("Finished({})", success)
                 }
             }

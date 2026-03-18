@@ -340,8 +340,7 @@ impl TeamCommand {
                 let team_config = TeamConfig::from_section(&team_section);
 
                 // Re-create team with real provider, config from file, and proper tools
-                let tool_registry = build_tool_registry();
-                let tools = Arc::new(tool_registry);
+                let tools = build_tool_registry();
 
                 let providers = config_result
                     .as_ref()
@@ -597,8 +596,8 @@ fn load_team_config() -> TeamConfig {
     TeamConfig::from_section(&section)
 }
 
-/// Build a [`ToolRegistry`] with the same tools that the main agent uses.
-fn build_tool_registry() -> limit_agent::ToolRegistry {
+/// Build a base [`ToolRegistry`] with all standard tools (no `team_start`).
+fn build_base_registry() -> limit_agent::ToolRegistry {
     use crate::agent_bridge::AgentBridge;
     use crate::tools::{
         AstGrepTool, BashTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool, GitCloneTool,
@@ -606,7 +605,7 @@ fn build_tool_registry() -> limit_agent::ToolRegistry {
         LspTool, WebFetchTool, WebSearchTool,
     };
 
-    let mut registry = limit_agent::ToolRegistry::new();
+    let registry = limit_agent::ToolRegistry::new();
 
     // File tools
     let _ = registry.register(FileReadTool::new());
@@ -644,6 +643,27 @@ fn build_tool_registry() -> limit_agent::ToolRegistry {
     registry
 }
 
+/// Build a [`ToolRegistry`] wrapped in `Arc`, including `team_start` for recursive teams.
+fn build_tool_registry() -> Arc<limit_agent::ToolRegistry> {
+    use crate::agent_bridge::AgentBridge;
+    use crate::tools::TeamStartTool;
+
+    let registry = build_base_registry();
+
+    // Wrap in Arc — TeamStartTool holds a reference for recursive child teams.
+    let registry = Arc::new(registry);
+
+    // Register team_start (needs Arc, interior mutability allows this).
+    registry.register_arc(Arc::new(TeamStartTool::new(
+        registry.clone(),
+        2, // default max_recursion_depth
+    )));
+    let (desc, params) = AgentBridge::get_tool_schema("team_start");
+    registry.set_schema("team_start", desc, params);
+
+    registry
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,9 +693,10 @@ mod tests {
     fn test_build_tool_registry() {
         let registry = build_tool_registry();
         let tools = registry.list();
-        assert!(tools.len() >= 15);
+        assert!(tools.len() >= 16);
         assert!(tools.contains(&"file_read".to_string()));
         assert!(tools.contains(&"bash".to_string()));
         assert!(tools.contains(&"git_commit".to_string()));
+        assert!(tools.contains(&"team_start".to_string()));
     }
 }

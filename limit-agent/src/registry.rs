@@ -2,43 +2,46 @@ use crate::error::AgentError;
 use crate::tool::Tool;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
-/// Registry for managing tools
+/// Registry for managing tools.
+///
+/// Uses interior mutability (`RwLock`) so tools can be registered into
+/// a shared `Arc<ToolRegistry>` — needed for self-referential tools
+/// like `team_start` that hold a reference to the registry itself.
 pub struct ToolRegistry {
-    tools: HashMap<String, Arc<dyn Tool>>,
+    tools: RwLock<HashMap<String, Arc<dyn Tool>>>,
     /// Optional per-tool schemas: (description, JSON Schema parameters).
-    /// Used by team agents to build proper LLM tool definitions.
-    schemas: HashMap<String, (String, Value)>,
+    schemas: RwLock<HashMap<String, (String, Value)>>,
 }
 
 impl ToolRegistry {
     /// Create a new empty tool registry
     pub fn new() -> Self {
         ToolRegistry {
-            tools: HashMap::new(),
-            schemas: HashMap::new(),
+            tools: RwLock::new(HashMap::new()),
+            schemas: RwLock::new(HashMap::new()),
         }
     }
 
     /// Register a tool with the registry
-    pub fn register<T>(&mut self, tool: T) -> Result<(), AgentError>
+    pub fn register<T>(&self, tool: T) -> Result<(), AgentError>
     where
         T: Tool + 'static,
     {
         let name = tool.name().to_string();
-        self.tools.insert(name, Arc::new(tool));
+        self.tools.write().unwrap().insert(name, Arc::new(tool));
         Ok(())
     }
 
     /// Get a tool by name
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.tools.get(name).cloned()
+        self.tools.read().unwrap().get(name).cloned()
     }
 
     /// List all registered tool names
     pub fn list(&self) -> Vec<String> {
-        let mut names: Vec<String> = self.tools.keys().cloned().collect();
+        let mut names: Vec<String> = self.tools.read().unwrap().keys().cloned().collect();
         names.sort();
         names
     }
@@ -55,25 +58,22 @@ impl ToolRegistry {
     ///
     /// Used when cloning tools between registries without going through
     /// the concrete type.
-    pub fn register_arc(&mut self, tool: Arc<dyn Tool>) {
+    pub fn register_arc(&self, tool: Arc<dyn Tool>) {
         let name = tool.name().to_string();
-        self.tools.insert(name, tool);
+        self.tools.write().unwrap().insert(name, tool);
     }
 
     /// Store a tool's LLM schema (description + JSON Schema parameters).
-    ///
-    /// Used by team agents to build proper tool definitions for the LLM
-    /// provider. Without schemas, tools are sent with a generic
-    /// `{"type": "object"}` parameter definition, which prevents the LLM
-    /// from generating correct tool-call arguments.
-    pub fn set_schema(&mut self, name: &str, description: String, parameters: Value) {
+    pub fn set_schema(&self, name: &str, description: String, parameters: Value) {
         self.schemas
+            .write()
+            .unwrap()
             .insert(name.to_string(), (description, parameters));
     }
 
     /// Retrieve the stored schema for a tool, if one was set.
-    pub fn get_schema(&self, name: &str) -> Option<&(String, Value)> {
-        self.schemas.get(name)
+    pub fn get_schema(&self, name: &str) -> Option<(String, Value)> {
+        self.schemas.read().unwrap().get(name).cloned()
     }
 }
 
@@ -102,7 +102,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_register() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         assert_eq!(registry.list().len(), 1);
@@ -111,7 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_get() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         let tool = registry.get("echo");
@@ -128,7 +128,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_list() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         let names = registry.list();
@@ -138,7 +138,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_execute() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         let args = serde_json::json!({"test": "value"});
@@ -174,7 +174,7 @@ mod tests {
             }
         }
 
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
         registry.register(AnotherTool).unwrap();
 
@@ -182,5 +182,12 @@ mod tests {
         assert_eq!(names.len(), 2);
         assert!(names.contains(&"echo".to_string()));
         assert!(names.contains(&"another".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_registry_register_via_arc() {
+        let registry = Arc::new(ToolRegistry::new());
+        registry.register(EchoTool::new()).unwrap();
+        assert_eq!(registry.list().len(), 1);
     }
 }

@@ -123,6 +123,7 @@ pub async fn execute_workflow(
         TeamProgressEvent::PhaseChanged {
             phase: WorkflowPhase::PmAnalysis,
             completed: 0,
+            nesting: 0,
         },
     );
     let analysis = pm
@@ -135,6 +136,7 @@ pub async fn execute_workflow(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
             message: truncate(&analysis, 100),
+            nesting: 0,
         },
     );
     log_event(history, "PM", "analysis", &analysis).await;
@@ -149,6 +151,7 @@ pub async fn execute_workflow(
         TeamProgressEvent::PhaseChanged {
             phase: WorkflowPhase::TlPlan,
             completed: 1,
+            nesting: 0,
         },
     );
     let plan = tl
@@ -161,6 +164,7 @@ pub async fn execute_workflow(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
             message: truncate(&plan, 100),
+            nesting: 0,
         },
     );
     log_event(history, "TL", "plan", &plan).await;
@@ -175,6 +179,7 @@ pub async fn execute_workflow(
         TeamProgressEvent::PhaseChanged {
             phase: WorkflowPhase::TlBreakdown,
             completed: 2,
+            nesting: 0,
         },
     );
     let tasks = tl
@@ -190,6 +195,7 @@ pub async fn execute_workflow(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
             message: truncate(&tasks, 100),
+            nesting: 0,
         },
     );
     let mut tasks: Vec<Task> = parse_tasks(&tasks);
@@ -224,6 +230,7 @@ pub async fn execute_workflow(
                     agent_index: None,
                 })
                 .collect(),
+            nesting: 0,
         },
     );
 
@@ -239,7 +246,13 @@ pub async fn execute_workflow(
             .text;
         log_event(history, "PM", "delivery", &delivery).await;
 
-        send_progress(&progress_tx, TeamProgressEvent::Finished { success: true });
+        send_progress(
+            &progress_tx,
+            TeamProgressEvent::Finished {
+                success: true,
+                nesting: 0,
+            },
+        );
 
         return Ok(TeamResult {
             solution: delivery,
@@ -262,6 +275,7 @@ pub async fn execute_workflow(
         TeamProgressEvent::PhaseChanged {
             phase: WorkflowPhase::JrExecution,
             completed: 3,
+            nesting: 0,
         },
     );
     tracing::info!(
@@ -304,6 +318,7 @@ pub async fn execute_workflow(
         TeamProgressEvent::PhaseChanged {
             phase: WorkflowPhase::TlValidation,
             completed: 4,
+            nesting: 0,
         },
     );
     // ── Phase 5: TL validation ────────────────────────────────────────
@@ -335,6 +350,7 @@ pub async fn execute_workflow(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
             message: truncate(&validation, 100),
+            nesting: 0,
         },
     );
     log_event(history, "TL", "validation", &validation).await;
@@ -346,6 +362,7 @@ pub async fn execute_workflow(
         TeamProgressEvent::PhaseChanged {
             phase: WorkflowPhase::PmDelivery,
             completed: 5,
+            nesting: 0,
         },
     );
     // ── Phase 6: PM delivery ──────────────────────────────────────────
@@ -371,11 +388,18 @@ pub async fn execute_workflow(
         &progress_tx,
         TeamProgressEvent::StatusUpdate {
             message: truncate(&delivery, 100),
+            nesting: 0,
         },
     );
     log_event(history, "PM", "delivery", &delivery).await;
 
-    send_progress(&progress_tx, TeamProgressEvent::Finished { success: true });
+    send_progress(
+        &progress_tx,
+        TeamProgressEvent::Finished {
+            success: true,
+            nesting: 0,
+        },
+    );
 
     Ok(TeamResult {
         solution: delivery,
@@ -444,6 +468,7 @@ async fn execute_tasks_parallel(
                     TeamProgressEvent::TaskStarted {
                         task_id: task_id.clone(),
                         agent_index: jr_idx,
+                        nesting: 0,
                     },
                 );
 
@@ -467,6 +492,7 @@ async fn execute_tasks_parallel(
                             TeamProgressEvent::TaskCompleted {
                                 task_id: task_id.clone(),
                                 success,
+                                nesting: 0,
                             },
                         );
                         TaskResult {
@@ -497,6 +523,7 @@ async fn execute_tasks_parallel(
                                     TeamProgressEvent::TaskCompleted {
                                         task_id: task_id.clone(),
                                         success: true,
+                                        nesting: 0,
                                     },
                                 );
                                 TaskResult {
@@ -518,6 +545,7 @@ async fn execute_tasks_parallel(
                                     TeamProgressEvent::TaskCompleted {
                                         task_id: task_id.clone(),
                                         success: false,
+                                        nesting: 0,
                                     },
                                 );
                                 TaskResult {

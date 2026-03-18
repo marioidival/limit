@@ -15,17 +15,30 @@ pub enum TeamProgressEvent {
     PhaseChanged {
         phase: WorkflowPhase,
         completed: usize,
+        /// Nesting depth (0 = top-level team, 1 = child team, etc.).
+        nesting: u32,
     },
     /// Full task list updated (after TL breakdown).
-    TasksUpdate { tasks: Vec<TaskProgressInfo> },
+    TasksUpdate {
+        tasks: Vec<TaskProgressInfo>,
+        nesting: u32,
+    },
     /// A task has started executing.
-    TaskStarted { task_id: String, agent_index: usize },
+    TaskStarted {
+        task_id: String,
+        agent_index: usize,
+        nesting: u32,
+    },
     /// A task has completed (success or failure).
-    TaskCompleted { task_id: String, success: bool },
+    TaskCompleted {
+        task_id: String,
+        success: bool,
+        nesting: u32,
+    },
     /// Status text shown after each phase completes (truncated agent output).
-    StatusUpdate { message: String },
+    StatusUpdate { message: String, nesting: u32 },
     /// The entire team workflow has finished.
-    Finished { success: bool },
+    Finished { success: bool, nesting: u32 },
 }
 
 /// Per-task progress information displayed in the TUI.
@@ -44,6 +57,41 @@ pub enum TaskProgressStatus {
     InProgress,
     Completed,
     Failed,
+}
+
+impl TeamProgressEvent {
+    /// Return a copy of this event with `nesting` set to the given value.
+    #[allow(dead_code)]
+    pub fn with_nesting(self, nesting: u32) -> Self {
+        match self {
+            Self::PhaseChanged {
+                phase, completed, ..
+            } => Self::PhaseChanged {
+                phase,
+                completed,
+                nesting,
+            },
+            Self::TasksUpdate { tasks, .. } => Self::TasksUpdate { tasks, nesting },
+            Self::TaskStarted {
+                task_id,
+                agent_index,
+                ..
+            } => Self::TaskStarted {
+                task_id,
+                agent_index,
+                nesting,
+            },
+            Self::TaskCompleted {
+                task_id, success, ..
+            } => Self::TaskCompleted {
+                task_id,
+                success,
+                nesting,
+            },
+            Self::StatusUpdate { message, .. } => Self::StatusUpdate { message, nesting },
+            Self::Finished { success, .. } => Self::Finished { success, nesting },
+        }
+    }
 }
 
 impl WorkflowPhase {

@@ -43,6 +43,10 @@ pub struct RoleConfig {
     pub provider: Option<String>,
     /// Custom base URL for the role's provider endpoint.
     pub base_url: Option<String>,
+    /// Maximum tool-call rounds per prompt for this role.
+    ///
+    /// When `None`, falls back to per-role defaults (PM=10, TL=12, Jr=15).
+    pub max_tool_rounds: Option<usize>,
 }
 
 /// Full team section from `config.toml`.
@@ -105,17 +109,20 @@ impl Default for TeamRolesSection {
                 max_tokens: None,
                 provider: None,
                 base_url: None,
+                max_tool_rounds: Some(10),
             },
             tl: RoleConfig {
                 model: None,
-                tools: Some(vec!["bash".to_string()]), // TL: can run validation commands
+                tools: Some(vec![]), // TL: no tools by default (plan from PM analysis)
                 max_tokens: None,
                 provider: None,
                 base_url: None,
+                max_tool_rounds: Some(12),
             },
             jr: RoleConfig {
                 model: None,
                 max_tokens: Some(8192),
+                max_tool_rounds: Some(15),
                 tools: Some(
                     // Jr: restricted safe tools only (explicit opt-in for dangerous tools)
                     Role::Jr
@@ -196,7 +203,7 @@ impl Role {
     pub fn default_tools(&self) -> Vec<&'static str> {
         match self {
             Role::PM => vec![],
-            Role::TL => vec!["bash"],
+            Role::TL => vec![],
             Role::Jr => vec!["file_read", "file_write", "file_edit", "bash"],
         }
     }
@@ -339,6 +346,7 @@ tools = ["file_read", "file_write", "bash"]
         let cfg = RoleConfig::default();
         assert!(cfg.model.is_none());
         assert!(cfg.tools.is_none());
+        assert!(cfg.max_tool_rounds.is_none());
     }
 
     #[test]
@@ -391,7 +399,7 @@ base_url = "https://custom-endpoint.example.com/v1"
     #[test]
     fn test_role_default_tools() {
         assert!(Role::PM.default_tools().is_empty());
-        assert_eq!(Role::TL.default_tools(), vec!["bash"]);
+        assert!(Role::TL.default_tools().is_empty());
         assert_eq!(
             Role::Jr.default_tools(),
             vec!["file_read", "file_write", "file_edit", "bash"]
