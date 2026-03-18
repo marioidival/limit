@@ -15,6 +15,10 @@ pub enum Role {
     Jr,
 }
 
+fn default_tools_empty() -> Option<Vec<String>> {
+    Some(vec![])
+}
+
 /// Per-role configuration loaded from `[team.roles]` in `config.toml`.
 ///
 /// Any field set to `None` falls back to the active provider's default
@@ -33,6 +37,7 @@ pub struct RoleConfig {
     ///
     /// `None` means **all registered tools** are available.
     /// An empty `Vec` means **no tools** (PM by default).
+    #[serde(default = "default_tools_empty")]
     pub tools: Option<Vec<String>>,
     /// Max tokens override for this role.
     pub max_tokens: Option<u32>,
@@ -361,8 +366,23 @@ tools = ["file_read", "file_write", "bash"]
     fn test_role_config_default() {
         let cfg = RoleConfig::default();
         assert!(cfg.model.is_none());
+        // Default trait gives None for tools, but serde deserialization defaults to Some(vec![])
         assert!(cfg.tools.is_none());
         assert!(cfg.max_tool_rounds.is_none());
+    }
+
+    #[test]
+    fn test_role_config_deserialize_partial_defaults_to_empty_tools() {
+        // Simulates user config: [team.roles.pm] with provider/model but no tools
+        let toml = r#"
+provider = "openai"
+model = "gpt-4"
+"#;
+        let cfg: RoleConfig = toml::from_str(toml).unwrap();
+        assert_eq!(cfg.provider.as_deref(), Some("openai"));
+        assert_eq!(cfg.model.as_deref(), Some("gpt-4"));
+        // Absent `tools` should default to Some([]) — no tools
+        assert_eq!(cfg.tools.as_deref(), Some([].as_slice()));
     }
 
     #[test]
