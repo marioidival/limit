@@ -6,17 +6,18 @@
 
 use super::actor::Actor;
 use super::agent::PromptResult;
-use super::messages::{TeamMessage, MAX_HISTORY_PER_AGENT, MAX_TASKS};
+use super::messages::{send_progress, TeamMessage, MAX_HISTORY_PER_AGENT, MAX_TASKS};
 use crate::error::AgentError;
 use crate::team::agent::TeamAgent;
 use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
 use crate::team::orchestrator::TaskResult;
+use crate::team::progress::TeamProgressEvent;
 use crate::team::role::Role;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
 /// An actor wrapping a [`TeamAgent`] that processes [`TeamMessage`]s.
 pub struct AgentActor {
@@ -27,6 +28,8 @@ pub struct AgentActor {
     token_input: Arc<AtomicU64>,
     /// Shared counter for accumulating output tokens across prompts.
     token_output: Arc<AtomicU64>,
+    /// Progress channel for emitting task sub-status updates.
+    progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
 }
 
 impl AgentActor {
@@ -36,6 +39,7 @@ impl AgentActor {
         history: Arc<RwLock<TeamHistory>>,
         token_input: Arc<AtomicU64>,
         token_output: Arc<AtomicU64>,
+        progress_tx: Option<mpsc::UnboundedSender<TeamProgressEvent>>,
     ) -> Self {
         Self {
             role,
@@ -43,6 +47,7 @@ impl AgentActor {
             history,
             token_input,
             token_output,
+            progress_tx,
         }
     }
 
@@ -93,6 +98,40 @@ impl AgentActor {
 
     fn trim_history(&mut self) {
         self.agent.trim_history(MAX_HISTORY_PER_AGENT);
+    }
+
+    /// Extract file/tool information from text for sub-status messages.
+    fn extract_tool_info(text: &str) -> String {
+        // Look for file paths in common patterns
+        let patterns = [
+            "editing ",
+            "Reading ",
+            "Writing ",
+            "file: ",
+            "src/",
+            "Creating ",
+            "Updating ",
+        ];
+
+        for pattern in &patterns {
+            if let Some(pos) = text.find(pattern) {
+                let after = &text[pos + pattern.len()..];
+                // Extract the file path (up to 50 chars)
+                let file = after
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(50)
+                    .collect::<String>();
+                if !file.is_empty() {
+                    return format!("{}{}...", pattern.trim(), file);
+                }
+            }
+        }
+
+        // Fallback: first line of description
+        text.lines().next().unwrap_or("").chars().take(40).collect()
     }
 }
 
@@ -212,8 +251,8 @@ impl Actor for AgentActor {
                              completable by a junior developer. Combine small steps into single tasks.\n\n\
                              IMPORTANT: Do NOT read any files or use tools. Do NOT include CONTEXT blocks. \
                              Junior agents have their own tools to read files — just describe what to do.\n\n\
-                             If a task depends on the output of another task, add DEPENDS_ON on the next line:\n\
-                             TASK: <dependent task>\nDEPENDS_ON: <task it depends on>\n\n\
+                             If a task depends on the output of another task, add DEPENDS_ON on the next line:\
+                             \nTASK: <dependent task>\nDEPENDS_ON: <task it depends on>\n\n\
                              CRITICAL: Count every distinct deliverable in the plan. Each one MUST have a TASK. \
                              Never skip a deliverable. Double-check your task list against the plan before outputting.\n\n\
                              Output ONLY the task list, starting with TASK: on each line."
@@ -226,6 +265,7 @@ impl Actor for AgentActor {
                 TeamMessage::TlValidate {
                     results_summary,
                     files_list,
+                    compilation_output,
                     reply,
                 } => {
                     tracing::info!(
@@ -233,12 +273,24 @@ impl Actor for AgentActor {
                         results_summary.len(),
                         files_list.len()
                     );
+                    let compilation_section = match &compilation_output {
+                        Some(output) => format!(
+                            "\n\nCompilation check result (FAILED):\n```\n{}\n```\n\n\
+                             You MUST mark tasks that caused compilation errors as FAIL.",
+                            output
+                        ),
+                        None => "\n\nCompilation check result: PASSED".to_string(),
+                    };
                     let result = self
                         .prompt(&format!(
                             "Task results:\n{results_summary}\n\n\
                              {files_list}\n\n\
-                             Validate the implementation based on the task results above. \
-                             Do NOT use tools — just analyze the results and note any issues."
+                             {compilation_section}\n\n\
+                             Do NOT use tools. Evaluate each task and output a structured assessment:\n\n\
+                             For each task, state:\n- **PASS** if the task was completed correctly and the code compiles\n\
+                             - **FAIL** if the task has errors, missing implementations, or caused compilation failures\n\n\
+                             If compilation failed, identify which tasks contributed to the errors and mark them FAIL.\n\
+                             Be strict — if something is broken, say so."
                         ))
                         .await;
                     self.log_event(
@@ -250,7 +302,11 @@ impl Actor for AgentActor {
                     Ok(())
                 }
 
-                TeamMessage::JrExecute { task, reply } => {
+                TeamMessage::JrExecute {
+                    task,
+                    reply,
+                    progress_tx,
+                } => {
                     let task_id = task.id.clone();
                     let desc_preview: String = task
                         .description
@@ -265,6 +321,21 @@ impl Actor for AgentActor {
                         task_id,
                         desc_preview
                     );
+
+                    // Use the provided progress_tx if available, otherwise fall back to self.progress_tx
+                    let tx = progress_tx.or_else(|| self.progress_tx.clone());
+
+                    // Send sub-status update at the start of JrExecute
+                    let sub_status = Self::extract_tool_info(&task.description);
+                    send_progress(
+                        &tx,
+                        TeamProgressEvent::TaskSubStatusUpdate {
+                            task_id: task_id.clone(),
+                            message: format!("Starting: {}", sub_status),
+                            nesting: 0,
+                        },
+                    );
+
                     let prompt_text = format!(
                         "Execute this task:\n{}\n\n\
                          Do the work efficiently. Use the minimum number of tool calls needed (aim for 1-3). \
@@ -275,20 +346,59 @@ impl Actor for AgentActor {
                     );
 
                     let task_result = match self.prompt(&prompt_text).await {
-                        Ok(pr) => TaskResult {
-                            task_id,
-                            output: pr.text,
-                            success: true,
-                            hit_tool_limit: pr.hit_tool_limit,
-                            files_modified: pr.files_modified,
-                        },
-                        Err(e) => TaskResult {
-                            task_id,
-                            output: format!("Task failed: {}", e),
-                            success: false,
-                            hit_tool_limit: false,
-                            files_modified: vec![],
-                        },
+                        Ok(pr) => {
+                            // Send completion sub-status update
+                            let completion_msg = if pr.hit_tool_limit {
+                                "Hit tool limit, retrying...".to_string()
+                            } else if pr.files_modified.is_empty() {
+                                "Task completed (no files modified)".to_string()
+                            } else {
+                                format!(
+                                    "Completed ({} file{} modified)",
+                                    pr.files_modified.len(),
+                                    if pr.files_modified.len() == 1 {
+                                        ""
+                                    } else {
+                                        "s"
+                                    }
+                                )
+                            };
+                            send_progress(
+                                &tx,
+                                TeamProgressEvent::TaskSubStatusUpdate {
+                                    task_id: task_id.clone(),
+                                    message: completion_msg,
+                                    nesting: 0,
+                                },
+                            );
+
+                            TaskResult {
+                                task_id,
+                                output: pr.text,
+                                success: true,
+                                hit_tool_limit: pr.hit_tool_limit,
+                                files_modified: pr.files_modified,
+                            }
+                        }
+                        Err(e) => {
+                            // Send error sub-status update
+                            send_progress(
+                                &tx,
+                                TeamProgressEvent::TaskSubStatusUpdate {
+                                    task_id: task_id.clone(),
+                                    message: format!("Failed: {}", e),
+                                    nesting: 0,
+                                },
+                            );
+
+                            TaskResult {
+                                task_id,
+                                output: format!("Task failed: {}", e),
+                                success: false,
+                                hit_tool_limit: false,
+                                files_modified: vec![],
+                            }
+                        }
                     };
 
                     self.trim_history();
