@@ -1681,6 +1681,7 @@ dependencies = [
  "futures",
  "limit-llm",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

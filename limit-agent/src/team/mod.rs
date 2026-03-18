@@ -38,20 +38,20 @@
 mod actor;
 mod agent;
 mod agent_actor;
+mod db;
 mod history;
 mod messages;
 mod orchestrator;
 mod orchestrator_actor;
-mod persistence;
 mod progress;
 mod role;
 mod supervisor;
 pub mod workflow;
 
 pub use agent::{PromptResult, TeamAgent};
+pub use db::{default_db_path, RunSummary, TeamDb};
 pub use history::{EventLevel, TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
-pub use persistence::{TeamSnapshot, TeamStore};
 pub use progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent, PHASE_COUNT};
 pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
 #[allow(deprecated)]

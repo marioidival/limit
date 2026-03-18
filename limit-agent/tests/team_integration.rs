@@ -249,17 +249,44 @@ async fn test_team_reset_clears_state() {
     );
 }
 
-#[tokio::test]
-async fn test_team_persistence_save_load() {
-    let team = mock_team("persist-test");
+#[test]
+fn test_team_db_persistence() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let path = tmp.path().join("test.db");
+    let db = limit_agent::team::TeamDb::open(&path).unwrap();
 
-    // Export history + config to a snapshot
-    let snapshot = limit_agent::team::TeamSnapshot::new("persist-test", team.config.clone());
+    // Insert a team
+    assert!(db.insert_team("persist-test").unwrap());
 
-    // Serialize and deserialize
-    let json = serde_json::to_string(&snapshot).unwrap();
-    let loaded: limit_agent::team::TeamSnapshot = serde_json::from_str(&json).unwrap();
+    // Verify it exists
+    assert!(db.team_exists("persist-test").unwrap());
 
-    assert_eq!(loaded.name, "persist-test");
-    assert_eq!(loaded.config.num_juniors, team.config.num_juniors);
+    // List teams
+    let teams = db.list_teams().unwrap();
+    assert!(teams.contains(&"persist-test".to_string()));
+
+    // Insert a run with events
+    let result = limit_agent::team::TeamResult {
+        solution: "test solution".into(),
+        duration: std::time::Duration::from_secs(5),
+        events: vec![],
+        total_retries: 0,
+        failed_tasks: 0,
+        total_tasks: 2,
+        files_modified: vec!["src/main.rs".into()],
+        tokens_input: 100,
+        tokens_output: 50,
+    };
+    let run_id = db
+        .persist_run_result("persist-test", "fix bug", &result)
+        .unwrap();
+    assert!(run_id > 0);
+
+    // Retrieve events
+    let (events, summary) = db.get_latest_run_events("persist-test").unwrap().unwrap();
+    assert!(events.is_empty());
+    assert_eq!(summary.status, "success");
+
+    // Cleanup
+    assert!(db.delete_team("persist-test").unwrap());
 }

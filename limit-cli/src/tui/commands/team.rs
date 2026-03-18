@@ -2,35 +2,20 @@
 //!
 //! Subcommands: `create`, `delete`, `list`, `status`, `start`, `history`.
 //!
-//! `create` registers a team with a placeholder provider.
-//! `start` replaces the placeholder with a real provider from the active
-//! [`AgentBridge`](crate::agent_bridge::AgentBridge) before executing.
-//!
-//! Teams are persisted to `~/.limit/teams/` as JSON snapshots.
+//! Teams are persisted to `~/.limit/team.db` (SQLite). Config lives in
+//! `config.toml` as the single source of truth for role settings.
 
 use crate::error::CliError;
 use crate::tui::commands::registry::{Command, CommandContext, CommandResult};
-use limit_agent::team::{EventLevel, Team, TeamConfig, TeamSnapshot, TeamStore};
+use limit_agent::team::{EventLevel, Team, TeamConfig, TeamDb};
 use limit_tui::components::Message;
 use parking_lot::Mutex;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// Stored team together with its configuration.
-struct TeamEntry {
-    #[allow(dead_code)]
-    team: Team,
-    config: TeamConfig,
-}
-
 /// The `/team` command.
 pub struct TeamCommand {
-    /// Placeholder teams for metadata (config, junios count).
-    teams: Mutex<HashMap<String, TeamEntry>>,
-    /// Execution histories indexed by team name (populated after team runs).
-    execution_histories: Arc<Mutex<HashMap<String, limit_agent::team::TeamHistory>>>,
-    store: Mutex<TeamStore>,
+    db: Mutex<TeamDb>,
 }
 
 impl Default for TeamCommand {
@@ -41,52 +26,12 @@ impl Default for TeamCommand {
 
 impl TeamCommand {
     pub fn new() -> Self {
-        let store = TeamStore::default_dir().unwrap_or_else(|e| {
-            tracing::warn!("Failed to create team store: {}. Using temp dir.", e);
-            let tmp = std::env::temp_dir().join("limit-teams");
-            std::fs::create_dir_all(&tmp).ok();
-            TeamStore::new(tmp).expect("temp dir should work")
+        let db = TeamDb::open_default().unwrap_or_else(|e| {
+            tracing::warn!("Failed to open team db: {}. Using temp.", e);
+            let tmp = std::env::temp_dir().join("limit-team.db");
+            TeamDb::open(&tmp).expect("temp db should work")
         });
-        Self {
-            teams: Mutex::new(HashMap::new()),
-            execution_histories: Arc::new(Mutex::new(HashMap::new())),
-            store: Mutex::new(store),
-        }
-    }
-
-    /// Load teams from disk into memory.
-    fn load_from_store(&self, ctx: &mut CommandContext) {
-        let store = self.store.lock();
-        let names = match store.list() {
-            Ok(n) => n,
-            Err(e) => {
-                ctx.add_system_message(format!("⚠️  Failed to list teams: {}", e));
-                return;
-            }
-        };
-
-        let mut teams = self.teams.lock();
-        for name in &names {
-            if teams.contains_key(name) {
-                continue; // already loaded
-            }
-            match store.load(name) {
-                Ok(Some(snap)) => {
-                    let team = create_placeholder_team(&snap.name, &snap.config);
-                    teams.insert(
-                        name.clone(),
-                        TeamEntry {
-                            team,
-                            config: snap.config,
-                        },
-                    );
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!("Failed to load team '{}': {}", name, e);
-                }
-            }
-        }
+        Self { db: Mutex::new(db) }
     }
 }
 
@@ -173,29 +118,16 @@ impl TeamCommand {
             }
         };
 
-        let config = TeamConfig {
-            num_juniors: juniors,
-            max_parallel_tasks: 4,
-            enable_streaming: false,
-            roles: Default::default(),
-        };
-
-        let mut teams = self.teams.lock();
-        if teams.contains_key(&name) {
+        let db = self.db.lock();
+        if db
+            .team_exists(&name)
+            .map_err(|e| CliError::Other(e.to_string()))?
+        {
             ctx.add_system_message(format!("⚠️  Team '{}' already exists", name));
         } else {
-            let team = create_placeholder_team(&name, &config);
+            db.insert_team(&name)
+                .map_err(|e| CliError::Other(e.to_string()))?;
 
-            // Persist to disk
-            if let Err(e) = self
-                .store
-                .lock()
-                .save(&TeamSnapshot::new(&name, config.clone()))
-            {
-                tracing::warn!("Failed to persist team '{}': {}", name, e);
-            }
-
-            teams.insert(name.clone(), TeamEntry { team, config });
             ctx.add_system_message(format!(
                 "✅ Team '{}' registered with {} junior agents\n\
                  Run /team start --team \"{}\" --task \"<description>\" to execute",
@@ -216,32 +148,31 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        // Remove from disk
-        if let Err(e) = self.store.lock().delete(name) {
-            tracing::warn!("Failed to delete team '{}' from disk: {}", name, e);
-        }
-
-        let mut teams = self.teams.lock();
-        if teams.remove(name).is_some() {
-            ctx.add_system_message(format!("✅ Team '{}' deleted", name));
-        } else {
-            ctx.add_system_message(format!("⚠️  Team '{}' not found", name));
+        let db = self.db.lock();
+        match db.delete_team(name) {
+            Ok(true) => ctx.add_system_message(format!("✅ Team '{}' deleted", name)),
+            Ok(false) => ctx.add_system_message(format!("⚠️  Team '{}' not found", name)),
+            Err(e) => {
+                tracing::warn!("Failed to delete team '{}': {}", name, e);
+                ctx.add_system_message(format!("⚠️  Failed to delete team '{}'", name));
+            }
         }
 
         Ok(CommandResult::Continue)
     }
 
     fn handle_list(&self, ctx: &mut CommandContext) -> Result<CommandResult, CliError> {
-        // Load persisted teams first
-        self.load_from_store(ctx);
+        let db = self.db.lock();
+        let teams = db
+            .list_teams()
+            .map_err(|e| CliError::Other(e.to_string()))?;
 
-        let teams = self.teams.lock();
         if teams.is_empty() {
             ctx.add_system_message("No teams created yet. Use /team create --name <name>".into());
         } else {
             let list = teams
                 .iter()
-                .map(|(n, e)| format!("- {} ({} juniors)", n, e.team.jrs.len()))
+                .map(|n| format!("- {}", n))
                 .collect::<Vec<_>>()
                 .join("\n");
             ctx.add_system_message(format!("Teams:\n{}", list));
@@ -260,21 +191,25 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        let teams = self.teams.lock();
-        match teams.get(name) {
-            Some(entry) => {
-                ctx.add_system_message(format!(
-                    "Team: {}\nPM: ready\nTL: ready\nJuniors: {} agents\n\
-                     Max parallel tasks: {}",
-                    name,
-                    entry.team.jrs.len(),
-                    entry.config.max_parallel_tasks,
-                ));
-            }
-            None => {
-                ctx.add_system_message(format!("Team '{}' not found", name));
-            }
+        let db = self.db.lock();
+
+        if !db
+            .team_exists(name)
+            .map_err(|e| CliError::Other(e.to_string()))?
+        {
+            ctx.add_system_message(format!("Team '{}' not found", name));
+            return Ok(CommandResult::Continue);
         }
+
+        // Build config from [team] section in config.toml (same source as /team start)
+        let config = load_team_config();
+        let juniors = config.num_juniors;
+
+        ctx.add_system_message(format!(
+            "Team: {}\nPM: ready\nTL: ready\nJuniors: {} agents\n\
+             Max parallel tasks: {}",
+            name, juniors, config.max_parallel_tasks,
+        ));
 
         Ok(CommandResult::Continue)
     }
@@ -295,7 +230,6 @@ impl TeamCommand {
                     i += 2;
                 }
                 "--task" | "-k" => {
-                    // Collect remaining args as the task description
                     task = Some(args[i + 1..].join(" "));
                     break;
                 }
@@ -327,6 +261,18 @@ impl TeamCommand {
             }
         };
 
+        // Validate team exists
+        {
+            let db = self.db.lock();
+            if !db
+                .team_exists(&team_name)
+                .map_err(|e| CliError::Other(e.to_string()))?
+            {
+                ctx.add_system_message(format!("⚠️  Team '{}' not found", team_name));
+                return Ok(CommandResult::Continue);
+            }
+        }
+
         ctx.add_system_message(format!("🚀 Team '{}' starting task...", team_name));
 
         // Create progress channel and set receiver for TUI rendering
@@ -338,24 +284,13 @@ impl TeamCommand {
         let messages = ctx.messages.clone();
         let name_clone = team_name;
         let task_clone = task;
-        let execution_histories = Arc::clone(&self.execution_histories);
 
-        // Validate team exists before spawning background work
-        {
-            let teams = self.teams.lock();
-            if !teams.contains_key(&name_clone) {
-                ctx.add_system_message(format!("⚠️  Team '{}' not found", name_clone));
-                return Ok(CommandResult::Continue);
-            }
-        }
+        // We need a TeamDb handle for the background thread.
+        // Since TeamDb uses internal Mutex, we clone the Arc (but we use a
+        // raw pointer approach: open a second connection to the same db file).
+        let db_path = limit_agent::team::default_db_path().expect("db path should exist");
 
         // Spawn team execution in a background thread.
-        //
-        // This creates a dedicated tokio runtime for team execution. While creating
-        // a runtime per execution has overhead, it's necessary because:
-        // 1. The TUI event loop is synchronous
-        // 2. We need async execution without blocking the UI
-        // 3. Team execution is infrequent and long-running, so overhead is acceptable
         let name_for_monitor = name_clone.clone();
         let spawn_result = std::thread::Builder::new()
             .name(format!("team-{}-executor", name_clone))
@@ -417,11 +352,26 @@ impl TeamCommand {
                     Ok(mut team) => {
                         let result = team.execute(&task_clone, Some(progress_tx)).await;
 
+                        // Open a separate db connection for persistence (thread-safe)
+                        let persist_db = match TeamDb::open(&db_path) {
+                            Ok(db) => db,
+                            Err(e) => {
+                                tracing::warn!("Failed to open db for persistence: {}", e);
+                                if let Ok(mut cv) = chat_view.lock() {
+                                    cv.add_message(Message::system(
+                                        "⚠️  Run completed but could not persist results".into(),
+                                    ));
+                                }
+                                return;
+                            }
+                        };
+
                         match result {
                             Ok(result) => {
-                                // Update the execution history for this team
-                                let history_clone = (*team.history.read().await).clone();
-                                execution_histories.lock().insert(name_clone.clone(), history_clone);
+                                // Persist run result to SQLite
+                                if let Err(e) = persist_db.persist_run_result(&name_clone, &task_clone, &result) {
+                                    tracing::warn!("Failed to persist run result: {}", e);
+                                }
 
                                 let mut summary = format!(
                                     "✅ Team '{}' completed in {:.1}s",
@@ -462,8 +412,7 @@ impl TeamCommand {
                                     cv.add_message(Message::system(summary.clone()));
                                 }
 
-                                // Also add to conversation history so the single-agent
-                                // has context about what the team did.
+                                // Also add to conversation history
                                 if let Ok(mut msgs) = messages.lock() {
                                     msgs.push(limit_llm::Message {
                                         role: limit_llm::Role::System,
@@ -478,6 +427,12 @@ impl TeamCommand {
                             }
                             Err(e) => {
                                 let err_msg = format!("{}", e);
+
+                                // Persist error run
+                                if let Err(pe) = persist_db.persist_run_error(&name_clone, &task_clone, std::time::Duration::from_secs(0), &err_msg) {
+                                    tracing::warn!("Failed to persist run error: {}", pe);
+                                }
+
                                 let hint = if err_msg.contains("Rate limit")
                                     || err_msg.contains("429")
                                 {
@@ -516,8 +471,7 @@ impl TeamCommand {
             CliError::IoError(std::io::Error::other(e))
         })?;
 
-        // Spawn a panic monitor so thread crashes are reported to the user
-        // instead of being silently swallowed (the old code dropped the JoinHandle).
+        // Spawn a panic monitor
         {
             let monitor_chat = ctx.chat_view.clone();
             let monitor_name = name_for_monitor;
@@ -552,18 +506,15 @@ impl TeamCommand {
             return Ok(CommandResult::Continue);
         }
 
-        // Read from execution_histories (populated after team runs)
-        let events_result = {
-            let histories = self.execution_histories.lock();
-            histories.get(name).map(|history| history.events().to_vec())
-        };
+        let db = self.db.lock();
 
-        match events_result {
-            Some(events) => {
+        match db.get_latest_run_events(name) {
+            Ok(Some((events, summary))) => {
                 if events.is_empty() {
-                    ctx.add_system_message(
-                        "No history recorded yet. Run /team start first.".into(),
-                    );
+                    ctx.add_system_message(format!(
+                        "Team '{}' has a run but no events were recorded.",
+                        name
+                    ));
                 } else {
                     let errors: Vec<_> = events
                         .iter()
@@ -576,12 +527,21 @@ impl TeamCommand {
 
                     let mut log = String::new();
 
-                    // Summary header
-                    log.push_str(&format!(
-                        "📋 Team '{}' history ({} events",
-                        name,
-                        events.len()
-                    ));
+                    log.push_str(&format!("📋 Team '{}' — last run\n", name));
+                    log.push_str(&format!("   Task: {}\n", summary.task));
+                    log.push_str(&format!("   Status: {}\n", summary.status));
+
+                    if let Some(ms) = summary.duration_ms {
+                        log.push_str(&format!("   Duration: {:.1}s\n", ms as f64 / 1000.0));
+                    }
+                    if summary.tokens_input > 0 || summary.tokens_output > 0 {
+                        log.push_str(&format!(
+                            "   Tokens: {} in / {} out\n",
+                            summary.tokens_input, summary.tokens_output
+                        ));
+                    }
+
+                    log.push_str(&format!("   Events ({}", events.len()));
                     if !errors.is_empty() {
                         log.push_str(&format!(", {} errors", errors.len()));
                     }
@@ -607,11 +567,14 @@ impl TeamCommand {
                     ctx.add_system_message(log);
                 }
             }
-            None => {
+            Ok(None) => {
                 ctx.add_system_message(format!(
-                    "Team '{}' has no history. Run /team start first.",
+                    "Team '{}' has no run history. Run /team start first.",
                     name
                 ));
+            }
+            Err(e) => {
+                ctx.add_system_message(format!("⚠️  Failed to load history: {}", e));
             }
         }
 
@@ -621,56 +584,16 @@ impl TeamCommand {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-/// Create a placeholder team (noop provider, empty tools) so that
-/// `list` and `status` work before the user runs `/team start`.
-fn create_placeholder_team(name: &str, config: &TeamConfig) -> Team {
-    struct NoopProvider;
-
-    #[async_trait::async_trait]
-    impl limit_llm::LlmProvider for NoopProvider {
-        async fn send(
-            &self,
-            _messages: Vec<limit_llm::Message>,
-            _tools: Vec<limit_llm::Tool>,
-        ) -> Result<
-            std::pin::Pin<
-                Box<
-                    dyn futures::Stream<
-                            Item = Result<limit_llm::ProviderResponseChunk, limit_llm::LlmError>,
-                        > + Send
-                        + '_,
-                >,
-            >,
-            limit_llm::LlmError,
-        > {
-            use futures::stream;
-            Ok(Box::pin(stream::empty()))
-        }
-
-        fn provider_name(&self) -> &str {
-            "noop"
-        }
-
-        fn model_name(&self) -> &str {
-            "noop"
-        }
-
-        fn clone_box(&self) -> Box<dyn limit_llm::LlmProvider> {
-            Box::new(NoopProvider)
-        }
-    }
-
-    let provider: Box<dyn limit_llm::LlmProvider> = Box::new(NoopProvider);
-    let tools = Arc::new(limit_agent::ToolRegistry::new());
-
-    Team::new(
-        name.to_string(),
-        provider,
-        config.clone(),
-        tools,
-        Default::default(),
-    )
-    .expect("placeholder team creation should not fail")
+/// Load team config from `[team]` section in `config.toml`.
+fn load_team_config() -> TeamConfig {
+    let section = limit_llm::Config::load()
+        .ok()
+        .and_then(|cfg| {
+            cfg.team
+                .map(|v| limit_agent::team::TeamSection::from_raw(&v))
+        })
+        .unwrap_or_default();
+    TeamConfig::from_section(&section)
 }
 
 /// Build a [`ToolRegistry`] with the same tools that the main agent uses.
@@ -712,8 +635,6 @@ fn build_tool_registry() -> limit_agent::ToolRegistry {
     let _ = registry.register(WebFetchTool::new());
 
     // Set proper LLM schemas so agents can generate correct tool-call arguments.
-    // Without these, tools get a generic `{"type": "object"}` schema and the LLM
-    // cannot determine the required parameters.
     for name in registry.list() {
         let (desc, params) = AgentBridge::get_tool_schema(&name);
         registry.set_schema(&name, desc, params);
@@ -745,26 +666,6 @@ mod tests {
         assert!(!usage.is_empty());
         assert!(usage.iter().any(|u| u.contains("create")));
         assert!(usage.iter().any(|u| u.contains("start")));
-    }
-
-    #[test]
-    fn test_placeholder_team_creation() {
-        let config = TeamConfig::default();
-        let team = create_placeholder_team("test", &config);
-        assert_eq!(team.name, "test");
-        assert_eq!(team.jrs.len(), 2);
-    }
-
-    #[test]
-    fn test_placeholder_team_custom_juniors() {
-        let config = TeamConfig {
-            num_juniors: 5,
-            max_parallel_tasks: 8,
-            enable_streaming: true,
-            roles: Default::default(),
-        };
-        let team = create_placeholder_team("test", &config);
-        assert_eq!(team.jrs.len(), 5);
     }
 
     #[test]
