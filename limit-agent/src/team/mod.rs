@@ -155,7 +155,7 @@ impl Team {
 
         let pm_max = config.roles.pm.max_tool_rounds.unwrap_or(10);
         let tl_max = config.roles.tl.max_tool_rounds.unwrap_or(12);
-        let jr_max = config.roles.jr.max_tool_rounds.unwrap_or(15);
+        let jr_max = config.roles.jr.max_tool_rounds.unwrap_or(8);
 
         let pm =
             TeamAgent::with_allowed_tools(Role::PM, provider.clone_box(), tools.clone(), pm_tools)
@@ -253,7 +253,7 @@ impl Team {
 
         let pm_max_rounds = self.config.roles.pm.max_tool_rounds.unwrap_or(10);
         let tl_max_rounds = self.config.roles.tl.max_tool_rounds.unwrap_or(12);
-        let jr_max_rounds = self.config.roles.jr.max_tool_rounds.unwrap_or(15);
+        let jr_max_rounds = self.config.roles.jr.max_tool_rounds.unwrap_or(8);
 
         let pm = TeamAgent::with_allowed_tools(
             Role::PM,

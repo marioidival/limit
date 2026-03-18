@@ -46,7 +46,7 @@ pub struct RoleConfig {
     pub base_url: Option<String>,
     /// Maximum tool-call rounds per prompt for this role.
     ///
-    /// When `None`, falls back to per-role defaults (PM=10, TL=12, Jr=15).
+    /// When `None`, falls back to per-role defaults (PM=10, TL=12, Jr=8).
     pub max_tool_rounds: Option<usize>,
 }
 
@@ -123,7 +123,7 @@ impl Default for TeamRolesSection {
             jr: RoleConfig {
                 model: None,
                 max_tokens: Some(8192),
-                max_tool_rounds: Some(15),
+                max_tool_rounds: Some(8),
                 tools: Some(
                     // Jr: restricted safe tools only (explicit opt-in for dangerous tools)
                     Role::Jr

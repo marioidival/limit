@@ -27,6 +27,10 @@ When creating a technical plan:
 
 When breaking down tasks, format each one as:
 TASK: <clear, specific instruction>
+DEFINITION_OF_DONE:
+- <specific, verifiable criterion>
+- <e.g., "file compiles without errors">
+- <e.g., "module exports the required public API">
 
 When breaking down tasks, do NOT read files or use tools. Junior agents have their own tools to read files — just describe what needs to be done clearly.
 

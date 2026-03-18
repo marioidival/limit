@@ -251,6 +251,13 @@ impl Actor for AgentActor {
                              completable by a junior developer. Combine small steps into single tasks.\n\n\
                              IMPORTANT: Do NOT read any files or use tools. Do NOT include CONTEXT blocks. \
                              Junior agents have their own tools to read files — just describe what to do.\n\n\
+                             For EACH task, include a DEFINITION_OF_DONE line with 2-4 concrete acceptance criteria.\n\
+                             Format:\n\
+                             TASK: <description>\n\
+                             DEFINITION_OF_DONE:\n\
+                             - <specific, verifiable criterion>\n\
+                             - <e.g., \"file compiles without errors\">\n\
+                             - <e.g., \"module exports the required public API\">\n\n\
                              If a task depends on the output of another task, add DEPENDS_ON on the next line:\
                              \nTASK: <dependent task>\nDEPENDS_ON: <task it depends on>\n\n\
                              CRITICAL: Count every distinct deliverable in the plan. Each one MUST have a TASK. \
@@ -309,23 +316,31 @@ impl Actor for AgentActor {
                         files_list.len()
                     );
                     let build_section = match &build_output {
-                        Some(output) => format!(
-                            "\n\nBuild check result (FAILED):\n```\n{}\n```\n\n\
-                             You MUST mark tasks that caused build errors as FAIL.",
-                            output
-                        ),
-                        None => "\n\nBuild check result: PASSED".to_string(),
+                        Some(output) => {
+                            let trimmed = if output.len() > 3000 {
+                                format!("{}...\n[truncated]", &output[..3000])
+                            } else {
+                                output.clone()
+                            };
+                            format!("\n\nBUILD STATUS: FAILED\n```\n{trimmed}\n```\n",)
+                        }
+                        None => "\n\nBUILD STATUS: PASSED".to_string(),
                     };
                     let result = self
                         .prompt(&format!(
-                            "Task results:\n{results_summary}\n\n\
+                            "Evaluate each task against its Definition of Done.\n\n\
+                             Task results:\n{results_summary}\n\n\
                              {files_list}\n\n\
                              {build_section}\n\n\
-                             Do NOT use tools. Evaluate each task and output a structured assessment:\n\n\
-                             For each task, state:\n- **PASS** if the task was completed correctly and the build passes\n\
-                             - **FAIL** if the task has errors, missing implementations, or caused build failures\n\n\
-                             If build failed, identify which tasks contributed to the errors and mark them FAIL.\n\
-                             Be strict — if something is broken, say so."
+                             RULES:\n\
+                             - If build FAILED: ALL tasks that modified files with errors are FAIL\n\
+                             - If a task modified no files: FAIL (no deliverable produced)\n\
+                             - Otherwise: PASS only if DoD criteria are met\n\n\
+                             Do NOT use tools.\n\n\
+                             Output format:\n\
+                             ## Task: <task_id>\n\
+                             - Status: **PASS** or **FAIL**\n\
+                             - Reason: <one sentence>"
                         ))
                         .await;
                     self.log_event(
@@ -373,6 +388,8 @@ impl Actor for AgentActor {
 
                     let prompt_text = format!(
                         "Execute this task:\n{}\n\n\
+                         Your task includes a DEFINITION_OF_DONE section. Complete only what the DoD requires — nothing more, nothing less.\
+                         \n\n\
                          Do the work efficiently. Use the minimum number of tool calls needed (aim for 1-3). \
                          Do not verify or re-read files after writing them — trust the tool results. \
                          If CONTEXT is provided in the task, use it directly instead of reading the file. \

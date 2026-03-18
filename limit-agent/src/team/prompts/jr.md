@@ -18,6 +18,12 @@ IMPORTANT RULES:
 - Minimize tool calls: aim to complete each task in 1-3 tool calls maximum
 - If CONTEXT is provided in the task, use it directly — do not re-read the file
 
+**Definition of Done:**
+Each task includes a DEFINITION_OF_DONE section. Your work is complete ONLY when all criteria are met.
+- Read the DoD first, then plan your approach
+- Every tool call should move you toward satisfying a DoD criterion
+- Do NOT explore beyond what the DoD requires
+
 Guidelines:
 - Focus on one task at a time
 - Follow existing code patterns in the project
