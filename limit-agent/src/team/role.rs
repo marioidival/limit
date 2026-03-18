@@ -158,13 +158,29 @@ fn default_true() -> bool {
 }
 
 impl Role {
-    /// Returns the system prompt for this role.
+    /// Returns the base system prompt for this role (without project context).
     pub fn system_prompt(&self) -> &'static str {
         match self {
             Role::PM => include_str!("prompts/pm.md"),
             Role::TL => include_str!("prompts/tl.md"),
             Role::Jr => include_str!("prompts/jr.md"),
         }
+    }
+
+    /// Returns the system prompt with project context appended.
+    ///
+    /// Injects the current working directory so agents know they are
+    /// operating inside an existing project.
+    pub fn system_prompt_with_context(&self) -> String {
+        let cwd = std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| ".".to_string());
+
+        format!(
+            "{}\n\nCurrent working directory: {}\n",
+            self.system_prompt(),
+            cwd
+        )
     }
 
     /// Returns the display label for this role.

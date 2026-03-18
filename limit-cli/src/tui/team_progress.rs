@@ -10,6 +10,9 @@ use parking_lot::Mutex;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
+/// How long to show the finished panel before auto-hiding.
+const FINISHED_DISPLAY_SECS: u64 = 5;
+
 /// Immutable snapshot of team progress for rendering.
 #[derive(Debug, Clone, Default)]
 pub struct TeamProgressSnapshot {
@@ -19,6 +22,7 @@ pub struct TeamProgressSnapshot {
     pub tasks: Vec<TaskProgressInfo>,
     pub started_at: Option<Instant>,
     pub finished: bool,
+    pub finished_at: Option<Instant>,
     pub success: bool,
     pub status_text: String,
 }
@@ -36,8 +40,19 @@ impl TeamProgressState {
     }
 
     /// Cheap clone of current state for the render loop.
+    /// Auto-hides the finished panel after `FINISHED_DISPLAY_SECS`.
     pub fn snapshot(&self) -> TeamProgressSnapshot {
-        self.inner.lock().clone()
+        let snap = self.inner.lock().clone();
+        if snap.finished {
+            if let Some(finished_at) = snap.finished_at {
+                if finished_at.elapsed().as_secs() >= FINISHED_DISPLAY_SECS {
+                    // Auto-dismiss: clear the entire state so the panel disappears.
+                    *self.inner.lock() = TeamProgressSnapshot::default();
+                    return TeamProgressSnapshot::default();
+                }
+            }
+        }
+        snap
     }
 
     /// Apply an event from the workflow channel.
@@ -82,6 +97,7 @@ impl TeamProgressState {
                 state.finished = true;
                 state.success = success;
                 state.phases_completed = PHASE_COUNT;
+                state.finished_at = Some(Instant::now());
             }
             TeamProgressEvent::StatusUpdate { message, .. } => {
                 state.status_text = message;

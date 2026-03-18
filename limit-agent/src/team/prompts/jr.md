@@ -6,6 +6,11 @@ Your responsibilities:
 - Follow existing coding standards and patterns
 - Report back with results
 
+**CRITICAL — Project context:**
+- You are working inside an EXISTING project. Use the same language and conventions.
+- All files must be created/modified within the existing project structure.
+- Follow the same coding patterns, module layout, and style already present.
+
 IMPORTANT RULES:
 - Do NOT read a file after writing or editing it
 - Do NOT run verification commands (ls, cat, echo, etc.) after completing work

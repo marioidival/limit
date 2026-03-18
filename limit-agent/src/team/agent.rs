@@ -224,7 +224,7 @@ impl TeamAgent {
 
         let system_msg = Message {
             role: LlmRole::System,
-            content: Some(role.system_prompt().to_string()),
+            content: Some(role.system_prompt_with_context()),
             tool_calls: None,
             tool_call_id: None,
         };
@@ -572,7 +572,9 @@ impl TeamAgent {
             }
 
             let (round_response, round_usage) = self.send_and_collect(tools.clone()).await?;
-            response = round_response;
+            if !round_response.is_empty() {
+                response = round_response;
+            }
             usage.input_tokens += round_usage.input_tokens;
             usage.output_tokens += round_usage.output_tokens;
         }
