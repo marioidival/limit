@@ -15,10 +15,6 @@ pub enum Role {
     Jr,
 }
 
-fn default_tools_empty() -> Option<Vec<String>> {
-    Some(vec![])
-}
-
 /// Per-role configuration loaded from `[team.roles]` in `config.toml`.
 ///
 /// Any field set to `None` falls back to the active provider's default
@@ -35,9 +31,9 @@ pub struct RoleConfig {
     pub model: Option<String>,
     /// Tool names this role is allowed to use.
     ///
-    /// `None` means **all registered tools** are available.
-    /// An empty `Vec` means **no tools** (PM by default).
-    #[serde(default = "default_tools_empty")]
+    /// `None` means **use the role-specific default** (PM/TL: no tools, Jr: restricted set).
+    /// `Some([])` means **no tools**.
+    /// `Some(["file_read", ...])` means only those tools.
     pub tools: Option<Vec<String>>,
     /// Max tokens override for this role.
     pub max_tokens: Option<u32>,
@@ -147,8 +143,29 @@ impl TeamSection {
     /// Parse from a raw `toml::Value` (typically from `Config::team`).
     ///
     /// Returns the default section if the value is missing or unparseable.
+    /// Applies role-specific defaults for any `tools: None` fields.
     pub fn from_raw(value: &toml::Value) -> Self {
-        value.clone().try_into().unwrap_or_default()
+        let mut section: Self = value.clone().try_into().unwrap_or_default();
+        section.normalize_tools();
+        section
+    }
+
+    /// Fill `None` tool lists with role-specific defaults.
+    ///
+    /// Serde's per-field `default` doesn't know which role it's deserializing,
+    /// so absent `tools` becomes `None`. This step applies the correct defaults:
+    /// PM/TL → empty (no tools), Jr → restricted set.
+    fn normalize_tools(&mut self) {
+        let defaults = TeamRolesSection::default();
+        if self.roles.pm.tools.is_none() {
+            self.roles.pm.tools = defaults.pm.tools.clone();
+        }
+        if self.roles.tl.tools.is_none() {
+            self.roles.tl.tools = defaults.tl.tools.clone();
+        }
+        if self.roles.jr.tools.is_none() {
+            self.roles.jr.tools = defaults.jr.tools.clone();
+        }
     }
 }
 
@@ -366,14 +383,14 @@ tools = ["file_read", "file_write", "bash"]
     fn test_role_config_default() {
         let cfg = RoleConfig::default();
         assert!(cfg.model.is_none());
-        // Default trait gives None for tools, but serde deserialization defaults to Some(vec![])
+        // Default trait gives None for tools (normalized to role default by TeamSection::from_raw)
         assert!(cfg.tools.is_none());
         assert!(cfg.max_tool_rounds.is_none());
     }
 
     #[test]
-    fn test_role_config_deserialize_partial_defaults_to_empty_tools() {
-        // Simulates user config: [team.roles.pm] with provider/model but no tools
+    fn test_role_config_deserialize_partial_gives_none_tools() {
+        // RoleConfig directly: absent `tools` becomes None (Rust Default for Option)
         let toml = r#"
 provider = "openai"
 model = "gpt-4"
@@ -381,8 +398,54 @@ model = "gpt-4"
         let cfg: RoleConfig = toml::from_str(toml).unwrap();
         assert_eq!(cfg.provider.as_deref(), Some("openai"));
         assert_eq!(cfg.model.as_deref(), Some("gpt-4"));
-        // Absent `tools` should default to Some([]) — no tools
-        assert_eq!(cfg.tools.as_deref(), Some([].as_slice()));
+        assert!(cfg.tools.is_none());
+    }
+
+    #[test]
+    fn test_normalize_tools_partial_jr_config() {
+        // User provides [team.roles.jr] with provider/model but no tools.
+        // normalize_tools should fill in Jr's default tool set.
+        let toml = r#"
+[roles]
+[roles.jr]
+provider = "openai"
+model = "gpt-4o-mini"
+"#;
+        let section: TeamSection = toml::from_str(toml).unwrap();
+        let mut section = section;
+        section.normalize_tools();
+
+        // PM/TL with no TOML entry → serde default (None) → normalized to empty
+        assert_eq!(section.roles.pm.tools.as_deref(), Some([].as_slice()));
+        assert_eq!(section.roles.tl.tools.as_deref(), Some([].as_slice()));
+        // Jr with partial TOML → None → normalized to restricted tools
+        assert!(section.roles.jr.tools.is_some());
+        let jr_tools = section.roles.jr.tools.as_deref().unwrap();
+        assert!(jr_tools.contains(&"file_read".to_string()));
+        assert!(jr_tools.contains(&"file_write".to_string()));
+        assert!(jr_tools.contains(&"file_edit".to_string()));
+        assert!(jr_tools.contains(&"bash".to_string()));
+    }
+
+    #[test]
+    fn test_from_raw_applies_normalize() {
+        let value = toml::from_str::<toml::Value>(
+            r#"
+[roles]
+[roles.jr]
+provider = "zai"
+model = "glm-4.7"
+max_tokens = 8192
+"#,
+        )
+        .unwrap();
+        let section = TeamSection::from_raw(&value);
+
+        // Jr should have its default tools, not empty
+        assert!(section.roles.jr.tools.is_some());
+        let jr_tools = section.roles.jr.tools.as_deref().unwrap();
+        assert!(jr_tools.contains(&"file_read".to_string()));
+        assert!(jr_tools.contains(&"bash".to_string()));
     }
 
     #[test]

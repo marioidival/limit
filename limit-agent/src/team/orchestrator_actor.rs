@@ -732,7 +732,7 @@ async fn run_command(cmd: &str) -> Option<String> {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let combined = format!("{}{}", stdout, stderr);
                 if combined.trim().is_empty() {
-                    Some(format!("command exited with non-zero status"))
+                    Some("command exited with non-zero status".to_string())
                 } else {
                     Some(combined)
                 }
