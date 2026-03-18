@@ -699,9 +699,9 @@ impl OrchestratorActor {
 async fn run_compilation_check() -> Option<String> {
     let cwd = std::env::current_dir().ok()?;
     let (cmd, args): (&str, Vec<&str>) = if cwd.join("Cargo.toml").exists() {
-        ("cargo", vec!["check", "2>&1"])
+        ("cargo", vec!["check"])
     } else if cwd.join("package.json").exists() {
-        ("npm", vec!["run", "build", "2>&1"])
+        ("npm", vec!["run", "build"])
     } else if cwd.join("pyproject.toml").exists() {
         // Run py_compile on modified .py files in CWD
         ("python3", vec!["-m", "py_compile", "."])
