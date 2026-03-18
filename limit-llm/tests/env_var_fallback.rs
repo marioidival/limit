@@ -29,7 +29,7 @@ fn test_anthropic_env_fallback() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
-        team_raw: None,
+        team: None,
     };
 
     let provider_config = config.providers.get("anthropic").unwrap();
@@ -69,7 +69,7 @@ fn test_openai_env_fallback() {
         provider: "openai".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
-        team_raw: None,
+        team: None,
     };
 
     let provider_config = config.providers.get("openai").unwrap();
@@ -109,7 +109,7 @@ fn test_openai_zai_api_key_fallback() {
         provider: "openai".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
-        team_raw: None,
+        team: None,
     };
 
     let provider_config = config.providers.get("openai").unwrap();

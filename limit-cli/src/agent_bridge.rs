@@ -1241,7 +1241,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
-            team_raw: None,
+            team: None,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1268,7 +1268,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
-            team_raw: None,
+            team: None,
         };
 
         let result = AgentBridge::new(config);
@@ -1295,7 +1295,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
-            team_raw: None,
+            team: None,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1362,7 +1362,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
-            team_raw: None,
+            team: None,
         };
 
         let bridge = AgentBridge::new(config_with_key).unwrap();

@@ -10,10 +10,10 @@ pub struct Config {
     pub providers: HashMap<String, ProviderConfig>,
     #[serde(default)]
     pub browser: BrowserConfigSection,
-    /// Raw team config from `config.toml` (opaque `toml::Value`).
+    /// Raw team config from `[team]` section in `config.toml` (opaque `toml::Value`).
     /// Parse with `limit_agent::team::TeamSection::from_raw(value)`.
-    #[serde(default)]
-    pub team_raw: Option<toml::Value>,
+    #[serde(default, rename = "team")]
+    pub team: Option<toml::Value>,
 }
 
 /// Browser configuration section in config.toml
@@ -250,7 +250,7 @@ impl Default for Config {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
-            team_raw: None,
+            team: None,
         }
     }
 }
