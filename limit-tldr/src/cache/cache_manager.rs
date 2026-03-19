@@ -104,8 +104,12 @@ impl CacheManager {
         let content = std::fs::read_to_string(&cache_path)
             .map_err(|e| Error::Cache(format!("Failed to read cache: {}", e)))?;
 
-        let analysis: FileAnalysis = serde_json::from_str(&content)
+        let mut analysis: FileAnalysis = serde_json::from_str(&content)
             .map_err(|e| Error::Cache(format!("Failed to deserialize: {}", e)))?;
+
+        analysis
+            .functions
+            .retain(|f| !f.file.as_os_str().is_empty());
 
         Ok(Some(analysis))
     }
