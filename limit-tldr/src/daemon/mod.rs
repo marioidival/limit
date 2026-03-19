@@ -2,14 +2,12 @@
 //!
 //! Long-running background process with indexes in RAM for 300x faster queries.
 
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::error::{Error, Result};
@@ -55,24 +53,24 @@ impl Daemon {
     }
     
     /// Get socket path for a project
-    pub fn socket_path(project_path: &PathBuf) -> PathBuf {
+    pub fn socket_path(project_path: &Path) -> PathBuf {
         let hash = blake3::hash(project_path.to_string_lossy().as_bytes());
         let hash_hex = hex::encode(&hash.as_bytes()[..4]);
         PathBuf::from(format!("/tmp/tldr-{}.sock", hash_hex))
     }
     
     /// Get PID file path
-    pub fn pid_path(project_path: &PathBuf) -> PathBuf {
+    pub fn pid_path(project_path: &Path) -> PathBuf {
         project_path.join(".tldr").join("daemon.pid")
     }
     
     /// Check if daemon is running
-    pub async fn is_running(project_path: &PathBuf) -> bool {
+    pub async fn is_running(project_path: &Path) -> bool {
         let socket_path = Self::socket_path(project_path);
         
         if let Ok(stream) = UnixStream::connect(&socket_path) {
             // Send ping
-            let cmd = serde_json::to_string(&DaemonCommand::Ping).unwrap();
+            let _cmd = serde_json::to_string(&DaemonCommand::Ping).unwrap();
             let _ = stream.peer_addr();
             return true;
         }
@@ -82,7 +80,7 @@ impl Daemon {
     
     /// Get daemon status
     pub async fn status(&self) -> DaemonStatus {
-        let tldr = self.tldr.read().await;
+        let _tldr = self.tldr.read().await;
         let stats = self.stats.read().await;
         
         DaemonStatus {
@@ -167,7 +165,7 @@ impl Daemon {
                 Ok(serde_json::to_value(status)?)
             }
             
-            DaemonCommand::Search { pattern } => {
+            DaemonCommand::Search { pattern: _ } => {
                 // Text search in code
                 Ok(serde_json::json!({"results": []}))
             }
@@ -208,7 +206,7 @@ pub struct DaemonClient {
 }
 
 impl DaemonClient {
-    pub fn new(project_path: &PathBuf) -> Self {
+    pub fn new(project_path: &Path) -> Self {
         Self {
             socket_path: Daemon::socket_path(project_path),
         }

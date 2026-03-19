@@ -2,13 +2,16 @@
 //!
 //! Analyzes branching logic and computes cyclomatic complexity.
 
+use std::collections::HashMap;
+
 use crate::error::Result;
 use crate::types::{FunctionInfo, CFGInfo, BasicBlock};
 
 /// Control flow graph layer
 pub struct CFGLayer {
     // Cache of computed CFGs
-    cache: std::collections::HashMap<String, CFGInfo>,
+    #[allow(dead_code)]
+    cache: HashMap<String, CFGInfo>,
 }
 
 impl CFGLayer {

@@ -3,7 +3,6 @@
 //! Tracks forward and backward dependencies between functions.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 use crate::cache::CacheManager;
 use crate::error::Result;
@@ -61,7 +60,7 @@ impl CallGraphLayer {
     /// Find unreachable functions (dead code)
     pub fn find_unreachable(&self, entries: &[&str]) -> Result<Vec<FunctionInfo>> {
         let mut reachable = HashSet::new();
-        let mut queue: Vec<&str> = entries.iter().map(|s| *s).collect();
+        let mut queue: Vec<&str> = entries.to_vec();
         
         while let Some(func) = queue.pop() {
             if reachable.contains(func) {

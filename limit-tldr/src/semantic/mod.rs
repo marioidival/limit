@@ -2,7 +2,7 @@
 //!
 //! Find code by behavior, not just syntax.
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::layers::{ASTLayer, CallGraphLayer};
 use crate::types::SearchResult;
 
