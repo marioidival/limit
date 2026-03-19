@@ -148,6 +148,17 @@ impl OrchestratorActor {
         let _ = self.result_tx.send(result);
     }
 
+    fn emit_token_update(&self) {
+        send_progress(
+            &self.progress_tx,
+            TeamProgressEvent::TokenUpdate {
+                input_tokens: self.token_input.load(Ordering::Relaxed),
+                output_tokens: self.token_output.load(Ordering::Relaxed),
+                nesting: self.nesting,
+            },
+        );
+    }
+
     async fn log_event(&self, role: &str, action: &str, content: &str) {
         let mut h = self.history.write().await;
         h.add_event(TeamEvent {
@@ -204,6 +215,7 @@ impl OrchestratorActor {
             },
         );
         self.log_event("PM", "analysis", &analysis).await;
+        self.emit_token_update();
 
         // ── Phase 2: TL technical plan ───────────────────────────────
         tracing::info!("[team] TL — creating technical plan");
@@ -248,6 +260,7 @@ impl OrchestratorActor {
             },
         );
         self.log_event("TL", "plan", &plan).await;
+        self.emit_token_update();
 
         // ── Phase 3: TL task breakdown ───────────────────────────────
         tracing::info!("[team] TL — breaking down tasks");
@@ -302,6 +315,8 @@ impl OrchestratorActor {
             &format!("{} tasks (of {} parsed)", tasks.len(), original_count),
         )
         .await;
+
+        self.emit_token_update();
 
         // Send initial task list to TUI
         send_progress(
@@ -369,6 +384,7 @@ impl OrchestratorActor {
         );
 
         let task_results = self.execute_tasks_parallel(&tasks, self.max_parallel).await;
+        self.emit_token_update();
 
         let failed_tasks = task_results.iter().filter(|r| !r.success).count();
         let total_tasks = task_results.len();
@@ -386,6 +402,7 @@ impl OrchestratorActor {
                 rx,
             )
             .await?;
+        self.emit_token_update();
 
         let build_cmd = build_cmd_response.trim().to_string();
         if build_cmd.is_empty() || build_cmd == "NONE" {
@@ -458,6 +475,52 @@ impl OrchestratorActor {
             },
         );
         self.log_event("TL", "validation", &validation).await;
+        self.emit_token_update();
+
+        // Retry failed tasks after TL validation
+        if validation_failures > 0 && !tasks.is_empty() {
+            let failed_ids = parse_failed_task_ids(&validation);
+            let retry_tasks: Vec<Task> = tasks
+                .iter()
+                .filter(|t| failed_ids.contains(&t.id))
+                .cloned()
+                .collect();
+
+            if !retry_tasks.is_empty() {
+                tracing::info!(
+                    "[team] retrying {} failed task(s) after validation",
+                    retry_tasks.len()
+                );
+
+                let mut retry_tasks_mut = retry_tasks;
+                for t in &mut retry_tasks_mut {
+                    t.status = crate::team::orchestrator::TaskStatus::Pending;
+                    t.description = format!(
+                        "{}\n\nVALIDATION RETRY: This task failed TL validation. Fix the issues identified and re-implement.",
+                        t.description
+                    );
+                }
+
+                let retry_results =
+                    self.execute_tasks_parallel(&retry_tasks_mut, self.max_parallel).await;
+                let retry_failures = retry_results.iter().filter(|r| !r.success).count();
+
+                if retry_failures == 0 {
+                    tracing::info!(
+                        "[team] all {} validation retry tasks passed",
+                        retry_tasks_mut.len()
+                    );
+                } else {
+                    tracing::warn!(
+                        "[team] {} of {} validation retry tasks still failed",
+                        retry_failures,
+                        retry_tasks_mut.len()
+                    );
+                }
+
+                self.emit_token_update();
+            }
+        }
 
         // ── Phase 6: PM delivery ─────────────────────────────────────
         self.log_phase(WorkflowPhase::PmDelivery).await;
@@ -502,6 +565,7 @@ impl OrchestratorActor {
             },
         );
         self.log_event("PM", "delivery", &delivery).await;
+        self.emit_token_update();
 
         let total_failures = failed_tasks + validation_failures;
 
@@ -781,6 +845,23 @@ fn parse_validation_failures(validation: &str) -> usize {
         .count()
 }
 
+/// Extract task IDs that have **FAIL** status from TL validation output.
+fn parse_failed_task_ids(validation: &str) -> Vec<String> {
+    let mut failed_ids = Vec::new();
+    let mut current_id: Option<String> = None;
+    for line in validation.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("## Task:") {
+            current_id = Some(rest.trim().to_string());
+        } else if trimmed.contains("**FAIL**") {
+            if let Some(id) = current_id.take() {
+                failed_ids.push(id);
+            }
+        }
+    }
+    failed_ids
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -823,5 +904,14 @@ mod tests {
     fn test_parse_validation_failures_some() {
         let v = "## Task: 1\n- Status: **FAIL**\n- Reason: bad\n\n## Task: 2\n- Status: **PASS**\n- Reason: ok\n\n## Task: 3\n- Status: **FAIL**\n- Reason: also bad";
         assert_eq!(parse_validation_failures(v), 2);
+    }
+
+    #[test]
+    fn test_parse_failed_task_ids() {
+        let v = "## Task: 1\n- Status: **PASS**\n\n## Task: 2\n- Status: **FAIL**\n- Reason: bad\n\n## Task: 3\n- Status: **FAIL**";
+        let ids = parse_failed_task_ids(v);
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"2".to_string()));
+        assert!(ids.contains(&"3".to_string()));
     }
 }
