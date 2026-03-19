@@ -76,10 +76,8 @@ pub fn parse_tasks(text: &str) -> Vec<Task> {
         let trimmed = line.trim();
 
         // Track CONTEXT block boundaries (only outside code fences)
-        if !trimmed.starts_with("```") {
-            if trimmed == "CONTEXT:" {
-                in_context = true;
-            }
+        if !trimmed.starts_with("```") && trimmed == "CONTEXT:" {
+            in_context = true;
         }
 
         // Strip common markdown list prefixes: "1. ", "- ", "* "
@@ -103,11 +101,14 @@ pub fn parse_tasks(text: &str) -> Vec<Task> {
                 task.depends_on = std::mem::take(&mut current_deps);
                 tasks.push(task);
             }
-            let desc = stripped[5..].trim().trim_start_matches(':').trim().to_string();
+            let desc = stripped[5..]
+                .trim()
+                .trim_start_matches(':')
+                .trim()
+                .to_string();
             current_desc = Some(desc);
             in_context = false;
-        } else if upper.starts_with("DEPENDS_ON:") && current_desc.is_some() && !in_context
-        {
+        } else if upper.starts_with("DEPENDS_ON:") && current_desc.is_some() && !in_context {
             // DEPENDS_ON only parsed outside CONTEXT blocks
             let deps_str = stripped[11..].trim().trim_start_matches(':').trim();
             let deps: Vec<String> = deps_str
@@ -305,7 +306,9 @@ mod tests {
         let input = "TASK: Create file\nCONTEXT:\nSome context here\nDEPENDS_ON: should not parse\nTASK: Another task";
         let tasks = parse_tasks(input);
         assert_eq!(tasks.len(), 2);
-        assert!(tasks[0].description.contains("DEPENDS_ON: should not parse"));
+        assert!(tasks[0]
+            .description
+            .contains("DEPENDS_ON: should not parse"));
         assert!(tasks[0].depends_on.is_empty());
     }
 
