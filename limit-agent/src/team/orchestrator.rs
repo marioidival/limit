@@ -61,44 +61,62 @@ pub struct TaskResult {
 
 /// Parse `TASK: <description>` lines from a TL response into a list of [`Task`]s.
 ///
-/// Supports multi-line descriptions (CONTEXT blocks) and `DEPENDS_ON:` directives.
-///
-/// Format:
-/// ```text
-/// TASK: <description>
-/// CONTEXT:
-/// <multi-line content>
-/// TASK: <another description>
-/// DEPENDS_ON: <task description to depend on>
-/// ```
+/// Robust to common LLM output variations:
+/// - Case-insensitive `TASK:` / `DEPENDS_ON:` matching
+/// - Markdown list prefixes (`1.`, `- `, `* `)
+/// - `DEPENDS_ON:` inside CONTEXT blocks is ignored (treated as description text)
+/// - Numeric dependency references (`DEPENDS_ON: 1, 2` → 1-based task index)
 pub fn parse_tasks(text: &str) -> Vec<Task> {
     let mut tasks: Vec<Task> = Vec::new();
     let mut current_desc: Option<String> = None;
     let mut current_deps: Vec<String> = Vec::new();
+    let mut in_context = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
 
-        if trimmed.starts_with("TASK:") {
+        // Track CONTEXT block boundaries (only outside code fences)
+        if !trimmed.starts_with("```") {
+            if trimmed == "CONTEXT:" {
+                in_context = true;
+            }
+        }
+
+        // Strip common markdown list prefixes: "1. ", "- ", "* "
+        let after_digit = trimmed
+            .strip_prefix(|c: char| c.is_ascii_digit())
+            .unwrap_or(trimmed);
+        let after_dot = after_digit.strip_prefix(". ").unwrap_or(after_digit);
+        let after_dash = after_dot.strip_prefix("- ").unwrap_or(after_dot);
+        let stripped = after_dash.strip_prefix("* ").unwrap_or(after_dash);
+
+        // Strip markdown bold/inline code formatting from prefix
+        let stripped = stripped.strip_prefix("**").unwrap_or(stripped);
+        let stripped = stripped.strip_prefix("`").unwrap_or(stripped);
+
+        let upper = stripped.to_uppercase();
+
+        if upper.starts_with("TASK:") {
             // Finalize previous task if any
             if let Some(desc) = current_desc.take() {
                 let mut task = Task::new(desc);
                 task.depends_on = std::mem::take(&mut current_deps);
                 tasks.push(task);
             }
-            let desc = trimmed.trim_start_matches("TASK:").trim().to_string();
+            let desc = stripped[5..].trim().trim_start_matches(':').trim().to_string();
             current_desc = Some(desc);
-        } else if trimmed.starts_with("DEPENDS_ON:") && current_desc.is_some() {
-            // DEPENDS_ON applies to the currently-being-built task
-            let deps: Vec<String> = trimmed
-                .trim_start_matches("DEPENDS_ON:")
+            in_context = false;
+        } else if upper.starts_with("DEPENDS_ON:") && current_desc.is_some() && !in_context
+        {
+            // DEPENDS_ON only parsed outside CONTEXT blocks
+            let deps_str = stripped[11..].trim().trim_start_matches(':').trim();
+            let deps: Vec<String> = deps_str
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
             current_deps.extend(deps);
         } else if let Some(ref mut desc) = current_desc {
-            // Continuation line (e.g. CONTEXT block) — append to description
             desc.push('\n');
             desc.push_str(trimmed);
         }
@@ -111,25 +129,37 @@ pub fn parse_tasks(text: &str) -> Vec<Task> {
         tasks.push(task);
     }
 
-    // Resolve dependency descriptions to task IDs
+    // Warn when text looks like it has tasks but none parsed
+    if tasks.is_empty() && text.contains("TASK") {
+        tracing::warn!(
+            "[team] TL breakdown contained 'TASK' but no tasks were parsed ({} chars)",
+            text.len()
+        );
+    }
+
     resolve_dependencies(&mut tasks);
     tasks
 }
 
 /// Resolve `depends_on` entries from task descriptions to task IDs.
+///
+/// Supports both description matching and 1-based numeric indices.
 fn resolve_dependencies(tasks: &mut [Task]) {
-    // Build a description → id map
     let desc_to_id: std::collections::HashMap<String, String> = tasks
         .iter()
-        .map(|t| {
-            // Use the first line of the description as the key
-            let key = t
+        .enumerate()
+        .flat_map(|(i, t)| {
+            let first_line = t
                 .description
                 .lines()
                 .next()
                 .unwrap_or(&t.description)
-                .trim();
-            (key.to_string(), t.id.clone())
+                .trim()
+                .to_string();
+            let mut entries = vec![(first_line.clone(), t.id.clone())];
+            // Also index by 1-based number
+            entries.push(((i + 1).to_string(), t.id.clone()));
+            entries
         })
         .collect();
 
@@ -137,7 +167,7 @@ fn resolve_dependencies(tasks: &mut [Task]) {
         task.depends_on = task
             .depends_on
             .iter()
-            .filter_map(|desc| desc_to_id.get(desc.trim()).cloned())
+            .filter_map(|dep| desc_to_id.get(dep.trim()).cloned())
             .collect();
     }
 }
@@ -233,5 +263,67 @@ mod tests {
         assert_eq!(tasks.len(), 2);
         // Unresolved dependency is dropped
         assert!(tasks[1].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tasks_case_insensitive() {
+        let input = "Task: Create file A\nSome text\ntask: Create file B";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].description, "Create file A\nSome text");
+        assert_eq!(tasks[1].description, "Create file B");
+    }
+
+    #[test]
+    fn test_parse_tasks_depends_on_case_insensitive() {
+        let input = "TASK: Create auth module\nTASK: Add login\ndepends_on: Create auth module";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[1].depends_on.len(), 1);
+        assert_eq!(tasks[1].depends_on[0], tasks[0].id);
+    }
+
+    #[test]
+    fn test_parse_tasks_markdown_list_prefix() {
+        let input = "1. TASK: First task\n2. TASK: Second task\n3. TASK: Third task";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 3);
+        assert_eq!(tasks[0].description, "First task");
+        assert_eq!(tasks[1].description, "Second task");
+        assert_eq!(tasks[2].description, "Third task");
+    }
+
+    #[test]
+    fn test_parse_tasks_dash_list_prefix() {
+        let input = "- TASK: First task\n- TASK: Second task";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_tasks_depends_on_inside_context_not_parsed() {
+        let input = "TASK: Create file\nCONTEXT:\nSome context here\nDEPENDS_ON: should not parse\nTASK: Another task";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks[0].description.contains("DEPENDS_ON: should not parse"));
+        assert!(tasks[0].depends_on.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tasks_bold_or_code_block_task_prefix() {
+        let input = "**TASK:** Create file\nSome details\n**TASK:** Another file";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks[0].description.contains("Create file"));
+    }
+
+    #[test]
+    fn test_parse_tasks_numbered_depends_on() {
+        let input = "TASK: Create auth\nTASK: Create user\nTASK: Add login\nDEPENDS_ON: 1, 2";
+        let tasks = parse_tasks(input);
+        assert_eq!(tasks.len(), 3);
+        assert_eq!(tasks[2].depends_on.len(), 2);
+        assert_eq!(tasks[2].depends_on[0], tasks[0].id);
+        assert_eq!(tasks[2].depends_on[1], tasks[1].id);
     }
 }
