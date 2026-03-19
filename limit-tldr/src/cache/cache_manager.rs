@@ -17,7 +17,7 @@ pub struct CacheManager {
     call_graph_cache: Option<CallGraphCache>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct CallGraphCache {
     forward: HashMap<String, Vec<String>>,
     backward: HashMap<String, Vec<crate::types::CallerInfo>>,
