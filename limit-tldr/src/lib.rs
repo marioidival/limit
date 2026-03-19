@@ -48,6 +48,9 @@ pub mod semantic;
 pub mod types;
 pub mod utils;
 
+#[cfg(test)]
+mod tests;
+
 use std::path::{Path, PathBuf};
 
 use cache::CacheManager;
@@ -277,16 +280,5 @@ impl TLDR {
     /// Detect architecture layers
     pub fn detect_architecture(&self) -> Result<ArchitectureInfo> {
         self.call_graph.detect_layers()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_config_defaults() {
-        let config = Config::default();
-        assert_eq!(config.max_depth, 3);
     }
 }
