@@ -32,13 +32,30 @@ rayon = "1.10"
 # Path handling
 walkdir = "2.5"
 
-# Regex for parsing
+# Regex for parsing (fallback)
 regex = "1.10"
+
+# Tree-sitter for robust parsing
+tree-sitter = "0.24"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-javascript = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+
+# Optional tree-sitter parsers
+tree-sitter-ruby = { version = "0.23", optional = true }
+tree-sitter-php = { version = "0.23", optional = true }
+tree-sitter-c-sharp = { version = "0.23", optional = true }
 
 [features]
 default = []
 daemon = []
 semantic = []
+tree-sitter-extra = ["tree-sitter-ruby", "tree-sitter-php", "tree-sitter-c-sharp"]
 
 [dev-dependencies]
 tempfile = "3.10"

@@ -44,6 +44,7 @@ pub mod cache;
 pub mod daemon;
 pub mod error;
 pub mod layers;
+pub mod parsers;
 pub mod semantic;
 pub mod types;
 pub mod utils;

@@ -153,8 +153,10 @@ pub mod registry;
 pub mod sandbox;
 pub mod state;
 pub mod tool;
+pub mod tools;
 
 pub use error::AgentError;
 pub use events::EventBus;
 pub use registry::ToolRegistry;
 pub use tool::{EchoTool, Tool};
+pub use tools::{tldr_tool_definition, TldrTool};
