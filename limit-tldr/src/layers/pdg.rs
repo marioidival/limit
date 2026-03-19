@@ -2,23 +2,15 @@
 //!
 //! Computes program slices for debugging.
 
-use std::collections::HashMap;
-
 use crate::error::Result;
 use crate::types::{FunctionInfo, SliceInfo};
 
 /// Program dependence graph layer
-pub struct PDGLayer {
-    // Cache of computed PDGs
-    #[allow(dead_code)]
-    cache: HashMap<String, SliceInfo>,
-}
+pub struct PDGLayer {}
 
 impl PDGLayer {
     pub fn new() -> Self {
-        Self {
-            cache: std::collections::HashMap::new(),
-        }
+        Self {}
     }
 
     /// Compute a program slice for a target line
