@@ -8,7 +8,7 @@ use limit_agent::Tool;
 use limit_tldr::{Config as TldrConfig, Language, TLDR};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 /// Analysis type to perform
@@ -72,7 +72,7 @@ impl TldrTool {
     }
 
     /// Get cache directory for a project (~/.limit/projects/<project-hash>/tldr)
-    fn get_cache_dir(project_path: &PathBuf) -> Result<PathBuf, AgentError> {
+    fn get_cache_dir(project_path: &Path) -> Result<PathBuf, AgentError> {
         let home = dirs::home_dir()
             .ok_or_else(|| AgentError::ToolError("Cannot find home directory".into()))?;
 
@@ -92,7 +92,7 @@ impl TldrTool {
     }
 
     /// Get or create TLDR instance for a project
-    async fn get_tldr(&self, project_path: &PathBuf) -> Result<TLDR, AgentError> {
+    async fn get_tldr(&self, project_path: &Path) -> Result<TLDR, AgentError> {
         info!("Creating TLDR instance for project: {:?}", project_path);
         let config = TldrConfig {
             language: Language::Auto,

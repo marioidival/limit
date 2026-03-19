@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use limit_tldr::{Config as TldrConfig, Language, TLDR};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
@@ -95,7 +95,7 @@ impl TldrTool {
     }
     
     /// Get or create TLDR instance for a project
-    async fn get_tldr(&self, project_path: &PathBuf) -> Result<TLDR, AgentError> {
+    async fn get_tldr(&self, project_path: &Path) -> Result<TLDR, AgentError> {
         // Check cache
         {
             let cache = self.cache.read().await;
@@ -127,7 +127,7 @@ impl TldrTool {
         // Cache it
         {
             let mut cache = self.cache.write().await;
-            *cache = Some((project_path.clone(), tldr));
+            *cache = Some((project_path.to_path_buf(), tldr));
         }
         
         // Create a fresh instance for return (TLDR doesn't implement Clone)
@@ -143,7 +143,7 @@ impl TldrTool {
     }
     
     /// Get cache directory for a project (~/.limit/projects/<project-hash>/tldr)
-    fn get_cache_dir(project_path: &PathBuf) -> Result<PathBuf, AgentError> {
+    fn get_cache_dir(project_path: &Path) -> Result<PathBuf, AgentError> {
         let home = dirs::home_dir()
             .ok_or_else(|| AgentError::ToolError("Cannot find home directory".into()))?;
         
