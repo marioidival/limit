@@ -53,7 +53,6 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 
 [features]
 default = []
-daemon = []
 semantic = []
 tree-sitter-extra = ["tree-sitter-ruby", "tree-sitter-php", "tree-sitter-c-sharp"]
 
