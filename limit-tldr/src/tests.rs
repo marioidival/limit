@@ -38,7 +38,10 @@ mod language_tests {
         assert_eq!(Language::from_str("Python").unwrap(), Language::Python);
         assert_eq!(Language::from_str("rust").unwrap(), Language::Rust);
         assert_eq!(Language::from_str("go").unwrap(), Language::Go);
-        assert_eq!(Language::from_str("typescript").unwrap(), Language::TypeScript);
+        assert_eq!(
+            Language::from_str("typescript").unwrap(),
+            Language::TypeScript
+        );
         assert!(Language::from_str("invalid").is_err());
     }
 
@@ -108,5 +111,50 @@ mod token_counter_tests {
         let text = "hello, world! test.";
         let tokens = count_tokens(text);
         assert!(tokens >= 3); // 3 words + 3 punctuation = 6
+    }
+}
+
+mod ast_tests {
+    use super::*;
+    use crate::layers::ast::ASTLayer;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_ast_line_numbers() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.py");
+
+        let source = r#"# Line 1
+# Line 2
+def function_one():
+    pass
+
+# Line 6
+def function_two(x, y):
+    return x + y
+
+# Line 11
+def function_three():
+    '''A docstring'''
+    return 42
+"#;
+        tokio::fs::write(&file_path, source).await.unwrap();
+
+        let ast_layer = ASTLayer::new(Language::Python);
+        let analysis = ast_layer.analyze_file(&file_path).await.unwrap();
+
+        assert!(
+            !analysis.functions.is_empty(),
+            "Should find at least one function"
+        );
+
+        for func in &analysis.functions {
+            assert!(
+                func.line > 0,
+                "Function '{}' should have line > 0, got {}",
+                func.name,
+                func.line
+            );
+        }
     }
 }
