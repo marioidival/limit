@@ -53,8 +53,7 @@ pub use history::{EventLevel, TeamEvent, TeamHistory};
 pub use orchestrator::{parse_tasks, Task, TaskResult, TaskStatus};
 pub use progress::{TaskProgressInfo, TaskProgressStatus, TeamProgressEvent, PHASE_COUNT};
 pub use role::{Role, RoleConfig, TeamRolesSection, TeamSection};
-#[allow(deprecated)]
-pub use workflow::{execute_workflow, TeamResult, WorkflowPhase};
+pub use workflow::{TeamResult, WorkflowPhase};
 
 use crate::error::AgentError;
 use crate::registry::ToolRegistry;
