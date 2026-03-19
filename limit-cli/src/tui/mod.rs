@@ -35,7 +35,7 @@
 //!     thinking_enabled: false,
 //!     clear_thinking: true,
 //! });
-//! let config = Config { provider: "anthropic".to_string(), providers, browser: limit_llm::BrowserConfigSection::default() };
+//! let config = Config { provider: "anthropic".to_string(), providers, browser: limit_llm::BrowserConfigSection::default(), team: None };
 //!
 //! // Create agent bridge and event channel
 //! let (tx, rx) = mpsc::unbounded_channel();
@@ -59,6 +59,7 @@ pub mod autocomplete;
 pub mod bridge;
 pub mod commands;
 pub mod input;
+pub mod team_progress;
 pub mod ui;
 
 // Re-export public API

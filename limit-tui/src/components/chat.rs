@@ -466,24 +466,12 @@ impl ChatView {
             self.render_positions.borrow().len()
         );
         for pos in self.render_positions.borrow().iter() {
-            debug!(
-                "  checking pos.screen_row={} vs row={}",
-                pos.screen_row, row
-            );
             if pos.screen_row == row {
-                // Calculate character offset within the line based on column
-                // (assumes monospace font - accurate for terminal)
                 let line_len = pos.char_end.saturating_sub(pos.char_start);
                 let char_in_line = (col as usize).min(line_len);
-                debug!(
-                    "    matched! msg_idx={}, char_offset={}",
-                    pos.message_idx,
-                    pos.char_start + char_in_line
-                );
                 return Some((pos.message_idx, pos.char_start + char_in_line));
             }
         }
-        debug!("  no match found");
         None
     }
 

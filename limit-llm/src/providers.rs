@@ -171,6 +171,16 @@ pub trait LlmProvider: Send + Sync {
     ///
     /// This enables cloning of `Box<dyn LlmProvider>`.
     fn clone_box(&self) -> Box<dyn LlmProvider>;
+
+    /// Clone the provider with a different `max_tokens` override.
+    ///
+    /// Providers that store `max_tokens` (e.g. Anthropic, OpenAI) return a
+    /// clone with the new value. Providers that delegate (e.g. ZAI, Local)
+    /// forward the override to their inner provider. The default implementation
+    /// simply clones without change.
+    fn with_max_tokens(&self, _max_tokens: u32) -> Box<dyn LlmProvider> {
+        self.clone_box()
+    }
 }
 
 /// Implement Clone for `Box<dyn LlmProvider>`.

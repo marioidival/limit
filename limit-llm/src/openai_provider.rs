@@ -100,6 +100,12 @@ impl LlmProvider for OpenAiProvider {
     fn clone_box(&self) -> Box<dyn LlmProvider> {
         Box::new(self.clone())
     }
+
+    fn with_max_tokens(&self, max_tokens: u32) -> Box<dyn LlmProvider> {
+        let mut cloned = self.clone();
+        cloned.max_tokens = max_tokens;
+        Box::new(cloned)
+    }
 }
 
 #[instrument(skip_all)]
@@ -181,17 +187,30 @@ struct SseEvent {
     data: String,
 }
 
+/// Maximum time to wait for a single SSE chunk before timing out.
+/// Prevents indefinite hangs when the provider stops sending data mid-stream.
+const STREAM_CHUNK_TIMEOUT_SECS: u64 = 120;
+
 fn parse_openai_sse_stream(
     byte_stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Send + Unpin + 'static,
 ) -> Pin<Box<dyn Stream<Item = Result<ProviderResponseChunk, LlmError>> + Send + 'static>> {
     Box::pin(stream! {
         let mut buffer = String::new();
         let mut tool_calls_by_id: std::collections::HashMap<u32, (String, String, String)> = std::collections::HashMap::new();
+        let chunk_timeout = std::time::Duration::from_secs(STREAM_CHUNK_TIMEOUT_SECS);
 
         let mut lines = byte_stream
             .map(|chunk| chunk.map_err(|e| LlmError::NetworkError(e.to_string())));
 
-        while let Some(chunk_result) = lines.next().await {
+        while let Some(chunk_result) = {
+            match tokio::time::timeout(chunk_timeout, lines.next()).await {
+                Ok(inner) => inner,
+                Err(_) => {
+                    error!("SSE stream stalled — no chunk received in {}s", STREAM_CHUNK_TIMEOUT_SECS);
+                    return;
+                }
+            }
+        } {
             let chunk = match chunk_result {
                 Ok(c) => c,
                 Err(e) => {

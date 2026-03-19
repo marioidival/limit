@@ -214,7 +214,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_tools_single() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         let executor = ToolExecutor::new(registry);
@@ -228,7 +228,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_tools_parallel() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         let executor = ToolExecutor::new(registry);
@@ -248,7 +248,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_tools_sequential_with_dependencies() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(EchoTool::new()).unwrap();
 
         let executor = ToolExecutor::new(registry);
@@ -286,7 +286,7 @@ mod tests {
             }
         }
 
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(SlowTool).unwrap();
 
         let executor = ToolExecutor::new(registry).with_timeout(Duration::from_millis(100));
@@ -372,7 +372,7 @@ mod tests {
 
         let counter = Arc::new(AtomicUsize::new(0));
 
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry
             .register(ConcurrentTool {
                 counter: counter.clone(),

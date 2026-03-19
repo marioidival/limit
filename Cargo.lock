@@ -1672,16 +1672,23 @@ dependencies = [
 name = "limit-agent"
 version = "0.0.28"
 dependencies = [
+ "async-stream",
  "async-trait",
  "bincode",
  "bollard",
+ "chrono",
+ "dirs",
  "futures",
  "limit-llm",
+ "regex",
+ "rusqlite",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",
+ "toml",
  "tracing",
  "uuid",
 ]
@@ -1704,6 +1711,7 @@ dependencies = [
  "limit-llm",
  "limit-tui",
  "lsp-types",
+ "parking_lot",
  "ratatui",
  "regex",
  "reqwest",

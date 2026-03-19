@@ -106,8 +106,8 @@ impl AgentBridge {
         let llm_client = ProviderFactory::create_provider(&config)
             .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
-        let mut tool_registry = ToolRegistry::new();
-        Self::register_tools(&mut tool_registry, &config);
+        let tool_registry = ToolRegistry::new();
+        Self::register_tools(&tool_registry, &config);
 
         // Create executor (which takes ownership of registry as Arc)
         let executor = ToolExecutor::new(tool_registry);
@@ -164,7 +164,7 @@ impl AgentBridge {
     }
 
     /// Register all CLI tools into the tool registry
-    fn register_tools(registry: &mut ToolRegistry, config: &limit_llm::Config) {
+    fn register_tools(registry: &ToolRegistry, config: &limit_llm::Config) {
         // File tools
         registry
             .register(FileReadTool::new())
@@ -670,7 +670,7 @@ impl AgentBridge {
     }
 
     /// Get the schema (description and parameters) for a tool
-    fn get_tool_schema(name: &str) -> (String, serde_json::Value) {
+    pub fn get_tool_schema(name: &str) -> (String, serde_json::Value) {
         match name {
             "file_read" => (
                 "Read the contents of a file".to_string(),
@@ -1144,6 +1144,27 @@ impl AgentBridge {
                     "required": ["action"]
                 }),
             ),
+            "team_start" => (
+                "Spawn a child team (PM → TL → Jr workflow) to handle a sub-task. Use this to delegate complex work that benefits from multi-agent collaboration.".to_string(),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "task": {
+                            "type": "string",
+                            "description": "Description of what the child team should accomplish"
+                        },
+                        "juniors": {
+                            "type": "integer",
+                            "description": "Number of junior agents (optional, default from config)"
+                        },
+                        "max_parallel": {
+                            "type": "integer",
+                            "description": "Max concurrent tasks (optional, default from config)"
+                        }
+                    },
+                    "required": ["task"]
+                }),
+            ),
             _ => (
                 format!("Tool: {}", name),
                 json!({
@@ -1241,6 +1262,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            team: None,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1267,6 +1289,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            team: None,
         };
 
         let result = AgentBridge::new(config);
@@ -1293,6 +1316,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            team: None,
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1359,6 +1383,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            team: None,
         };
 
         let bridge = AgentBridge::new(config_with_key).unwrap();

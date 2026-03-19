@@ -82,6 +82,12 @@ impl LlmProvider for ZaiProvider {
     fn clone_box(&self) -> Box<dyn LlmProvider> {
         Box::new(self.clone())
     }
+
+    fn with_max_tokens(&self, _max_tokens: u32) -> Box<dyn LlmProvider> {
+        // ZAI delegates to OpenAiProvider which has private fields.
+        // The default clone_box is used — max_tokens override is not supported.
+        self.clone_box()
+    }
 }
 
 #[cfg(test)]

@@ -4,6 +4,8 @@
 
 use crate::tui::bridge::TuiBridge;
 use crate::tui::FileAutocompleteState;
+use limit_tui::components::team_progress;
+use limit_tui::components::team_progress_types::TaskProgressSnapshot;
 use limit_tui::components::{calculate_popup_area, ChatView, FileAutocompleteWidget};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -31,27 +33,23 @@ impl UiRenderer {
         cursor_blink_state: bool,
         tui_bridge: &TuiBridge,
         file_autocomplete: &Option<FileAutocompleteState>,
+        team_progress: &TaskProgressSnapshot,
     ) {
         // Calculate activity height
         let activity_count = tui_bridge.activity_feed().lock().unwrap().len();
         let activity_height = (activity_count as u16).min(3);
 
-        // Build constraints (pre-allocated array on stack)
-        let constraints = if activity_height == 0 {
-            [
-                Constraint::Percentage(90),
-                Constraint::Length(1),
-                Constraint::Length(6),
-                Constraint::Length(0),
-            ]
-        } else {
-            [
-                Constraint::Percentage(90),
-                Constraint::Length(activity_height),
-                Constraint::Length(1),
-                Constraint::Length(6),
-            ]
-        };
+        // Calculate team progress panel height
+        let tp_height = team_progress::panel_height(team_progress);
+
+        // Build constraints: chat, team progress, activity, status, input
+        let constraints = [
+            Constraint::Min(10),                 // chat
+            Constraint::Length(tp_height),       // team progress (0 when inactive)
+            Constraint::Length(activity_height), // activity feed
+            Constraint::Length(1),               // status bar
+            Constraint::Length(6),               // input
+        ];
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -64,11 +62,17 @@ impl UiRenderer {
         Self::render_chat_view(frame, &chunks[chunk_idx], chat_view, tui_bridge);
         chunk_idx += 1;
 
+        // Render team progress panel if active
+        if tp_height > 0 {
+            team_progress::render_team_progress(frame, chunks[chunk_idx], team_progress);
+        }
+        chunk_idx += 1;
+
         // Render activity feed if present
         if activity_height > 0 {
             Self::render_activity_feed(frame, &chunks[chunk_idx], tui_bridge);
-            chunk_idx += 1;
         }
+        chunk_idx += 1;
 
         // Render status bar
         Self::render_status_bar(frame, &chunks[chunk_idx], status_message, status_is_error);

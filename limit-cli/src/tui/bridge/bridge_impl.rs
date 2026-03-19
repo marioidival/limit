@@ -5,7 +5,7 @@
 use crate::agent_bridge::{AgentBridge, AgentEvent};
 use crate::error::CliError;
 use crate::session::SessionManager;
-use crate::tui::{activity::format_activity_message, TuiState};
+use crate::tui::{activity::format_activity_message, team_progress::TeamProgressState, TuiState};
 use limit_tui::components::{ActivityFeed, ChatView, Message, Spinner};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -38,6 +38,8 @@ pub struct TuiBridge {
     session_id: Arc<Mutex<String>>,
     /// Current operation ID (to ignore events from old operations)
     operation_id: Arc<Mutex<u64>>,
+    /// Team progress state for rendering the progress panel
+    team_progress: Arc<TeamProgressState>,
 }
 
 impl TuiBridge {
@@ -148,6 +150,7 @@ impl TuiBridge {
             session_manager: Arc::new(Mutex::new(session_manager)),
             session_id: Arc::new(Mutex::new(session_id)),
             operation_id: Arc::new(Mutex::new(0)),
+            team_progress: Arc::new(TeamProgressState::new()),
         })
     }
 
@@ -434,6 +437,11 @@ impl TuiBridge {
     pub fn set_state(&self, new_state: TuiState) {
         *self.state.lock().unwrap() = new_state;
     }
+
+    /// Get the team progress state snapshot.
+    pub fn team_progress(&self) -> Arc<TeamProgressState> {
+        self.team_progress.clone()
+    }
 }
 
 #[cfg(test)]
@@ -461,6 +469,7 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            ..Default::default()
         }
     }
 
