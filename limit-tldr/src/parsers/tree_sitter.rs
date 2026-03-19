@@ -15,8 +15,7 @@ impl TreeSitterParser {
         Self
     }
 
-    /// Get tree-sitter language for a given language
-    fn get_ts_language(&self, lang: Language) -> Option<tree_sitter::Language> {
+    pub fn get_ts_language(&self, lang: Language) -> Option<tree_sitter::Language> {
         match lang {
             Language::Python => Some(tree_sitter_python::LANGUAGE.into()),
             Language::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
@@ -72,15 +71,20 @@ impl TreeSitterParser {
                 message: format!("Tree-sitter language error: {}", e),
             })?;
 
-        let tree = parser.parse(source, None).ok_or_else(|| {
-            crate::error::Error::ParseError {
+        let tree = parser
+            .parse(source, None)
+            .ok_or_else(|| crate::error::Error::ParseError {
                 file: analysis.file.display().to_string(),
                 message: "Failed to parse source".to_string(),
-            }
-        })?;
+            })?;
 
         let root = tree.root_node();
         self.walk_node(root, source, analysis);
+
+        // Set file paths for all extracted functions
+        for func in &mut analysis.functions {
+            func.file = analysis.file.clone();
+        }
 
         Ok(())
     }
@@ -92,19 +96,26 @@ impl TreeSitterParser {
         for child in node.children(cursor) {
             match child.kind() {
                 // Function definitions
-                "function_definition" | "function_item" | "method_definition" | "arrow_function" => {
+                "function_definition"
+                | "function_item"
+                | "method_definition"
+                | "arrow_function" => {
                     if let Some(func) = self.extract_function(child, source) {
                         analysis.functions.push(func);
                     }
                 }
                 // Class/struct definitions
-                "class_definition" | "struct_item" | "class_declaration" | "interface_declaration" => {
+                "class_definition"
+                | "struct_item"
+                | "class_declaration"
+                | "interface_declaration" => {
                     if let Some(class) = self.extract_class(child, source) {
                         analysis.classes.push(class);
                     }
                 }
                 // Imports
-                "import_statement" | "import_declaration" | "use_declaration" | "include_directive" => {
+                "import_statement" | "import_declaration" | "use_declaration"
+                | "include_directive" => {
                     if let Some(import) = self.extract_import(child, source) {
                         analysis.imports.push(import);
                     }
@@ -190,10 +201,8 @@ impl TreeSitterParser {
 
     /// Parse parameter string into parameters
     fn parse_params(&self, params_text: &str) -> Vec<Parameter> {
-        let trimmed = params_text
-            .trim_start_matches('(')
-            .trim_end_matches(')');
-        
+        let trimmed = params_text.trim_start_matches('(').trim_end_matches(')');
+
         if trimmed.is_empty() {
             return Vec::new();
         }
@@ -224,8 +233,7 @@ impl TreeSitterParser {
 
         match language {
             Language::Python => {
-                let func_re = Regex::new(r"(?m)^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)")
-                    .unwrap();
+                let func_re = Regex::new(r"(?m)^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)").unwrap();
 
                 for cap in func_re.captures_iter(source) {
                     analysis.functions.push(FunctionInfo {
@@ -244,8 +252,7 @@ impl TreeSitterParser {
             }
             Language::Rust => {
                 let func_re =
-                    Regex::new(r"(?m)^(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)")
-                        .unwrap();
+                    Regex::new(r"(?m)^(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)").unwrap();
 
                 for cap in func_re.captures_iter(source) {
                     analysis.functions.push(FunctionInfo {
