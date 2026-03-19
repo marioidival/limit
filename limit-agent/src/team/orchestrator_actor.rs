@@ -960,7 +960,10 @@ mod tests {
     #[test]
     fn test_truncate_context_multiple_context_blocks() {
         let long_ctx = "x".repeat(500);
-        let desc = format!("TASK: Do thing\nCONTEXT:\nshort\nMore text\nCONTEXT:\n{}", long_ctx);
+        let desc = format!(
+            "TASK: Do thing\nCONTEXT:\nshort\nMore text\nCONTEXT:\n{}",
+            long_ctx
+        );
         let result = truncate_context(&desc, 200);
         assert!(result.contains("CONTEXT:\nshort\nMore text"));
         assert!(result.contains("...(truncated)"));
