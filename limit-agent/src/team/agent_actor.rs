@@ -157,19 +157,15 @@ impl Actor for AgentActor {
                     let result = self
                         .prompt(&format!(
                             "User request:\n{request}\n\n\
-                             First, use your tools to explore the project: read Cargo.toml/package.json/go.mod \
-                             to identify the language and framework, and ls the directory structure.\
-                             \n\n\
-                             Then analyze the request. Structure your output as:\n\n\
-                             ## Project Context\n<language, framework, key dependencies>\n\n\
-                             ## Core Problem\n<1-2 sentences>\n\n\
-                             ## Key Requirements\n- <requirement 1>\n- <requirement 2>\n- ...\n\n\
-                             ## Constraints & Assumptions\n\
-                             - <constraints from existing project>\n\
-                             - <assumptions>\n\n\
-                             ## Success Criteria\n\
-                             - <measurable outcome 1>\n\
-                             - <measurable outcome 2>"
+                             Analyze this request from a PRODUCT perspective.\n\
+                             Do NOT explore code or file structure. Focus on user needs and business value.\n\n\
+                             Structure your output as:\n\n\
+                             ## Problem Statement\n<1-2 sentences describing the user's pain point>\n\n\
+                             ## User Perspective\n- Who is affected?\n- What is their current workflow?\n- What friction do they experience?\n\n\
+                             ## Business Value\n- Why does this matter?\n- What outcome does the user want?\n\n\
+                             ## Requirements (Non-Technical)\n- <what the solution must accomplish, in user terms>\n- <focus on behavior and outcomes, not implementation>\n\n\
+                             ## Success Criteria\n- <measurable outcome 1>\n- <measurable outcome 2>\n\n\
+                             ## Ambiguities for TL to Resolve\n- <technical questions that need the Tech Lead's expertise>\n- <implementation details that aren't clear from the request>"
                         ))
                         .await;
                     self.log_event(
@@ -261,30 +257,34 @@ impl Actor for AgentActor {
                     tracing::info!("[actor] TL received TlBreakdown ({} chars)", plan.len());
                     let result = self
                         .prompt(&format!(
-                            "Technical plan:\n{plan}\n\nBreak this down into at most {MAX_TASKS} specific, \
-                             executable tasks. Each task should be self-contained and independently \
-                             completable by a junior developer. Combine small steps into single tasks.\n\n\
+                            "Technical plan:\n{plan}\n\n\
+                             Break this down into at most {MAX_TASKS} specific, executable tasks.\n\
+                             Each task must be self-contained and independently completable by a junior developer.\n\n\
                              IMPORTANT: Do NOT read any files or use tools. Junior agents have their own tools.\n\n\
-                             For EACH task, include a DEFINITION_OF_DONE line with 2-4 concrete acceptance criteria.\n\
-                             Format:\n\
-                             TASK: <description>\n\
-                             DEFINITION_OF_DONE:\n\
-                             - <specific, verifiable criterion>\n\
-                             - <e.g., \"file compiles without errors\">\n\
-                             - <e.g., \"module exports the required public API\">\n\n\
-                             Include CONTEXT blocks with relevant file contents Juniors need \
-                             (project structure, existing types, signatures they must match). \
-                             This prevents Juniors from wasting tool calls exploring.\n\
-                             Format:\n\
+                             ## Task Format (use EXACTLY this structure for each task):\n\n\
+                             TASK: <clear description of what to implement>\n\
+                             FILE_TARGETS: <exact file paths to create/modify, e.g., src/auth/login.rs>\n\
+                             IMPLEMENTATION_HINTS:\n\
+                             - <specific pattern to follow, e.g., 'Use the same error handling pattern as src/api/users.rs'>\n\
+                             - <signature to implement, e.g., 'pub async fn login(email: &str, password: &str) -> Result<Token, Error>'>\n\
+                             - <imports needed, e.g., 'use crate::models::User;'>\n\
+                             - <algorithm/approach hint, e.g., 'Use bcrypt for password verification'>\n\
                              CONTEXT:\n\
                              ```<language>\n\
-                             <relevant file contents>\n\
-                             ```\n\n\
-                             If a task depends on the output of another task, add DEPENDS_ON on the next line:\
-                             \nTASK: <dependent task>\nDEPENDS_ON: <task it depends on>\n\n\
-                             CRITICAL: Count every distinct deliverable in the plan. Each one MUST have a TASK. \
-                             Never skip a deliverable. Double-check your task list against the plan before outputting.\n\n\
-                             Output ONLY the task list, starting with TASK: on each line."
+                             <relevant existing code: signatures, types, patterns to match>\n\
+                             ```\n\
+                             DEFINITION_OF_DONE:\n\
+                             - <specific, verifiable criterion>\n\
+                             - <e.g., 'Function compiles and is exported'>\n\
+                             - <e.g., 'Returns correct type for valid input'>\n\
+                             DEPENDS_ON: <task_id> (only if this task needs another task's output)\n\n\
+                             ## Rules:\n\
+                             - Every task MUST have FILE_TARGETS specifying exact paths\n\
+                             - Every task MUST have IMPLEMENTATION_HINTS with specific guidance\n\
+                             - CONTEXT blocks prevent Juniors from wasting tool calls exploring\n\
+                             - Combine small steps into single tasks\n\
+                             - Count every deliverable in the plan — never skip one\n\n\
+                             Output ONLY the task list, starting with TASK: on each task."
                         ))
                         .await;
                     let _ = reply.send(result.map(|r| r.text));
@@ -402,13 +402,15 @@ impl Actor for AgentActor {
 
                     let prompt_text = format!(
                         "Execute this task:\n{}\n\n\
-                         Your task includes a DEFINITION_OF_DONE section. Complete only what the DoD requires — nothing more, nothing less.\
-                         \n\n\
-                         Do the work efficiently. Use the minimum number of tool calls needed (aim for 1-3). \
-                         Do not verify or re-read files after writing them — trust the tool results. \
-                         If CONTEXT is provided in the task, use it directly instead of reading the file. \
-                         Do not use bash for ls, find, cat, echo, head, tail, or any file exploration. \
-                         Only use bash when the DoD explicitly requires running a build or test command.",
+                         INSTRUCTIONS:\n\
+                         1. Identify FILE_TARGETS — create/modify exactly those files\n\
+                         2. Follow IMPLEMENTATION_HINTS precisely — they specify patterns and signatures\n\
+                         3. Use CONTEXT directly — do NOT re-read those files\n\
+                         4. Complete only what DEFINITION_OF_DONE requires — nothing more\n\
+                         5. Use minimum tool calls (1-3)\n\
+                         6. Do NOT use bash for exploration (ls, find, cat, echo)\n\
+                         7. Do NOT re-read files after writing\n\n\
+                         Report what was done concisely when complete.",
                         task.description
                     );
 
