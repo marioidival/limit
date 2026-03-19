@@ -1,0 +1,272 @@
+//! Tree-sitter based parsers for robust AST extraction
+//!
+//! Provides parsers for all supported languages using tree-sitter.
+
+use std::path::Path;
+
+use crate::error::Result;
+use crate::types::{ClassInfo, FileAnalysis, FunctionInfo, ImportInfo, Language, Parameter};
+
+/// Parser using tree-sitter
+pub struct TreeSitterParser {
+    language: Language,
+}
+
+impl TreeSitterParser {
+    pub fn new(language: Language) -> Self {
+        Self { language }
+    }
+
+    /// Get tree-sitter language for a given language
+    fn get_ts_language(&self, lang: Language) -> Option<tree_sitter::Language> {
+        match lang {
+            Language::Python => Some(tree_sitter_python::LANGUAGE.into()),
+            Language::Rust => Some(tree_sitter_rust::LANGUAGE.into()),
+            Language::JavaScript => Some(tree_sitter_javascript::LANGUAGE.into()),
+            Language::TypeScript => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+            Language::Go => Some(tree_sitter_go::LANGUAGE.into()),
+            Language::Java => Some(tree_sitter_java::LANGUAGE.into()),
+            Language::C => Some(tree_sitter_c::LANGUAGE.into()),
+            Language::Cpp => Some(tree_sitter_cpp::LANGUAGE.into()),
+            #[cfg(feature = "tree-sitter-extra")]
+            Language::Ruby => Some(tree_sitter_ruby::LANGUAGE.into()),
+            #[cfg(feature = "tree-sitter-extra")]
+            Language::PHP => Some(tree_sitter_php::LANGUAGE.into()),
+            #[cfg(feature = "tree-sitter-extra")]
+            Language::CSharp => Some(tree_sitter_c_sharp::LANGUAGE.into()),
+            _ => None,
+        }
+    }
+
+    /// Parse source code and extract AST information
+    pub fn parse(&self, source: &str, file: &Path, language: Language) -> Result<FileAnalysis> {
+        let mut analysis = FileAnalysis {
+            file: file.to_path_buf(),
+            functions: Vec::new(),
+            classes: Vec::new(),
+            imports: Vec::new(),
+            language,
+        };
+
+        // Try tree-sitter first, fall back to regex if not available
+        if let Some(ts_lang) = self.get_ts_language(language) {
+            self.parse_with_tree_sitter(source, &mut analysis, ts_lang)?;
+        } else {
+            // Fall back to regex-based parsing for unsupported languages
+            self.parse_with_regex(source, &mut analysis, file, language)?;
+        }
+
+        Ok(analysis)
+    }
+
+    /// Parse using tree-sitter
+    fn parse_with_tree_sitter(
+        &self,
+        source: &str,
+        analysis: &mut FileAnalysis,
+        language: tree_sitter::Language,
+    ) -> Result<()> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&language)
+            .map_err(|e| crate::error::Error::ParseError {
+                file: analysis.file.display().to_string(),
+                message: format!("Tree-sitter language error: {}", e),
+            })?;
+
+        let tree = parser.parse(source, None).ok_or_else(|| {
+            crate::error::Error::ParseError {
+                file: analysis.file.display().to_string(),
+                message: "Failed to parse source".to_string(),
+            }
+        })?;
+
+        let root = tree.root_node();
+        self.walk_node(root, source, analysis);
+
+        Ok(())
+    }
+
+    /// Walk the tree-sitter tree and extract information
+    fn walk_node(&self, node: tree_sitter::Node, source: &str, analysis: &mut FileAnalysis) {
+        let cursor = &mut node.walk();
+
+        for child in node.children(cursor) {
+            match child.kind() {
+                // Function definitions
+                "function_definition" | "function_item" | "method_definition" | "arrow_function" => {
+                    if let Some(func) = self.extract_function(child, source) {
+                        analysis.functions.push(func);
+                    }
+                }
+                // Class/struct definitions
+                "class_definition" | "struct_item" | "class_declaration" | "interface_declaration" => {
+                    if let Some(class) = self.extract_class(child, source) {
+                        analysis.classes.push(class);
+                    }
+                }
+                // Imports
+                "import_statement" | "import_declaration" | "use_declaration" | "include_directive" => {
+                    if let Some(import) = self.extract_import(child, source) {
+                        analysis.imports.push(import);
+                    }
+                }
+                _ => {}
+            }
+
+            // Recurse into children
+            self.walk_node(child, source, analysis);
+        }
+    }
+
+    /// Extract function information from a tree-sitter node
+    fn extract_function(&self, node: tree_sitter::Node, source: &str) -> Option<FunctionInfo> {
+        let name = self.find_child_by_field(node, "name", source)?;
+        let params_text = self
+            .find_child_by_field(node, "parameters", source)
+            .unwrap_or_default();
+        let return_type = self.find_child_by_field(node, "return_type", source);
+
+        let signature = self.node_text(node, source);
+        let is_async = signature.contains("async");
+
+        let params = self.parse_params(&params_text);
+
+        Some(FunctionInfo {
+            name,
+            signature,
+            params,
+            return_type,
+            is_async,
+            line: node.start_position().row + 1,
+            end_line: node.end_position().row + 1,
+            file: std::path::PathBuf::new(), // Set by caller
+            docstring: None,
+            complexity: None,
+        })
+    }
+
+    /// Extract class information from a tree-sitter node
+    fn extract_class(&self, node: tree_sitter::Node, source: &str) -> Option<ClassInfo> {
+        let name = self.find_child_by_field(node, "name", source)?;
+
+        Some(ClassInfo {
+            name,
+            methods: Vec::new(),
+            fields: Vec::new(),
+            line: node.start_position().row + 1,
+            file: std::path::PathBuf::new(),
+            docstring: None,
+        })
+    }
+
+    /// Extract import information from a tree-sitter node
+    fn extract_import(&self, node: tree_sitter::Node, source: &str) -> Option<ImportInfo> {
+        let text = self.node_text(node, source);
+
+        Some(ImportInfo {
+            module: text.clone(),
+            names: Vec::new(),
+            alias: None,
+            line: node.start_position().row + 1,
+        })
+    }
+
+    /// Find child node by field name
+    fn find_child_by_field(
+        &self,
+        node: tree_sitter::Node,
+        field: &str,
+        source: &str,
+    ) -> Option<String> {
+        let child = node.child_by_field_name(field)?;
+        Some(self.node_text(child, source))
+    }
+
+    /// Get text for a node
+    fn node_text(&self, node: tree_sitter::Node, source: &str) -> String {
+        let start = node.start_byte();
+        let end = node.end_byte();
+        source[start..end].to_string()
+    }
+
+    /// Parse parameter string into parameters
+    fn parse_params(&self, params_text: &str) -> Vec<Parameter> {
+        let trimmed = params_text
+            .trim_start_matches('(')
+            .trim_end_matches(')');
+        
+        if trimmed.is_empty() {
+            return Vec::new();
+        }
+
+        trimmed
+            .split(',')
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| {
+                let parts: Vec<&str> = s.trim().splitn(2, ':').collect();
+                Parameter {
+                    name: parts[0].trim().to_string(),
+                    type_annotation: parts.get(1).map(|t| t.trim().to_string()),
+                    default_value: None,
+                }
+            })
+            .collect()
+    }
+
+    /// Fallback regex-based parsing
+    fn parse_with_regex(
+        &self,
+        source: &str,
+        analysis: &mut FileAnalysis,
+        file: &Path,
+        language: Language,
+    ) -> Result<()> {
+        use regex::Regex;
+
+        match language {
+            Language::Python => {
+                let func_re = Regex::new(r"(?m)^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)")
+                    .unwrap();
+
+                for cap in func_re.captures_iter(source) {
+                    analysis.functions.push(FunctionInfo {
+                        name: cap[1].to_string(),
+                        signature: cap[0].to_string(),
+                        params: Vec::new(),
+                        return_type: None,
+                        is_async: cap[0].starts_with("async"),
+                        line: 0,
+                        end_line: 0,
+                        file: file.to_path_buf(),
+                        docstring: None,
+                        complexity: None,
+                    });
+                }
+            }
+            Language::Rust => {
+                let func_re =
+                    Regex::new(r"(?m)^(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*\(([^)]*)\)")
+                        .unwrap();
+
+                for cap in func_re.captures_iter(source) {
+                    analysis.functions.push(FunctionInfo {
+                        name: cap[1].to_string(),
+                        signature: cap[0].to_string(),
+                        params: Vec::new(),
+                        return_type: None,
+                        is_async: cap[0].contains("async"),
+                        line: 0,
+                        end_line: 0,
+                        file: file.to_path_buf(),
+                        docstring: None,
+                        complexity: None,
+                    });
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+}

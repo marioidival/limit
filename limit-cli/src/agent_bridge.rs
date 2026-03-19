@@ -3,7 +3,7 @@ use crate::system_prompt::SYSTEM_PROMPT;
 use crate::tools::{
     AstGrepTool, BashTool, BrowserTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool,
     GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool,
-    GrepTool, LspTool, WebFetchTool, WebSearchTool,
+    GrepTool, LspTool, TldrTool, WebFetchTool, WebSearchTool,
 };
 use chrono::Datelike;
 use futures::StreamExt;
@@ -132,6 +132,7 @@ impl AgentBridge {
             "web_search",
             "web_fetch",
             "browser",
+            "tldr_analyze",
         ];
 
         Ok(Self {
@@ -231,6 +232,11 @@ impl AgentBridge {
         registry
             .register(BrowserTool::with_config(browser_config))
             .expect("Failed to register browser");
+
+        // TLDR tool for code analysis
+        registry
+            .register(TldrTool::new())
+            .expect("Failed to register tldr_analyze");
     }
 
     /// Process a user message through the LLM and execute any tool calls
@@ -1144,6 +1150,52 @@ impl AgentBridge {
                     "required": ["action"]
                 }),
             ),
+            "tldr_analyze" => (
+                "Analyze code structure and dependencies with 95% token savings. Use before editing code to understand context, impact, and dependencies.".to_string(),
+                json!({
+                    "type": "object",
+                    "properties": {
+                        "analysis_type": {
+                            "type": "string",
+                            "enum": ["context", "impact", "cfg", "dfg", "dead_code", "architecture", "search"],
+                            "description": "Type of analysis to perform"
+                        },
+                        "function": {
+                            "type": "string",
+                            "description": "Function name to analyze (required for context, impact, cfg, dfg)"
+                        },
+                        "file": {
+                            "type": "string",
+                            "description": "File path relative to project root (required for cfg, dfg)"
+                        },
+                        "depth": {
+                            "type": "integer",
+                            "description": "Depth for context traversal (default: 2)",
+                            "default": 2
+                        },
+                        "entries": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Entry points for dead code detection (default: [\"main\"])",
+                            "default": ["main"]
+                        },
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for finding functions"
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum results for search (default: 10)",
+                            "default": 10
+                        },
+                        "project_path": {
+                            "type": "string",
+                            "description": "Project path (defaults to current directory)"
+                        }
+                    },
+                    "required": ["analysis_type"]
+                }),
+            ),
             _ => (
                 format!("Tool: {}", name),
                 json!({
@@ -1298,7 +1350,7 @@ mod tests {
         let bridge = AgentBridge::new(config).unwrap();
         let definitions = bridge.get_tool_definitions();
 
-        assert_eq!(definitions.len(), 18);
+        assert_eq!(definitions.len(), 19);
 
         // Check file_read tool definition
         let file_read = definitions
