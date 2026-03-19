@@ -1745,7 +1745,6 @@ dependencies = [
  "ignore",
  "limit-agent",
  "limit-llm",
- "limit-tldr",
  "limit-tui",
  "lsp-types",
  "ratatui",
