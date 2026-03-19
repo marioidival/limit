@@ -16,6 +16,8 @@ pub enum AgentError {
     LlmError(String),
     #[error("Actor error: {0}")]
     ActorError(String),
+    #[error("Phase '{phase}' timed out after {seconds}s")]
+    PhaseTimeout { phase: String, seconds: u64 },
 }
 
 impl Clone for AgentError {
@@ -29,6 +31,9 @@ impl Clone for AgentError {
             AgentError::TeamError(s) => AgentError::TeamError(s.clone()),
             AgentError::LlmError(s) => AgentError::LlmError(s.clone()),
             AgentError::ActorError(s) => AgentError::ActorError(s.clone()),
+            AgentError::PhaseTimeout { phase, seconds } => {
+                AgentError::PhaseTimeout { phase: phase.clone(), seconds: *seconds }
+            }
         }
     }
 }

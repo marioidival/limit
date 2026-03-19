@@ -68,6 +68,9 @@ pub const MAX_HISTORY_PER_AGENT: usize = 50;
 /// Maximum characters for CONTEXT blocks in task descriptions.
 pub const MAX_CONTEXT_CHARS: usize = 4000;
 
+/// Default per-phase timeout in seconds.
+pub const PHASE_TIMEOUT_SECS: u64 = 120;
+
 // ── Shared helpers (used by both legacy workflow and actor system) ──
 
 /// Send a progress event to the TUI (non-blocking, ignores send errors).
