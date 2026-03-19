@@ -29,6 +29,8 @@ pub struct TeamProgressSnapshot {
     pub finish_summary: String,
     pub task_scroll_offset: usize,
     pub task_list_expanded: bool,
+    pub tokens_input: u64,
+    pub tokens_output: u64,
 }
 
 /// Thread-safe state that receives events and produces snapshots.
@@ -149,6 +151,14 @@ impl TeamProgressState {
             TeamProgressEvent::StatusUpdate { message, .. } => {
                 state.status_text = message;
             }
+            TeamProgressEvent::TokenUpdate {
+                input_tokens,
+                output_tokens,
+                ..
+            } => {
+                state.tokens_input = input_tokens;
+                state.tokens_output = output_tokens;
+            }
         }
     }
 
@@ -213,6 +223,13 @@ pub fn drain_progress_events(
                     }
                     TeamProgressEvent::StatusUpdate { message, .. } => {
                         format!("StatusUpdate({:.50}…)", message)
+                    }
+                    TeamProgressEvent::TokenUpdate {
+                        input_tokens,
+                        output_tokens,
+                        ..
+                    } => {
+                        format!("TokenUpdate({}in/{}out)", input_tokens, output_tokens)
                     }
                     TeamProgressEvent::Finished { success, .. } => {
                         format!("Finished({})", success)

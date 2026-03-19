@@ -37,6 +37,12 @@ pub enum TeamProgressEvent {
     },
     /// Status text shown after each phase completes (truncated agent output).
     StatusUpdate { message: String, nesting: u32 },
+    /// Token usage update (cumulative across all agents).
+    TokenUpdate {
+        input_tokens: u64,
+        output_tokens: u64,
+        nesting: u32,
+    },
     /// Per-task sub-status update (e.g., "Editing src/main.rs...").
     TaskSubStatusUpdate {
         task_id: String,
@@ -96,6 +102,15 @@ impl TeamProgressEvent {
                 nesting,
             },
             Self::StatusUpdate { message, .. } => Self::StatusUpdate { message, nesting },
+            Self::TokenUpdate {
+                input_tokens,
+                output_tokens,
+                ..
+            } => Self::TokenUpdate {
+                input_tokens,
+                output_tokens,
+                nesting,
+            },
             Self::TaskSubStatusUpdate {
                 task_id, message, ..
             } => Self::TaskSubStatusUpdate {

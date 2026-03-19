@@ -101,6 +101,13 @@ pub fn send_progress(
                 crate::team::progress::TeamProgressEvent::StatusUpdate { message, .. } => {
                     format!("StatusUpdate({:.50}…)", message)
                 }
+                crate::team::progress::TeamProgressEvent::TokenUpdate {
+                    input_tokens,
+                    output_tokens,
+                    ..
+                } => {
+                    format!("TokenUpdate({}in/{}out)", input_tokens, output_tokens)
+                }
                 crate::team::progress::TeamProgressEvent::TaskSubStatusUpdate {
                     task_id,
                     message,
