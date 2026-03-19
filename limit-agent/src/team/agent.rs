@@ -805,7 +805,15 @@ fn is_retryable_e(msg: &str) -> bool {
     }
 
     // Check for temporary failures
-    if lower.contains("temporary") || lower.contains("retry") {
+    if lower.contains("temporary") {
+        return true;
+    }
+    // Match "retry after" / "please retry" but NOT "retries exceeded"
+    // or "after retry" (permanent failures)
+    if lower.contains("retry")
+        && !lower.contains("retries exceeded")
+        && !lower.contains("after retry")
+    {
         return true;
     }
 
@@ -867,6 +875,18 @@ mod tests {
     #[test]
     fn test_is_not_retryable_tool_error() {
         let err = AgentError::ToolError("Tool not found".into());
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_not_retryable_max_retries_exceeded() {
+        let err = AgentError::LlmError("Max retries exceeded".into());
+        assert!(!is_retryable(&err));
+    }
+
+    #[test]
+    fn test_is_not_retryable_after_retry() {
+        let err = AgentError::LlmError("Error after retry: invalid api key".into());
         assert!(!is_retryable(&err));
     }
 
