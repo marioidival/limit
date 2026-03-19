@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use blake3::Hash;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -65,7 +64,7 @@ impl CacheManager {
         
         let cache_path = self.cache_dir.join(format!(
             "parse_cache/{}.json",
-            file.display().to_string().replace('/', "_").replace('\\', "_")
+            file.display().to_string().replace(['/', '\\'], "_")
         ));
         
         if let Some(parent) = cache_path.parent() {
@@ -110,7 +109,7 @@ impl CacheManager {
     fn cache_path_for_file(&self, file: &Path) -> PathBuf {
         self.cache_dir.join(format!(
             "parse_cache/{}.json",
-            file.display().to_string().replace('/', "_").replace('\\', "_")
+            file.display().to_string().replace(['/', '\\'], "_")
         ))
     }
     
@@ -136,11 +135,20 @@ impl CacheManager {
     }
     
     /// Get call graph
-    pub fn get_call_graph(&self) -> Result<Option<(&HashMap<String, Vec<String>>, &HashMap<String, Vec<crate::types::CallerInfo>>)>> {
+    pub fn get_call_graph(&self) -> Result<Option<CallGraphRef<'_>>> {
         if let Some(ref cache) = self.call_graph_cache {
-            Ok(Some((&cache.forward, &cache.backward)))
+            Ok(Some(CallGraphRef {
+                forward: &cache.forward,
+                backward: &cache.backward,
+            }))
         } else {
             Ok(None)
         }
     }
+}
+
+/// Reference to cached call graph
+pub struct CallGraphRef<'a> {
+    pub forward: &'a HashMap<String, Vec<String>>,
+    pub backward: &'a HashMap<String, Vec<crate::types::CallerInfo>>,
 }

@@ -60,6 +60,7 @@ pub use types::*;
 /// Main TLDR instance for code analysis
 pub struct TLDR {
     project_path: PathBuf,
+    #[allow(dead_code)]
     config: Config,
     cache: CacheManager,
     ast: ASTLayer,

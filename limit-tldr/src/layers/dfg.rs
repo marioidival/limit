@@ -2,13 +2,16 @@
 //!
 //! Tracks variable definitions and uses.
 
+use std::collections::HashMap;
+
 use crate::error::Result;
-use crate::types::{FunctionInfo, DFGInfo, VariableFlow, DataFlow};
+use crate::types::{FunctionInfo, DFGInfo, VariableFlow};
 
 /// Data flow graph layer
 pub struct DFGLayer {
     // Cache of computed DFGs
-    cache: std::collections::HashMap<String, DFGInfo>,
+    #[allow(dead_code)]
+    cache: HashMap<String, DFGInfo>,
 }
 
 impl DFGLayer {
