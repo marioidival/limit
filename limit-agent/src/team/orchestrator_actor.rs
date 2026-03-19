@@ -477,11 +477,21 @@ impl OrchestratorActor {
         );
         tracing::info!("[team] PM — preparing delivery");
 
+        // Build failure context for PM delivery
+        let failure_context = if validation_failures > 0 {
+            format!(
+                "\n\n**WARNING: {} task(s) FAILED validation.** These tasks need to be re-done.",
+                validation_failures
+            )
+        } else {
+            String::new()
+        };
+
         let (tx, rx) = oneshot::channel();
         let delivery = self
             .ask_pm(
                 TeamMessage::PmDeliver {
-                    validation,
+                    validation: format!("{}{}", validation, failure_context),
                     results_summary,
                     files_modified: files_modified.clone(),
                     reply: tx,

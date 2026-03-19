@@ -290,3 +290,41 @@ fn test_team_db_persistence() {
     // Cleanup
     assert!(db.delete_team("persist-test").unwrap());
 }
+
+#[tokio::test]
+async fn test_workflow_reports_validation_failures() {
+    // Provider returns valid tasks but TL validation reports a failure
+    let provider: Box<dyn limit_llm::LlmProvider> = Box::new(
+        MockLlmProvider::new()
+            .with_response("Analysis: need error handling")
+            .with_response("Plan: add Result wrapper")
+            .with_response("TASK: Add error types to src/error.rs\nTASK: Wrap main in Result")
+            // Jr tasks
+            .with_response(r#"Created file: {"path": "src/error.rs"}"#)
+            .with_response(r#"Modified file: {"path": "src/main.rs"}"#)
+            // TL suggests build command
+            .with_response("cargo check")
+            // TL validation — one task FAILS
+            .with_response("## Task: 1\n- Status: **PASS**\n- Reason: file created\n\n## Task: 2\n- Status: **FAIL**\n- Reason: main function not wrapped")
+            // PM delivery
+            .with_response("Partial success: error types added but main not wrapped"),
+    );
+
+    let config = TeamConfig::default();
+    let tools = test_registry();
+    let mut team = Team::new(
+        "validation-fail-test".into(),
+        provider,
+        config,
+        tools,
+        Default::default(),
+    )
+    .expect("team creation");
+
+    let result = team.execute("test", None).await.unwrap();
+    assert!(result.failed_tasks > 0, "should report validation failures");
+    assert!(
+        !result.solution.is_empty(),
+        "PM should still deliver a summary"
+    );
+}
