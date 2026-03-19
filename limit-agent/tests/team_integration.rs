@@ -328,3 +328,45 @@ async fn test_workflow_reports_validation_failures() {
         "PM should still deliver a summary"
     );
 }
+
+#[tokio::test]
+async fn test_workflow_retries_validation_failures() {
+    // Provider: TL validation FAILs task 1, then retry succeeds.
+    let provider: Box<dyn limit_llm::LlmProvider> = Box::new(
+        MockLlmProvider::new()
+            // 1. PM analysis
+            .with_response("Analysis: need feature X")
+            // 2. TL plan
+            .with_response("Plan: implement feature X in lib.rs")
+            // 3. TL task breakdown — one task
+            .with_response("TASK: Add feature X to src/lib.rs")
+            // 4. Jr execution (task 1, attempt 1)
+            .with_response("Partial implementation done")
+            // 5. TL suggest build command
+            .with_response("cargo check")
+            // 6. TL validation — FAIL (uses 1-based index)
+            .with_response(
+                "## Task: 1\n- Status: **FAIL**\n- Reason: incomplete implementation",
+            )
+            // 7. Jr retry (task 1, attempt 2)
+            .with_response("Fixed: feature X fully implemented")
+            // 8. PM delivery
+            .with_response("Feature X has been implemented successfully"),
+    );
+    let config = TeamConfig::default();
+    let tools = test_registry();
+    let mut team = Team::new(
+        "validation-retry-test".into(),
+        provider,
+        config,
+        tools,
+        Default::default(),
+    )
+    .expect("team creation");
+    let result = team.execute("test", None).await.unwrap();
+    assert!(
+        result.solution.contains("successfully"),
+        "PM should deliver success after retry: {}",
+        result.solution
+    );
+}

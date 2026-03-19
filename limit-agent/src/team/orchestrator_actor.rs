@@ -411,13 +411,20 @@ impl OrchestratorActor {
             tracing::info!("[team] TL suggested build command: {}", build_cmd);
         }
 
-        let results_summary: String = task_results
+        let results_summary: String = tasks
             .iter()
-            .map(|r| {
+            .zip(task_results.iter())
+            .enumerate()
+            .map(|(i, (task, r))| {
+                let desc_preview = task
+                    .description
+                    .lines()
+                    .next()
+                    .unwrap_or(&task.description);
                 if r.success {
-                    format!("[OK] {}", r.output)
+                    format!("[Task {}] {} — OK: {}", i + 1, desc_preview, r.output)
                 } else {
-                    format!("[FAIL] {}", r.output)
+                    format!("[Task {}] {} — FAIL: {}", i + 1, desc_preview, r.output)
                 }
             })
             .collect::<Vec<_>>()
@@ -480,10 +487,15 @@ impl OrchestratorActor {
         // Retry failed tasks after TL validation
         if validation_failures > 0 && !tasks.is_empty() {
             let failed_ids = parse_failed_task_ids(&validation);
+            // Match by UUID first, then by 1-based index as fallback
             let retry_tasks: Vec<Task> = tasks
                 .iter()
-                .filter(|t| failed_ids.contains(&t.id))
-                .cloned()
+                .enumerate()
+                .filter(|(i, t)| {
+                    failed_ids.contains(&t.id)
+                        || failed_ids.contains(&((i + 1).to_string()))
+                })
+                .map(|(_, t)| t.clone())
                 .collect();
 
             if !retry_tasks.is_empty() {
