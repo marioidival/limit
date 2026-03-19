@@ -20,12 +20,12 @@ impl PDGLayer {
             cache: std::collections::HashMap::new(),
         }
     }
-    
+
     /// Compute a program slice for a target line
     pub fn slice(&self, _func: &FunctionInfo, target_line: usize) -> Result<SliceInfo> {
         // Simplified implementation
         // In practice, would use PDG to compute backward slice
-        
+
         Ok(SliceInfo {
             target_line,
             slice: vec![target_line],

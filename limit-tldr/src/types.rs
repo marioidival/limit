@@ -28,7 +28,7 @@ pub enum Language {
 
 impl FromStr for Language {
     type Err = String;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "auto" => Ok(Language::Auto),
@@ -76,7 +76,7 @@ impl Language {
             Language::Auto => &[],
         }
     }
-    
+
     /// Detect language from file extension
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
@@ -342,22 +342,55 @@ pub struct DaemonStatus {
 pub enum DaemonCommand {
     Ping,
     Status,
-    Search { pattern: String },
-    Extract { file: PathBuf },
-    Impact { function: String },
-    Dead { entries: Vec<String> },
+    Search {
+        pattern: String,
+    },
+    Extract {
+        file: PathBuf,
+    },
+    Impact {
+        function: String,
+    },
+    Dead {
+        entries: Vec<String>,
+    },
     Arch,
-    Cfg { file: PathBuf, function: String },
-    Dfg { file: PathBuf, function: String },
-    Slice { file: PathBuf, function: String, line: usize },
+    Cfg {
+        file: PathBuf,
+        function: String,
+    },
+    Dfg {
+        file: PathBuf,
+        function: String,
+    },
+    Slice {
+        file: PathBuf,
+        function: String,
+        line: usize,
+    },
     Calls,
-    Semantic { query: String, limit: usize },
+    Semantic {
+        query: String,
+        limit: usize,
+    },
     Tree,
-    Structure { language: Option<Language> },
-    Context { entry: String, depth: usize },
-    Imports { file: PathBuf },
-    Importers { module: String },
-    Diagnostics { path: PathBuf, format: OutputFormat },
+    Structure {
+        language: Option<Language>,
+    },
+    Context {
+        entry: String,
+        depth: usize,
+    },
+    Imports {
+        file: PathBuf,
+    },
+    Importers {
+        module: String,
+    },
+    Diagnostics {
+        path: PathBuf,
+        format: OutputFormat,
+    },
 }
 
 /// Output format

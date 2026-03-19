@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use crate::error::Result;
-use crate::types::{FunctionInfo, DFGInfo, VariableFlow};
+use crate::types::{DFGInfo, FunctionInfo, VariableFlow};
 
 /// Data flow graph layer
 pub struct DFGLayer {
@@ -20,20 +20,22 @@ impl DFGLayer {
             cache: std::collections::HashMap::new(),
         }
     }
-    
+
     /// Analyze a function and compute its DFG
     pub fn analyze(&self, func: &FunctionInfo) -> Result<DFGInfo> {
         // Simplified implementation
         // In practice, would use tree-sitter to track variable definitions and uses
-        
-        let variables = func.params.iter()
+
+        let variables = func
+            .params
+            .iter()
             .map(|p| VariableFlow {
                 name: p.name.clone(),
                 defined_at: vec![func.line],
                 used_at: vec![],
             })
             .collect();
-        
+
         Ok(DFGInfo {
             function: func.name.clone(),
             variables,

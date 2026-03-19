@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use crate::error::Result;
-use crate::types::{FunctionInfo, CFGInfo, BasicBlock};
+use crate::types::{BasicBlock, CFGInfo, FunctionInfo};
 
 /// Control flow graph layer
 pub struct CFGLayer {
@@ -20,25 +20,23 @@ impl CFGLayer {
             cache: std::collections::HashMap::new(),
         }
     }
-    
+
     /// Analyze a function and compute its CFG
     pub fn analyze(&self, func: &FunctionInfo) -> Result<CFGInfo> {
         // Simplified implementation
         // In practice, would use tree-sitter to traverse the AST and build CFG
-        
-        let blocks = vec![
-            BasicBlock {
-                id: 0,
-                statements: vec![format!("// Function: {}", func.name)],
-                start_line: func.line,
-                end_line: func.end_line,
-            }
-        ];
-        
+
+        let blocks = vec![BasicBlock {
+            id: 0,
+            statements: vec![format!("// Function: {}", func.name)],
+            start_line: func.line,
+            end_line: func.end_line,
+        }];
+
         // Simplified complexity calculation
         // Real implementation would count decision points
         let complexity = 1;
-        
+
         Ok(CFGInfo {
             function: func.name.clone(),
             blocks,

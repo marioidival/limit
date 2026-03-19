@@ -15,12 +15,12 @@ impl SemanticIndex {
     pub fn new() -> Result<Self> {
         Ok(Self {})
     }
-    
+
     pub async fn warm(&mut self, _ast: &ASTLayer, _call_graph: &CallGraphLayer) -> Result<()> {
         // Would compute embeddings for all functions
         Ok(())
     }
-    
+
     pub async fn search(&self, _query: &str, _limit: usize) -> Result<Vec<SearchResult>> {
         // Would perform semantic search using FAISS
         Ok(vec![])
