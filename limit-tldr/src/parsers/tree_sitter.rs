@@ -8,13 +8,11 @@ use crate::error::Result;
 use crate::types::{ClassInfo, FileAnalysis, FunctionInfo, ImportInfo, Language, Parameter};
 
 /// Parser using tree-sitter
-pub struct TreeSitterParser {
-    language: Language,
-}
+pub struct TreeSitterParser;
 
 impl TreeSitterParser {
-    pub fn new(language: Language) -> Self {
-        Self { language }
+    pub fn new() -> Self {
+        Self
     }
 
     /// Get tree-sitter language for a given language
@@ -268,5 +266,11 @@ impl TreeSitterParser {
         }
 
         Ok(())
+    }
+}
+
+impl Default for TreeSitterParser {
+    fn default() -> Self {
+        Self::new()
     }
 }
