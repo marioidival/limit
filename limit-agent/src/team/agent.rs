@@ -16,9 +16,6 @@ use std::time::Duration;
 const MAX_RETRIES: usize = 3;
 /// Base delay between retries (doubles on each attempt: 1s, 2s, 4s).
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
-/// Maximum tool-call rounds per `prompt()` call before forcing a text response.
-/// Prevents infinite loops where the LLM keeps requesting more tool calls.
-const DEFAULT_MAX_TOOL_ROUNDS: usize = 10;
 
 /// Result from [`TeamAgent::prompt`] including token usage and tool-limit status.
 #[derive(Debug, Clone)]
@@ -128,61 +125,6 @@ pub struct TeamAgent {
 }
 
 impl TeamAgent {
-    /// Create a placeholder agent for mem::replace purposes.
-    /// This agent has a noop provider and should never actually be used.
-    pub(crate) fn placeholder() -> Self {
-        use std::pin::Pin;
-
-        struct NoopProvider;
-
-        #[async_trait::async_trait]
-        impl LlmProvider for NoopProvider {
-            async fn send(
-                &self,
-                _messages: Vec<Message>,
-                _tools: Vec<limit_llm::Tool>,
-            ) -> Result<
-                Pin<
-                    Box<
-                        dyn futures::Stream<
-                                Item = Result<ProviderResponseChunk, limit_llm::LlmError>,
-                            > + Send
-                            + '_,
-                    >,
-                >,
-                limit_llm::LlmError,
-            > {
-                Ok(Box::pin(futures::stream::empty()))
-            }
-
-            fn provider_name(&self) -> &str {
-                "noop"
-            }
-
-            fn model_name(&self) -> &str {
-                "noop"
-            }
-
-            fn clone_box(&self) -> Box<dyn LlmProvider> {
-                Box::new(NoopProvider)
-            }
-        }
-
-        let system_msg = Message {
-            role: LlmRole::System,
-            content: Some(Role::Jr.system_prompt().to_string()),
-            tool_calls: None,
-            tool_call_id: None,
-        };
-        Self {
-            role: Role::Jr,
-            provider: Box::new(NoopProvider),
-            registry: Arc::new(ToolRegistry::new()),
-            history: Arc::new(vec![system_msg]),
-            max_tool_rounds: DEFAULT_MAX_TOOL_ROUNDS,
-        }
-    }
-
     /// Create a new team agent for the given role.
     pub fn new(role: Role, provider: Box<dyn LlmProvider>, registry: Arc<ToolRegistry>) -> Self {
         Self::with_allowed_tools(role, provider, registry, None)
