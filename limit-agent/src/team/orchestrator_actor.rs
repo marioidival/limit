@@ -416,11 +416,7 @@ impl OrchestratorActor {
             .zip(task_results.iter())
             .enumerate()
             .map(|(i, (task, r))| {
-                let desc_preview = task
-                    .description
-                    .lines()
-                    .next()
-                    .unwrap_or(&task.description);
+                let desc_preview = task.description.lines().next().unwrap_or(&task.description);
                 if r.success {
                     format!("[Task {}] {} — OK: {}", i + 1, desc_preview, r.output)
                 } else {
@@ -492,8 +488,7 @@ impl OrchestratorActor {
                 .iter()
                 .enumerate()
                 .filter(|(i, t)| {
-                    failed_ids.contains(&t.id)
-                        || failed_ids.contains(&((i + 1).to_string()))
+                    failed_ids.contains(&t.id) || failed_ids.contains(&((i + 1).to_string()))
                 })
                 .map(|(_, t)| t.clone())
                 .collect();
@@ -513,8 +508,9 @@ impl OrchestratorActor {
                     );
                 }
 
-                let retry_results =
-                    self.execute_tasks_parallel(&retry_tasks_mut, self.max_parallel).await;
+                let retry_results = self
+                    .execute_tasks_parallel(&retry_tasks_mut, self.max_parallel)
+                    .await;
                 let retry_failures = retry_results.iter().filter(|r| !r.success).count();
 
                 if retry_failures == 0 {

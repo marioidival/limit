@@ -177,7 +177,8 @@ pub fn panel_height(snapshot: &TaskProgressSnapshot) -> u16 {
     } else {
         let task_lines = (snapshot.tasks.len().min(6) as u16) + 1; // +1 for "Tasks:" header
         let more_line = if snapshot.tasks.len() > 6 { 1 } else { 0 };
-        1 + finish_summary_line + token_line + status_lines + stream_lines + task_lines + more_line // phase bar + status + stream + tasks
+        1 + finish_summary_line + token_line + status_lines + stream_lines + task_lines + more_line
+        // phase bar + status + stream + tasks
     };
     (border + content).clamp(3, 12)
 }

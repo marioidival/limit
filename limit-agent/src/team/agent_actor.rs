@@ -192,11 +192,8 @@ impl Actor for AgentActor {
                              ## Ambiguities for TL to Resolve\n- <technical questions that need the Tech Lead's expertise>\n- <implementation details that aren't clear from the request>"
                         ))
                         .await;
-                    self.log_event(
-                        "analysis",
-                        &result.clone().unwrap_or_default(),
-                    )
-                    .await;
+                    self.log_event("analysis", &result.clone().unwrap_or_default())
+                        .await;
                     let _ = reply.send(result);
                     Ok(())
                 }
@@ -230,11 +227,8 @@ impl Actor for AgentActor {
                              Do NOT suggest improvements, refactors, or enhancements."
                         ))
                         .await;
-                    self.log_event(
-                        "delivery",
-                        &result.clone().unwrap_or_default(),
-                    )
-                    .await;
+                    self.log_event("delivery", &result.clone().unwrap_or_default())
+                        .await;
                     let _ = reply.send(result);
                     Ok(())
                 }
@@ -250,11 +244,8 @@ impl Actor for AgentActor {
                              Summarize this for the user and suggest next steps."
                         ))
                         .await;
-                    self.log_event(
-                        "delivery",
-                        &result.clone().unwrap_or_default(),
-                    )
-                    .await;
+                    self.log_event("delivery", &result.clone().unwrap_or_default())
+                        .await;
                     let _ = reply.send(result);
                     Ok(())
                 }
@@ -268,11 +259,8 @@ impl Actor for AgentActor {
                              You have no tools. Produce the plan now based on the analysis above."
                         ))
                         .await;
-                    self.log_event(
-                        "plan",
-                        &result.clone().unwrap_or_default(),
-                    )
-                    .await;
+                    self.log_event("plan", &result.clone().unwrap_or_default())
+                        .await;
                     let _ = reply.send(result);
                     Ok(())
                 }
@@ -341,11 +329,8 @@ impl Actor for AgentActor {
                              If no build system is detected or files weren't modified, output: NONE"
                         ))
                         .await;
-                    self.log_event(
-                        "build_command",
-                        &result.clone().unwrap_or_default(),
-                    )
-                    .await;
+                    self.log_event("build_command", &result.clone().unwrap_or_default())
+                        .await;
                     let _ = reply.send(result);
                     Ok(())
                 }
@@ -381,11 +366,8 @@ impl Actor for AgentActor {
                              - Reason: <one sentence>"
                         ))
                         .await;
-                    self.log_event(
-                        "validation",
-                        &result.clone().unwrap_or_default(),
-                    )
-                    .await;
+                    self.log_event("validation", &result.clone().unwrap_or_default())
+                        .await;
                     let _ = reply.send(result);
                     Ok(())
                 }

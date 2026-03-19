@@ -345,9 +345,7 @@ async fn test_workflow_retries_validation_failures() {
             // 5. TL suggest build command
             .with_response("cargo check")
             // 6. TL validation — FAIL (uses 1-based index)
-            .with_response(
-                "## Task: 1\n- Status: **FAIL**\n- Reason: incomplete implementation",
-            )
+            .with_response("## Task: 1\n- Status: **FAIL**\n- Reason: incomplete implementation")
             // 7. Jr retry (task 1, attempt 2)
             .with_response("Fixed: feature X fully implemented")
             // 8. PM delivery
