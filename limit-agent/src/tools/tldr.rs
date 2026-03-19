@@ -39,40 +39,46 @@ pub enum AnalysisType {
 pub struct TldrParams {
     /// Type of analysis to perform
     pub analysis_type: AnalysisType,
-    
+
     /// Function name (required for context, impact, cfg, dfg)
     pub function: Option<String>,
-    
+
     /// File path relative to project root (required for cfg, dfg)
     pub file: Option<String>,
-    
+
     /// Depth for context traversal (default: 2)
     #[serde(default = "default_depth")]
     pub depth: usize,
-    
+
     /// Entry points for dead code detection (default: ["main"])
     #[serde(default = "default_entries")]
     pub entries: Vec<String>,
-    
+
     /// Search query for finding functions
     pub query: Option<String>,
-    
+
     /// Maximum results for search (default: 10)
     #[serde(default = "default_limit")]
     pub limit: usize,
-    
+
     /// Project path (defaults to current directory)
     pub project_path: Option<String>,
 }
 
-fn default_depth() -> usize { 2 }
-fn default_entries() -> Vec<String> { vec!["main".to_string()] }
-fn default_limit() -> usize { 10 }
+fn default_depth() -> usize {
+    2
+}
+fn default_entries() -> Vec<String> {
+    vec!["main".to_string()]
+}
+fn default_limit() -> usize {
+    10
+}
 
 /// TLDR tool for code analysis
 pub struct TldrTool {
     /// Cached TLDR instance per project
-    cache: Arc<RwLock<Option<(PathBuf, TLDR)>>>,
+    cache: Arc<RwLock<Option<(PathBuf, Arc<TLDR>)>>>,
     /// Default project path
     default_project: PathBuf,
 }
@@ -85,7 +91,7 @@ impl TldrTool {
             default_project: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         }
     }
-    
+
     /// Create TLDR tool with a specific project path
     pub fn with_project<P: Into<PathBuf>>(project: P) -> Self {
         Self {
@@ -93,97 +99,92 @@ impl TldrTool {
             default_project: project.into(),
         }
     }
-    
+
     /// Get or create TLDR instance for a project
-    async fn get_tldr(&self, project_path: &Path) -> Result<TLDR, AgentError> {
-        // Check cache
+    async fn get_tldr(&self, project_path: &Path) -> Result<Arc<TLDR>, AgentError> {
         {
             let cache = self.cache.read().await;
-            if let Some((cached_path, _)) = cache.as_ref() {
+            if let Some((cached_path, cached_tldr)) = cache.as_ref() {
                 if cached_path == project_path {
                     debug!("TLDR cache hit for project: {:?}", project_path);
+                    return Ok(Arc::clone(cached_tldr));
                 }
             }
         }
-        
-        // Create new instance
+
         info!("Creating TLDR instance for project: {:?}", project_path);
         let config = TldrConfig {
             language: Language::Auto,
             max_depth: 3,
             cache_dir: Some(Self::get_cache_dir(project_path)?),
         };
-        
+
         let mut tldr = TLDR::new(project_path, config)
             .await
             .map_err(|e| AgentError::ToolError(format!("Failed to create TLDR: {}", e)))?;
-        
-        // Warm up indexes
+
         info!("Warming TLDR indexes...");
         tldr.warm()
             .await
             .map_err(|e| AgentError::ToolError(format!("Failed to warm TLDR: {}", e)))?;
-        
-        // Cache it
+
+        let tldr = Arc::new(tldr);
         {
             let mut cache = self.cache.write().await;
-            *cache = Some((project_path.to_path_buf(), tldr));
+            *cache = Some((project_path.to_path_buf(), Arc::clone(&tldr)));
         }
-        
-        // Create a fresh instance for return (TLDR doesn't implement Clone)
-        let config = TldrConfig {
-            language: Language::Auto,
-            max_depth: 3,
-            cache_dir: Some(Self::get_cache_dir(project_path)?),
-        };
-        
-        TLDR::new(project_path, config)
-            .await
-            .map_err(|e| AgentError::ToolError(format!("Failed to create TLDR: {}", e)))
+
+        Ok(tldr)
     }
-    
+
     /// Get cache directory for a project (~/.limit/projects/<project-hash>/tldr)
     fn get_cache_dir(project_path: &Path) -> Result<PathBuf, AgentError> {
         let home = dirs::home_dir()
             .ok_or_else(|| AgentError::ToolError("Cannot find home directory".into()))?;
-        
+
         // Create a unique identifier for the project
         let project_id = project_path
             .canonicalize()
             .map_err(|e| AgentError::ToolError(format!("Cannot canonicalize path: {}", e)))?
             .to_string_lossy()
             .to_string();
-        
+
         // Simple hash of project path
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         project_id.hash(&mut hasher);
         let hash = format!("{:x}", hasher.finish());
-        
-        Ok(home.join(".limit").join("projects").join(&hash).join("tldr"))
+
+        Ok(home
+            .join(".limit")
+            .join("projects")
+            .join(&hash)
+            .join("tldr"))
     }
-    
+
     /// Perform analysis based on parameters
     async fn analyze(&self, params: TldrParams) -> Result<Value, AgentError> {
         let project_path = params
             .project_path
             .map(PathBuf::from)
             .unwrap_or_else(|| self.default_project.clone());
-        
+
         let tldr = self.get_tldr(&project_path).await?;
-        
+
         match params.analysis_type {
             AnalysisType::Context => {
                 let function = params.function.ok_or_else(|| {
                     AgentError::ToolError("function parameter required for context analysis".into())
                 })?;
-                
+
                 let context = tldr
                     .get_context(&function, params.depth)
                     .await
-                    .map_err(|e| AgentError::ToolError(format!("Context analysis failed: {}", e)))?;
-                
+                    .map_err(|e| {
+                        AgentError::ToolError(format!("Context analysis failed: {}", e))
+                    })?;
+
                 Ok(json!({
                     "type": "context",
                     "function": function,
@@ -191,16 +192,16 @@ impl TldrTool {
                     "context": context
                 }))
             }
-            
+
             AnalysisType::Impact => {
                 let function = params.function.ok_or_else(|| {
                     AgentError::ToolError("function parameter required for impact analysis".into())
                 })?;
-                
+
                 let callers = tldr
                     .get_impact(&function)
                     .map_err(|e| AgentError::ToolError(format!("Impact analysis failed: {}", e)))?;
-                
+
                 Ok(json!({
                     "type": "impact",
                     "function": function,
@@ -212,7 +213,7 @@ impl TldrTool {
                     "caller_count": callers.len()
                 }))
             }
-            
+
             AnalysisType::Cfg => {
                 let file = params.file.ok_or_else(|| {
                     AgentError::ToolError("file parameter required for CFG analysis".into())
@@ -220,12 +221,12 @@ impl TldrTool {
                 let function = params.function.ok_or_else(|| {
                     AgentError::ToolError("function parameter required for CFG analysis".into())
                 })?;
-                
+
                 let file_path = project_path.join(&file);
                 let cfg = tldr
                     .get_cfg(&file_path, &function)
                     .map_err(|e| AgentError::ToolError(format!("CFG analysis failed: {}", e)))?;
-                
+
                 Ok(json!({
                     "type": "cfg",
                     "function": function,
@@ -234,7 +235,7 @@ impl TldrTool {
                     "blocks": cfg.blocks.len()
                 }))
             }
-            
+
             AnalysisType::Dfg => {
                 let file = params.file.ok_or_else(|| {
                     AgentError::ToolError("file parameter required for DFG analysis".into())
@@ -242,12 +243,12 @@ impl TldrTool {
                 let function = params.function.ok_or_else(|| {
                     AgentError::ToolError("function parameter required for DFG analysis".into())
                 })?;
-                
+
                 let file_path = project_path.join(&file);
                 let dfg = tldr
                     .get_dfg(&file_path, &function)
                     .map_err(|e| AgentError::ToolError(format!("DFG analysis failed: {}", e)))?;
-                
+
                 Ok(json!({
                     "type": "dfg",
                     "function": function,
@@ -256,13 +257,13 @@ impl TldrTool {
                     "flows": dfg.flows.len()
                 }))
             }
-            
+
             AnalysisType::DeadCode => {
                 let entries: Vec<&str> = params.entries.iter().map(|s| s.as_str()).collect();
-                let dead = tldr
-                    .find_dead_code(&entries)
-                    .map_err(|e| AgentError::ToolError(format!("Dead code analysis failed: {}", e)))?;
-                
+                let dead = tldr.find_dead_code(&entries).map_err(|e| {
+                    AgentError::ToolError(format!("Dead code analysis failed: {}", e))
+                })?;
+
                 Ok(json!({
                     "type": "dead_code",
                     "entries": params.entries,
@@ -274,12 +275,12 @@ impl TldrTool {
                     "dead_count": dead.len()
                 }))
             }
-            
+
             AnalysisType::Architecture => {
-                let arch = tldr
-                    .detect_architecture()
-                    .map_err(|e| AgentError::ToolError(format!("Architecture detection failed: {}", e)))?;
-                
+                let arch = tldr.detect_architecture().map_err(|e| {
+                    AgentError::ToolError(format!("Architecture detection failed: {}", e))
+                })?;
+
                 Ok(json!({
                     "type": "architecture",
                     "entry_points": arch.entry,
@@ -287,17 +288,17 @@ impl TldrTool {
                     "leaf_functions": arch.leaf
                 }))
             }
-            
+
             AnalysisType::Search => {
-                let query = params.query.unwrap_or_else(|| {
-                    params.function.clone().unwrap_or_default()
-                });
-                
+                let query = params
+                    .query
+                    .unwrap_or_else(|| params.function.clone().unwrap_or_default());
+
                 let results = tldr
                     .semantic_search(&query, params.limit)
                     .await
                     .map_err(|e| AgentError::ToolError(format!("Search failed: {}", e)))?;
-                
+
                 Ok(json!({
                     "type": "search",
                     "query": query,
@@ -323,14 +324,14 @@ impl Tool for TldrTool {
     fn name(&self) -> &str {
         "tldr_analyze"
     }
-    
+
     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
         // Parse parameters
         let params: TldrParams = serde_json::from_value(args)
             .map_err(|e| AgentError::ToolError(format!("Invalid parameters: {}", e)))?;
-        
+
         debug!("TLDR analysis: {:?}", params.analysis_type);
-        
+
         self.analyze(params).await
     }
 }
@@ -389,14 +390,14 @@ pub fn tldr_tool_definition() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_tool_definition() {
         let def = tldr_tool_definition();
         assert_eq!(def["name"], "tldr_analyze");
         assert!(def["parameters"]["properties"]["analysis_type"]["enum"].is_array());
     }
-    
+
     #[test]
     fn test_params_deserialization() {
         let json = json!({
@@ -404,10 +405,26 @@ mod tests {
             "function": "main",
             "depth": 3
         });
-        
+
         let params: TldrParams = serde_json::from_value(json).unwrap();
         assert!(matches!(params.analysis_type, AnalysisType::Context));
         assert_eq!(params.function, Some("main".to_string()));
         assert_eq!(params.depth, 3);
+    }
+
+    #[tokio::test]
+    async fn test_cache_returns_cached_instance() {
+        let tool = TldrTool::new();
+        let test_path = std::env::current_dir().unwrap();
+
+        let tldr1 = tool.get_tldr(&test_path).await.unwrap();
+        let tldr2 = tool.get_tldr(&test_path).await.unwrap();
+
+        let addr1 = Arc::as_ptr(&tldr1) as usize;
+        let addr2 = Arc::as_ptr(&tldr2) as usize;
+        assert_eq!(
+            addr1, addr2,
+            "Second call should return cached instance (same memory address)"
+        );
     }
 }
