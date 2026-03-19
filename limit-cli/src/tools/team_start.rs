@@ -51,16 +51,27 @@ impl Tool for TeamStartTool {
     }
 
     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
-        // Check recursion depth
-        let current_depth = self.depth.load(Ordering::Relaxed);
-        if current_depth >= self.max_depth {
-            return Ok(json!({
-                "success": false,
-                "error": format!(
-                    "Maximum recursion depth ({}) reached. Cannot spawn more child teams.",
-                    self.max_depth
-                )
-            }));
+        // Atomically check-and-increment depth using CAS
+        let mut current = self.depth.load(Ordering::Relaxed);
+        loop {
+            if current >= self.max_depth {
+                return Ok(json!({
+                    "success": false,
+                    "error": format!(
+                        "Maximum recursion depth ({}) reached. Cannot spawn more child teams.",
+                        self.max_depth
+                    )
+                }));
+            }
+            match self.depth.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::SeqCst,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
         }
 
         // Parse args
@@ -71,6 +82,7 @@ impl Tool for TeamStartTool {
             .trim();
 
         if task.is_empty() {
+            self.depth.fetch_sub(1, Ordering::SeqCst);
             return Ok(json!({
                 "success": false,
                 "error": "Missing required parameter: task (string description of what the child team should do)"
@@ -86,15 +98,12 @@ impl Tool for TeamStartTool {
             .and_then(|v| v.as_u64())
             .map(|n| n as usize);
 
-        // Increment depth
-        self.depth.fetch_add(1, Ordering::Relaxed);
-
         let result = self
             .run_child_team(task, juniors_override, max_parallel_override)
             .await;
 
         // Decrement depth
-        self.depth.fetch_sub(1, Ordering::Relaxed);
+        self.depth.fetch_sub(1, Ordering::SeqCst);
 
         result
     }
