@@ -504,7 +504,10 @@ base_url = "https://custom-endpoint.example.com/v1"
 
     #[test]
     fn test_role_default_tools() {
-        assert!(Role::PM.default_tools().is_empty(), "PM should have no tools");
+        assert!(
+            Role::PM.default_tools().is_empty(),
+            "PM should have no tools"
+        );
         assert!(Role::TL.default_tools().contains(&"bash"));
         assert!(Role::TL.default_tools().contains(&"file_read"));
         assert_eq!(

@@ -81,16 +81,13 @@ impl OrchestratorActor {
             .send(msg)
             .await
             .map_err(|e| AgentError::ActorError(format!("PM mailbox closed: {e}")))?;
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(PHASE_TIMEOUT_SECS),
-            rx,
-        )
-        .await
-        .map_err(|_| AgentError::PhaseTimeout {
-            phase: "PM".to_string(),
-            seconds: PHASE_TIMEOUT_SECS,
-        })?
-        .map_err(|_| AgentError::ActorError("PM reply channel dropped".into()))?;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(PHASE_TIMEOUT_SECS), rx)
+            .await
+            .map_err(|_| AgentError::PhaseTimeout {
+                phase: "PM".to_string(),
+                seconds: PHASE_TIMEOUT_SECS,
+            })?
+            .map_err(|_| AgentError::ActorError("PM reply channel dropped".into()))?;
         tracing::info!(
             "[orchestrator] PM replied in {:?} ({} chars)",
             start.elapsed(),
@@ -109,16 +106,13 @@ impl OrchestratorActor {
             .send(msg)
             .await
             .map_err(|e| AgentError::ActorError(format!("TL mailbox closed: {e}")))?;
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(PHASE_TIMEOUT_SECS),
-            rx,
-        )
-        .await
-        .map_err(|_| AgentError::PhaseTimeout {
-            phase: "TL".to_string(),
-            seconds: PHASE_TIMEOUT_SECS,
-        })?
-        .map_err(|_| AgentError::ActorError("TL reply channel dropped".into()))?;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(PHASE_TIMEOUT_SECS), rx)
+            .await
+            .map_err(|_| AgentError::PhaseTimeout {
+                phase: "TL".to_string(),
+                seconds: PHASE_TIMEOUT_SECS,
+            })?
+            .map_err(|_| AgentError::ActorError("TL reply channel dropped".into()))?;
         tracing::info!(
             "[orchestrator] TL replied in {:?} ({} chars)",
             start.elapsed(),

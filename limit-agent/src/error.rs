@@ -31,9 +31,10 @@ impl Clone for AgentError {
             AgentError::TeamError(s) => AgentError::TeamError(s.clone()),
             AgentError::LlmError(s) => AgentError::LlmError(s.clone()),
             AgentError::ActorError(s) => AgentError::ActorError(s.clone()),
-            AgentError::PhaseTimeout { phase, seconds } => {
-                AgentError::PhaseTimeout { phase: phase.clone(), seconds: *seconds }
-            }
+            AgentError::PhaseTimeout { phase, seconds } => AgentError::PhaseTimeout {
+                phase: phase.clone(),
+                seconds: *seconds,
+            },
         }
     }
 }
