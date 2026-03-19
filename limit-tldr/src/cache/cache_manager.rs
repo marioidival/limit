@@ -66,10 +66,7 @@ impl CacheManager {
         let hash = blake3::hash(&content).to_string();
         self.file_hashes.insert(file.to_path_buf(), hash);
 
-        let cache_path = self.cache_dir.join(format!(
-            "parse_cache/{}.json",
-            file.display().to_string().replace(['/', '\\'], "_")
-        ));
+        let cache_path = self.cache_path_for_file(file);
 
         if let Some(parent) = cache_path.parent() {
             std::fs::create_dir_all(parent)
@@ -115,10 +112,12 @@ impl CacheManager {
     }
 
     fn cache_path_for_file(&self, file: &Path) -> PathBuf {
-        self.cache_dir.join(format!(
-            "parse_cache/{}.json",
-            file.display().to_string().replace(['/', '\\'], "_")
-        ))
+        // Use blake3 hash of canonical path to avoid collisions
+        // e.g., "src/main.rs" and "src\main.rs" would collide with naive replacement
+        let path_str = file.display().to_string();
+        let hash = blake3::hash(path_str.as_bytes());
+        self.cache_dir
+            .join(format!("parse_cache/{}.json", hash.to_hex()))
     }
 
     /// Store call graph
