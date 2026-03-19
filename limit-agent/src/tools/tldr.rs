@@ -173,7 +173,7 @@ impl TldrTool {
 
         let tldr = self.get_tldr(&project_path).await?;
 
-        match params.analysis_type {
+        let result = match params.analysis_type {
             AnalysisType::Context => {
                 let function = params.function.ok_or_else(|| {
                     AgentError::ToolError("function parameter required for context analysis".into())
@@ -310,7 +310,10 @@ impl TldrTool {
                     })).collect::<Vec<_>>()
                 }))
             }
-        }
+        };
+
+        debug!("Analysis complete for: {:?}", params.analysis_type);
+        result
     }
 }
 
@@ -331,7 +334,13 @@ impl Tool for TldrTool {
         let params: TldrParams = serde_json::from_value(args)
             .map_err(|e| AgentError::ToolError(format!("Invalid parameters: {}", e)))?;
 
-        debug!("TLDR analysis: {:?}", params.analysis_type);
+        info!("tldr_analyze invoked: type={:?}", params.analysis_type);
+        if let Some(ref f) = &params.function {
+            debug!("  function: {}", f);
+        }
+        if let Some(ref q) = &params.query {
+            debug!("  query: {}", q);
+        }
 
         self.analyze(params).await
     }
@@ -341,14 +350,14 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Analyze code structure and dependencies with 95% token savings. Use before editing code to understand context, impact, and dependencies.",
+        "description": "Token-efficient code analysis. Use to: (1) understand code structure before editing, (2) find callers/dependencies (impact), (3) explore architecture layers, (4) search functions by name, (5) detect dead code. Saves 95% tokens vs reading raw code. Use `architecture` to understand module structure, `search` to find functions by pattern, `context` to get function dependencies.",
         "parameters": {
             "type": "object",
             "properties": {
                 "analysis_type": {
                     "type": "string",
                     "enum": ["context", "impact", "cfg", "dfg", "dead_code", "architecture", "search"],
-                    "description": "Type of analysis to perform"
+                    "description": "Type of analysis: context=function dependencies, impact=callers, cfg=control flow, dfg=data flow, dead_code=unreachable, architecture=module layers, search=find functions"
                 },
                 "function": {
                     "type": "string",
@@ -371,7 +380,7 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "query": {
                     "type": "string",
-                    "description": "Search query for finding functions"
+                    "description": "Search query for finding functions (supports patterns like 'daemon', 'auth', 'handle_*')"
                 },
                 "limit": {
                     "type": "integer",
