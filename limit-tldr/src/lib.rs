@@ -42,64 +42,6 @@
 
 pub mod cache;
 
-#[cfg(unix)]
-pub mod daemon;
-
-#[cfg(not(unix))]
-pub mod daemon {
-    //! Daemon module stub for non-Unix platforms
-    pub use crate::error::{Error, Result};
-
-    pub struct Daemon;
-    pub struct DaemonClient;
-
-    impl Daemon {
-        pub async fn new(_: impl Into<std::path::PathBuf>) -> Result<Self> {
-            Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "Daemon not available on this platform",
-            )))
-        }
-
-        pub fn socket_path(_: &std::path::Path) -> std::path::PathBuf {
-            std::path::PathBuf::from("/tmp/tldr-stub.sock")
-        }
-
-        pub fn pid_path(project_path: &std::path::Path) -> std::path::PathBuf {
-            project_path.join(".tldr").join("daemon.pid")
-        }
-
-        pub async fn is_running(_: &std::path::Path) -> bool {
-            false
-        }
-
-        pub async fn status(&self) -> crate::types::DaemonStatus {
-            crate::types::DaemonStatus {
-                running: false,
-                pid: None,
-                socket: std::path::PathBuf::from("/tmp/tldr-stub.sock"),
-                uptime: None,
-                files_indexed: 0,
-                cache_hit_rate: 0.0,
-                semantic_functions: None,
-            }
-        }
-
-        pub async fn run(&self) -> Result<()> {
-            Err(Error::Io(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "Daemon not available on this platform",
-            )))
-        }
-    }
-
-    impl DaemonClient {
-        pub fn new(_: &std::path::Path) -> Self {
-            Self
-        }
-    }
-}
-
 pub mod error;
 pub mod layers;
 pub mod parsers;

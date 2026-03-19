@@ -36,7 +36,10 @@ impl SemanticIndex {
         let mut results: Vec<SearchResult> = self
             .functions
             .iter()
-            .filter(|(name, _, _, _)| name.to_lowercase().contains(&query_lower))
+            .filter(|(name, file, _, _)| {
+                name.to_lowercase().contains(&query_lower)
+                    || file.to_string_lossy().to_lowercase().contains(&query_lower)
+            })
             .map(|(name, file, line, signature)| SearchResult {
                 function: name.clone(),
                 file: file.clone(),
