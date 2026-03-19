@@ -3,7 +3,10 @@
 //! Long-running background process with indexes in RAM for 300x faster queries.
 
 use std::io::{BufRead, BufReader, Write};
+
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
