@@ -10,14 +10,13 @@ pub fn estimate_tokens(text: &str) -> usize {
 /// This is a simplified implementation. In production, use tiktoken.
 pub fn count_tokens(text: &str) -> usize {
     // Simple approximation: words + punctuation
-    text.split_whitespace().count() +
-    text.chars().filter(|c| c.is_ascii_punctuation()).count()
+    text.split_whitespace().count() + text.chars().filter(|c| c.is_ascii_punctuation()).count()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_estimate_tokens() {
         let text = "def hello_world():\n    print('Hello, world!')";

@@ -10,10 +10,18 @@ pub fn is_hidden(path: &Path) -> bool {
 }
 
 pub fn should_skip(path: &Path) -> bool {
-    let skip_dirs = ["node_modules", "target", "venv", "__pycache__", ".git", "dist", "build"];
-    
+    let skip_dirs = [
+        "node_modules",
+        "target",
+        "venv",
+        "__pycache__",
+        ".git",
+        "dist",
+        "build",
+    ];
+
     path.components().any(|c| {
-        c.as_os_str().to_string_lossy().starts_with('.') ||
-        skip_dirs.contains(&c.as_os_str().to_string_lossy().as_ref())
+        c.as_os_str().to_string_lossy().starts_with('.')
+            || skip_dirs.contains(&c.as_os_str().to_string_lossy().as_ref())
     })
 }
