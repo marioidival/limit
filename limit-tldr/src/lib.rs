@@ -21,11 +21,20 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     let tldr = TLDR::new("./my-project", Config::default()).await?;
+//!     let mut tldr = TLDR::new("./my-project", Config::default()).await?;
 //!     
-//!     // Get function context
+//!     // Build indexes
+//!     tldr.warm().await?;
+//!     
+//!     // Get function context for LLM
 //!     let context = tldr.get_context("process_data", 2).await?;
 //!     println!("{}", context);
+//!     
+//!     // Impact analysis - who calls this function?
+//!     let callers = tldr.get_impact("hash_password")?;
+//!     for caller in callers {
+//!         println!("{}:{}", caller.file.display(), caller.line);
+//!     }
 //!     
 //!     Ok(())
 //! }
@@ -38,9 +47,6 @@ pub mod layers;
 pub mod semantic;
 pub mod types;
 pub mod utils;
-
-#[cfg(feature = "daemon")]
-pub mod cli;
 
 use std::path::{Path, PathBuf};
 
@@ -61,8 +67,7 @@ pub struct TLDR {
     cfg: CFGLayer,
     dfg: DFGLayer,
     pdg: PDGLayer,
-    #[cfg(feature = "semantic")]
-    semantic: Option<SemanticIndex>,
+    semantic: SemanticIndex,
 }
 
 /// Configuration for TLDR
@@ -72,9 +77,6 @@ pub struct Config {
     pub language: Language,
     /// Maximum depth for call graph traversal
     pub max_depth: usize,
-    /// Enable semantic search
-    #[cfg(feature = "semantic")]
-    pub enable_semantic: bool,
     /// Cache directory (defaults to .tldr/cache)
     pub cache_dir: Option<PathBuf>,
 }
@@ -84,8 +86,6 @@ impl Default for Config {
         Self {
             language: Language::Auto,
             max_depth: 3,
-            #[cfg(feature = "semantic")]
-            enable_semantic: true,
             cache_dir: None,
         }
     }
@@ -108,13 +108,7 @@ impl TLDR {
         let cfg = CFGLayer::new();
         let dfg = DFGLayer::new();
         let pdg = PDGLayer::new();
-        
-        #[cfg(feature = "semantic")]
-        let semantic = if config.enable_semantic {
-            Some(SemanticIndex::new()?)
-        } else {
-            None
-        };
+        let semantic = SemanticIndex::new()?;
         
         Ok(Self {
             project_path,
@@ -125,7 +119,6 @@ impl TLDR {
             cfg,
             dfg,
             pdg,
-            #[cfg(feature = "semantic")]
             semantic,
         })
     }
@@ -141,10 +134,8 @@ impl TLDR {
         // Layer 3-5: Build CFG, DFG, PDG for each function
         // These are computed on-demand
         
-        #[cfg(feature = "semantic")]
-        if let Some(ref mut semantic) = self.semantic {
-            semantic.warm(&self.ast, &self.call_graph).await?;
-        }
+        // Semantic index
+        self.semantic.warm(&self.ast, &self.call_graph).await?;
         
         Ok(())
     }
@@ -236,12 +227,13 @@ impl TLDR {
     }
     
     /// Semantic search for code
-    #[cfg(feature = "semantic")]
     pub async fn semantic_search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
-        let semantic = self.semantic.as_ref()
-            .ok_or(Error::SemanticDisabled)?;
-        
-        semantic.search(query, limit).await
+        self.semantic.search(query, limit).await
+    }
+    
+    /// Get semantic index reference
+    pub fn semantic_index(&self) -> &SemanticIndex {
+        &self.semantic
     }
     
     /// Find dead code
