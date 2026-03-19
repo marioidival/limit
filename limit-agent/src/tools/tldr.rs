@@ -76,6 +76,7 @@ fn default_limit() -> usize {
 }
 
 /// TLDR tool for code analysis
+#[allow(clippy::type_complexity)]
 pub struct TldrTool {
     /// Cached TLDR instance per project
     cache: Arc<RwLock<Option<(PathBuf, Arc<TLDR>)>>>,
