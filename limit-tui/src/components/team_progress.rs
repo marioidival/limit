@@ -37,6 +37,16 @@ pub fn render_team_progress(frame: &mut Frame, area: Rect, snapshot: &TaskProgre
             format!(" {}", snapshot.finish_summary),
             Style::default().fg(color),
         )));
+        if snapshot.tokens_input > 0 || snapshot.tokens_output > 0 {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "   {}k in / {}k out tokens",
+                    snapshot.tokens_input / 1000,
+                    snapshot.tokens_output / 1000,
+                ),
+                Style::default().fg(color),
+            )));
+        }
     }
 
     // Status text lines (dimmed, truncated agent output — char-safe, multi-line support)
@@ -118,6 +128,12 @@ pub fn panel_height(snapshot: &TaskProgressSnapshot) -> u16 {
     }
     let border = 2u16; // Borders::ALL: top + bottom
     let finish_summary_line = if snapshot.finished { 1 } else { 0 };
+    let token_line =
+        if snapshot.finished && (snapshot.tokens_input > 0 || snapshot.tokens_output > 0) {
+            1
+        } else {
+            0
+        };
     // Multi-line status support: render up to 2 lines
     let status_lines = if snapshot.status_text.is_empty() {
         0
@@ -125,13 +141,13 @@ pub fn panel_height(snapshot: &TaskProgressSnapshot) -> u16 {
         snapshot.status_text.lines().take(2).count() as u16
     };
     let content = if snapshot.tasks.is_empty() {
-        1 + finish_summary_line + status_lines // phase bar only
+        1 + finish_summary_line + token_line + status_lines // phase bar only
     } else {
         let task_lines = (snapshot.tasks.len().min(6) as u16) + 1; // +1 for "Tasks:" header
         let more_line = if snapshot.tasks.len() > 6 { 1 } else { 0 };
-        1 + finish_summary_line + status_lines + task_lines + more_line // phase bar + status + tasks
+        1 + finish_summary_line + token_line + status_lines + task_lines + more_line // phase bar + status + tasks
     };
-    (border + content).clamp(3, 11)
+    (border + content).clamp(3, 12)
 }
 
 fn build_phase_bar(snapshot: &TaskProgressSnapshot, width: usize) -> Line<'static> {

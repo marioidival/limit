@@ -31,6 +31,7 @@ pub struct TeamProgressSnapshot {
     pub task_list_expanded: bool,
     pub tokens_input: u64,
     pub tokens_output: u64,
+    pub streaming_text: String,
 }
 
 /// Thread-safe state that receives events and produces snapshots.
@@ -68,6 +69,7 @@ impl TeamProgressState {
             TeamProgressEvent::PhaseChanged {
                 phase, completed, ..
             } => {
+                state.streaming_text.clear();
                 if !state.is_active {
                     state.is_active = true;
                     state.started_at = Some(Instant::now());
@@ -107,6 +109,7 @@ impl TeamProgressState {
                 }
             }
             TeamProgressEvent::Finished { success, .. } => {
+                state.streaming_text.clear();
                 state.finished = true;
                 state.success = success;
                 state.phases_completed = PHASE_COUNT;
@@ -158,6 +161,9 @@ impl TeamProgressState {
             } => {
                 state.tokens_input = input_tokens;
                 state.tokens_output = output_tokens;
+            }
+            TeamProgressEvent::StreamChunk { text, .. } => {
+                state.streaming_text.push_str(&text);
             }
         }
     }
@@ -231,6 +237,9 @@ pub fn drain_progress_events(
                     } => {
                         format!("TokenUpdate({}in/{}out)", input_tokens, output_tokens)
                     }
+                    TeamProgressEvent::StreamChunk { text, .. } => {
+                        format!("StreamChunk({:.30}…)", text)
+                    }
                     TeamProgressEvent::Finished { success, .. } => {
                         format!("Finished({})", success)
                     }
@@ -293,6 +302,9 @@ impl TeamProgressSnapshot {
             finish_summary: self.finish_summary.clone(),
             task_scroll_offset: self.task_scroll_offset,
             task_list_expanded: self.task_list_expanded,
+            tokens_input: self.tokens_input,
+            tokens_output: self.tokens_output,
+            streaming_text: self.streaming_text.clone(),
         }
     }
 }

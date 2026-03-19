@@ -64,4 +64,7 @@ pub struct TaskProgressSnapshot {
     pub finish_summary: String,
     pub task_scroll_offset: usize,
     pub task_list_expanded: bool,
+    pub tokens_input: u64,
+    pub tokens_output: u64,
+    pub streaming_text: String,
 }
