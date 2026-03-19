@@ -9,6 +9,7 @@ use chrono::Datelike;
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
+use limit_agent::tldr_tool_definition;
 use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use limit_llm::ProviderFactory;
@@ -1150,52 +1151,13 @@ impl AgentBridge {
                     "required": ["action"]
                 }),
             ),
-            "tldr_analyze" => (
-                "Analyze code structure and dependencies with 95% token savings. Use before editing code to understand context, impact, and dependencies.".to_string(),
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "analysis_type": {
-                            "type": "string",
-                            "enum": ["context", "impact", "cfg", "dfg", "dead_code", "architecture", "search"],
-                            "description": "Type of analysis to perform"
-                        },
-                        "function": {
-                            "type": "string",
-                            "description": "Function name to analyze (required for context, impact, cfg, dfg)"
-                        },
-                        "file": {
-                            "type": "string",
-                            "description": "File path relative to project root (required for cfg, dfg)"
-                        },
-                        "depth": {
-                            "type": "integer",
-                            "description": "Depth for context traversal (default: 2)",
-                            "default": 2
-                        },
-                        "entries": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Entry points for dead code detection (default: [\"main\"])",
-                            "default": ["main"]
-                        },
-                        "query": {
-                            "type": "string",
-                            "description": "Search query for finding functions"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum results for search (default: 10)",
-                            "default": 10
-                        },
-                        "project_path": {
-                            "type": "string",
-                            "description": "Project path (defaults to current directory)"
-                        }
-                    },
-                    "required": ["analysis_type"]
-                }),
-            ),
+            "tldr_analyze" => {
+                let tool_def = tldr_tool_definition();
+                (
+                    tool_def["description"].as_str().unwrap_or("").to_string(),
+                    tool_def["parameters"].clone()
+                )
+            },
             _ => (
                 format!("Tool: {}", name),
                 json!({
