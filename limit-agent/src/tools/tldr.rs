@@ -350,7 +350,7 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Token-efficient code analysis. Use to: (1) understand code structure before editing, (2) find callers/dependencies (impact), (3) explore architecture layers, (4) search functions by name, (5) detect dead code. Saves 95% tokens vs reading raw code. Use `architecture` to understand module structure, `search` to find functions by pattern, `context` to get function dependencies.",
+        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Use `search` with query='keyword' to find relevant code. Saves 95% tokens vs reading raw code. Also useful for: understanding code structure before editing, finding callers/dependencies (impact analysis), exploring architecture layers, detecting dead code.",
         "parameters": {
             "type": "object",
             "properties": {
