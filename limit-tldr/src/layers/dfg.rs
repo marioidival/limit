@@ -2,23 +2,15 @@
 //!
 //! Tracks variable definitions and uses.
 
-use std::collections::HashMap;
-
 use crate::error::Result;
 use crate::types::{DFGInfo, FunctionInfo, VariableFlow};
 
 /// Data flow graph layer
-pub struct DFGLayer {
-    // Cache of computed DFGs
-    #[allow(dead_code)]
-    cache: HashMap<String, DFGInfo>,
-}
+pub struct DFGLayer {}
 
 impl DFGLayer {
     pub fn new() -> Self {
-        Self {
-            cache: std::collections::HashMap::new(),
-        }
+        Self {}
     }
 
     /// Analyze a function and compute its DFG
