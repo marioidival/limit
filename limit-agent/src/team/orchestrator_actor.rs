@@ -815,34 +815,68 @@ impl OrchestratorActor {
 }
 
 /// Truncate CONTEXT blocks within a task description to `max_chars`.
+///
+/// Each CONTEXT block is truncated independently. Non-CONTEXT text is preserved.
 fn truncate_context(description: &str, max_chars: usize) -> String {
     if description.len() <= max_chars {
         return description.to_string();
     }
 
-    // Find CONTEXT: blocks and truncate their content
     let context_marker = "\nCONTEXT:\n";
-    if let Some(pos) = description.find(context_marker) {
-        let prefix = &description[..pos + context_marker.len()];
-        let content = &description[pos + context_marker.len()..];
+    let mut result = String::with_capacity(max_chars);
+    let mut remaining = max_chars;
 
-        let remaining = max_chars.saturating_sub(prefix.len());
+    let parts: Vec<&str> = description.split(context_marker).collect();
+
+    // First part is always text (before first CONTEXT)
+    if let Some(first) = parts.first() {
+        if first.is_empty() {
+            // Description starts with CONTEXT
+        } else if first.len() <= remaining {
+            result.push_str(first);
+            remaining -= first.len();
+        } else {
+            let end = first
+                .char_indices()
+                .take_while(|(i, _)| *i < remaining)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(remaining.min(first.len()));
+            result.push_str(&first[..end]);
+            remaining = 0;
+        }
+    }
+
+    // Process CONTEXT + content pairs
+    for chunk in parts.get(1..).unwrap_or(&[]) {
+        let header = "CONTEXT:\n";
+        let header_len = header.len();
+        if header_len > remaining {
+            break;
+        }
+        result.push_str(header);
+        remaining -= header_len;
+
         if remaining == 0 {
-            return description[..pos].to_string();
+            break;
         }
 
-        // Truncate at a character boundary
-        let end = content
+        let end = chunk
             .char_indices()
             .take_while(|(i, _)| *i < remaining)
             .last()
             .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(remaining.min(content.len()));
+            .unwrap_or(remaining.min(chunk.len()));
+        result.push_str(&chunk[..end]);
+        remaining = remaining.saturating_sub(end);
 
-        format!("{}{}...(truncated)", prefix, &content[..end])
-    } else {
-        description.to_string()
+        if remaining == 0 {
+            result.push_str("...(truncated)");
+            break;
+        }
     }
+
+    result
 }
 
 /// Count **FAIL** entries in TL validation output.
@@ -921,5 +955,14 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"2".to_string()));
         assert!(ids.contains(&"3".to_string()));
+    }
+
+    #[test]
+    fn test_truncate_context_multiple_context_blocks() {
+        let long_ctx = "x".repeat(500);
+        let desc = format!("TASK: Do thing\nCONTEXT:\nshort\nMore text\nCONTEXT:\n{}", long_ctx);
+        let result = truncate_context(&desc, 200);
+        assert!(result.contains("CONTEXT:\nshort\nMore text"));
+        assert!(result.contains("...(truncated)"));
     }
 }
