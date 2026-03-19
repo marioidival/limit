@@ -73,6 +73,32 @@ pub fn render_team_progress(frame: &mut Frame, area: Rect, snapshot: &TaskProgre
         }
     }
 
+    // Streaming text (live agent output during PM/TL phases)
+    if !snapshot.finished && !snapshot.streaming_text.is_empty() {
+        let stream_lines: Vec<&str> = snapshot.streaming_text.lines().take(3).collect();
+        for msg in stream_lines {
+            let mut msg_str = msg.to_string();
+            let max_msg_len = width.saturating_sub(2);
+            if msg_str.chars().count() > max_msg_len {
+                let mut truncated = String::with_capacity(max_msg_len);
+                for (i, ch) in msg_str.chars().enumerate() {
+                    if i >= max_msg_len.saturating_sub(1) {
+                        break;
+                    }
+                    truncated.push(ch);
+                }
+                truncated.push('…');
+                msg_str = truncated;
+            }
+            lines.push(Line::from(Span::styled(
+                format!(" {}", msg_str),
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::DIM),
+            )));
+        }
+    }
+
     // Add task list (max 6 visible tasks)
     let max_task_lines = 6usize;
     let visible_tasks = snapshot.tasks.len().min(max_task_lines);
@@ -140,12 +166,18 @@ pub fn panel_height(snapshot: &TaskProgressSnapshot) -> u16 {
     } else {
         snapshot.status_text.lines().take(2).count() as u16
     };
+    // Streaming text: up to 3 lines when workflow is active
+    let stream_lines = if snapshot.finished || snapshot.streaming_text.is_empty() {
+        0
+    } else {
+        snapshot.streaming_text.lines().take(3).count() as u16
+    };
     let content = if snapshot.tasks.is_empty() {
-        1 + finish_summary_line + token_line + status_lines // phase bar only
+        1 + finish_summary_line + token_line + status_lines + stream_lines // phase bar only
     } else {
         let task_lines = (snapshot.tasks.len().min(6) as u16) + 1; // +1 for "Tasks:" header
         let more_line = if snapshot.tasks.len() > 6 { 1 } else { 0 };
-        1 + finish_summary_line + token_line + status_lines + task_lines + more_line // phase bar + status + tasks
+        1 + finish_summary_line + token_line + status_lines + stream_lines + task_lines + more_line // phase bar + status + stream + tasks
     };
     (border + content).clamp(3, 12)
 }

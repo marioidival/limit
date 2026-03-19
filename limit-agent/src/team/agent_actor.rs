@@ -102,7 +102,6 @@ impl AgentActor {
     }
 
     /// Stream a prompt, forwarding text chunks as progress events.
-    #[allow(dead_code)] // wired in next task
     /// Returns the full accumulated text.
     async fn stream_prompt(&mut self, input: &str) -> Result<String, AgentError> {
         let mut stream = std::pin::pin!(self.agent.prompt_stream(input));
@@ -180,7 +179,7 @@ impl Actor for AgentActor {
                 TeamMessage::PmAnalyze { request, reply, .. } => {
                     tracing::info!("[actor] PM received PmAnalyze ({} chars)", request.len());
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "User request:\n{request}\n\n\
                              Analyze this request from a PRODUCT perspective.\n\
                              Do NOT explore code or file structure. Focus on user needs and business value.\n\n\
@@ -195,10 +194,10 @@ impl Actor for AgentActor {
                         .await;
                     self.log_event(
                         "analysis",
-                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                        &result.clone().unwrap_or_default(),
                     )
                     .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
@@ -222,7 +221,7 @@ impl Actor for AgentActor {
                             .join("\n")
                     };
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "Technical solution validated by TL:\n{validation}\n\n\
                              Task results:\n{results_summary}\n\n\
                              Files modified:\n{files_list}\n\n\
@@ -233,10 +232,10 @@ impl Actor for AgentActor {
                         .await;
                     self.log_event(
                         "delivery",
-                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                        &result.clone().unwrap_or_default(),
                     )
                     .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
@@ -246,24 +245,24 @@ impl Actor for AgentActor {
                         plan.len()
                     );
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "The Tech Lead produced a plan but no specific tasks. Here is the plan:\n\n{plan}\n\n\
                              Summarize this for the user and suggest next steps."
                         ))
                         .await;
                     self.log_event(
                         "delivery",
-                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                        &result.clone().unwrap_or_default(),
                     )
                     .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
                 TeamMessage::TlPlan { analysis, reply } => {
                     tracing::info!("[actor] TL received TlPlan ({} chars)", analysis.len());
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "PM analysis:\n{analysis}\n\nCreate a detailed technical plan to implement this. \
                              Output the plan directly — do NOT say you will explore, read files, or investigate. \
                              You have no tools. Produce the plan now based on the analysis above."
@@ -271,17 +270,17 @@ impl Actor for AgentActor {
                         .await;
                     self.log_event(
                         "plan",
-                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                        &result.clone().unwrap_or_default(),
                     )
                     .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
                 TeamMessage::TlBreakdown { plan, reply } => {
                     tracing::info!("[actor] TL received TlBreakdown ({} chars)", plan.len());
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "Technical plan:\n{plan}\n\n\
                              Break this down into at most {MAX_TASKS} specific, executable tasks.\n\
                              Each task must be self-contained and independently completable by a junior developer.\n\n\
@@ -312,7 +311,7 @@ impl Actor for AgentActor {
                              Output ONLY the task list, starting with TASK: on each task."
                         ))
                         .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
@@ -334,7 +333,7 @@ impl Actor for AgentActor {
                             .join("\n")
                     };
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "Files modified during task execution:\n{files_list}\n\n\
                              Based on the project structure, suggest a single shell command to verify \
                              that the changes compile/build correctly.\n\n\
@@ -344,10 +343,10 @@ impl Actor for AgentActor {
                         .await;
                     self.log_event(
                         "build_command",
-                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                        &result.clone().unwrap_or_default(),
                     )
                     .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
@@ -363,7 +362,7 @@ impl Actor for AgentActor {
                         files_list.len()
                     );
                     let result = self
-                        .prompt(&format!(
+                        .stream_prompt(&format!(
                             "Evaluate each task against its Definition of Done.\n\n\
                              Task results:\n{results_summary}\n\n\
                              {files_list}\n\n\
@@ -384,10 +383,10 @@ impl Actor for AgentActor {
                         .await;
                     self.log_event(
                         "validation",
-                        &result.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+                        &result.clone().unwrap_or_default(),
                     )
                     .await;
-                    let _ = reply.send(result.map(|r| r.text));
+                    let _ = reply.send(result);
                     Ok(())
                 }
 
