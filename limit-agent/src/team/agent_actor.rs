@@ -13,6 +13,7 @@ use crate::team::history::{EventLevel, TeamEvent, TeamHistory};
 use crate::team::orchestrator::TaskResult;
 use crate::team::progress::TeamProgressEvent;
 use crate::team::role::Role;
+use futures::StreamExt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -98,6 +99,30 @@ impl AgentActor {
 
     fn trim_history(&mut self) {
         self.agent.trim_history(MAX_HISTORY_PER_AGENT);
+    }
+
+    /// Stream a prompt, forwarding text chunks as progress events.
+    #[allow(dead_code)] // wired in next task
+    /// Returns the full accumulated text.
+    async fn stream_prompt(&mut self, input: &str) -> Result<String, AgentError> {
+        let mut stream = std::pin::pin!(self.agent.prompt_stream(input));
+        let mut full_text = String::new();
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(text) => {
+                    full_text.push_str(&text);
+                    send_progress(
+                        &self.progress_tx,
+                        TeamProgressEvent::StreamChunk {
+                            text: text.clone(),
+                            nesting: 0,
+                        },
+                    );
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(full_text)
     }
 
     /// Extract file/tool information from text for sub-status messages.

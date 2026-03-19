@@ -37,6 +37,11 @@ pub enum TeamProgressEvent {
     },
     /// Status text shown after each phase completes (truncated agent output).
     StatusUpdate { message: String, nesting: u32 },
+    /// A chunk of text from an agent's streaming response.
+    StreamChunk {
+        text: String,
+        nesting: u32,
+    },
     /// Token usage update (cumulative across all agents).
     TokenUpdate {
         input_tokens: u64,
@@ -102,6 +107,7 @@ impl TeamProgressEvent {
                 nesting,
             },
             Self::StatusUpdate { message, .. } => Self::StatusUpdate { message, nesting },
+            Self::StreamChunk { text, .. } => Self::StreamChunk { text, nesting },
             Self::TokenUpdate {
                 input_tokens,
                 output_tokens,

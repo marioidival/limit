@@ -101,6 +101,9 @@ pub fn send_progress(
                 crate::team::progress::TeamProgressEvent::StatusUpdate { message, .. } => {
                     format!("StatusUpdate({:.50}…)", message)
                 }
+                crate::team::progress::TeamProgressEvent::StreamChunk { text, .. } => {
+                    format!("StreamChunk({:.30}…)", text)
+                }
                 crate::team::progress::TeamProgressEvent::TokenUpdate {
                     input_tokens,
                     output_tokens,
