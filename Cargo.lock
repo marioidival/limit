@@ -2260,7 +2260,6 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "limit-llm",
- "limit-tldr",
  "serde",
  "serde_json",
  "tempfile",
@@ -2269,7 +2268,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "uuid",
- "walkdir",
 ]
 
 [[package]]
@@ -2288,6 +2286,7 @@ dependencies = [
  "ignore",
  "limit-agent",
  "limit-llm",
+ "limit-tldr",
  "limit-tui",
  "lsp-types",
  "ratatui",
@@ -2307,6 +2306,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]
