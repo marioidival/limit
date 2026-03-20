@@ -28,7 +28,7 @@ impl TreeSitterParser {
             #[cfg(feature = "tree-sitter-extra")]
             Language::Ruby => Some(tree_sitter_ruby::LANGUAGE.into()),
             #[cfg(feature = "tree-sitter-extra")]
-            Language::PHP => Some(tree_sitter_php::LANGUAGE.into()),
+            Language::PHP => Some(tree_sitter_php::LANGUAGE_PHP.into()),
             #[cfg(feature = "tree-sitter-extra")]
             Language::CSharp => Some(tree_sitter_c_sharp::LANGUAGE.into()),
             _ => None,
