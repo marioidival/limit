@@ -1069,6 +1069,7 @@ mod tests {
     use super::*;
     use crate::agent_bridge::AgentBridge;
     use crate::tui::bridge::TuiBridge;
+    use std::io::IsTerminal;
     use tokio::sync::mpsc;
 
     /// Create a test config for AgentBridge
@@ -1097,12 +1098,15 @@ mod tests {
 
     #[test]
     fn test_tui_app_new() {
-        let config = create_test_config();
-        let agent_bridge = AgentBridge::new(config).unwrap();
-        let (_tx, rx) = mpsc::unbounded_channel();
+        // Terminal::new() calls backend.size() which fails without a TTY
+        if std::io::stdout().is_terminal() {
+            let config = create_test_config();
+            let agent_bridge = AgentBridge::new(config).unwrap();
+            let (_tx, rx) = mpsc::unbounded_channel();
 
-        let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
-        let app = TuiApp::new(tui_bridge);
-        assert!(app.is_ok());
+            let tui_bridge = TuiBridge::new(agent_bridge, rx).unwrap();
+            let app = TuiApp::new(tui_bridge);
+            assert!(app.is_ok());
+        }
     }
 }
