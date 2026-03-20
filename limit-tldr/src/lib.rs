@@ -288,6 +288,29 @@ impl TLDR {
         self.ast.find_function(name)
     }
 
+    /// Find all functions matching name (for disambiguation when name is ambiguous)
+    pub fn find_all_functions(&self, name: &str) -> Vec<FunctionInfo> {
+        self.ast
+            .find_all_functions(name)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Find a function, preferring one in the given file
+    pub fn find_function_in(
+        &self,
+        name: &str,
+        file: &Path,
+    ) -> Result<Option<FunctionInfo>> {
+        self.ast.find_function_preferring_file(name, file)
+    }
+
+    /// Get the project path
+    pub fn project_path(&self) -> &Path {
+        &self.project_path
+    }
+
     /// Get file tree of indexed files
     pub fn tree(&self) -> Result<Vec<PathBuf>> {
         Ok(self.ast.files())
