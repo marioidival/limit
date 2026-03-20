@@ -25,6 +25,8 @@ uuid = { version = "1.0", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tracing = "0.1"
 dirs = "5.0"
+walkdir = "2.5"
 
 [dev-dependencies]
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
+tempfile = "3"
