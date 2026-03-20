@@ -136,8 +136,10 @@ impl TreeSitterParser {
             .unwrap_or_default();
         let return_type = self.find_child_by_field(node, "return_type", source);
 
-        let signature = self.node_text(node, source);
-        let is_async = signature.contains("async");
+        let full_text = self.node_text(node, source);
+        let is_async = full_text.contains("async");
+        // Extract only the signature line (fn/async fn ... {), not the full body
+        let signature = full_text.lines().next().unwrap_or(&full_text).to_string();
 
         let params = self.parse_params(&params_text);
 
