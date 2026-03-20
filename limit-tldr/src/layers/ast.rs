@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::cache::CacheManager;
 use crate::error::{Error, Result};
 use crate::parsers::tree_sitter::TreeSitterParser;
-use crate::types::{FileAnalysis, FunctionInfo, Language};
+use crate::types::{ClassInfo, FileAnalysis, FunctionInfo, Language};
 
 /// AST analysis layer
 pub struct ASTLayer {
@@ -119,6 +119,51 @@ impl ASTLayer {
         Ok(None)
     }
 
+    /// Find all functions matching name across all files (for disambiguation)
+    pub fn find_all_functions(&self, name: &str) -> Vec<&FunctionInfo> {
+        self.file_cache
+            .values()
+            .flat_map(|a| a.functions.iter())
+            .filter(|f| f.name == name)
+            .collect()
+    }
+
+    /// Find a function, preferring one in the given file path
+    pub fn find_function_preferring_file(
+        &self,
+        name: &str,
+        preferred_file: &Path,
+    ) -> Result<Option<FunctionInfo>> {
+        // First try exact file match
+        if let Some(analysis) = self.file_cache.get(preferred_file) {
+            for func in &analysis.functions {
+                if func.name == name {
+                    return Ok(Some(func.clone()));
+                }
+            }
+        }
+
+        // Fallback: try file path contains the preferred path
+        let preferred_str = preferred_file.to_string_lossy().to_lowercase();
+        for analysis in self.file_cache.values() {
+            if analysis
+                .file
+                .to_string_lossy()
+                .to_lowercase()
+                .contains(&preferred_str)
+            {
+                for func in &analysis.functions {
+                    if func.name == name {
+                        return Ok(Some(func.clone()));
+                    }
+                }
+            }
+        }
+
+        // Last resort: return first match
+        self.find_function(name)
+    }
+
     /// Find a function in a specific file
     pub fn find_function_in_file(&self, file: &Path, name: &str) -> Result<Option<FunctionInfo>> {
         if let Some(analysis) = self.file_cache.get(file) {
@@ -136,6 +181,14 @@ impl ASTLayer {
         self.file_cache
             .values()
             .flat_map(|a| a.functions.iter())
+            .collect()
+    }
+
+    /// Get all classes/structs
+    pub fn all_classes(&self) -> Vec<&ClassInfo> {
+        self.file_cache
+            .values()
+            .flat_map(|a| a.classes.iter())
             .collect()
     }
 
