@@ -766,6 +766,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires fastembed model download — run with: cargo test -- --ignored test_cache_returns_cached_instance"]
     async fn test_cache_returns_cached_instance() {
         let tool = TldrTool::new();
         let test_path = std::env::current_dir().unwrap();
