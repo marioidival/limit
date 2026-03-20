@@ -47,7 +47,7 @@ impl SemanticIndex {
         #[cfg(feature = "semantic")]
         {
             match TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGESmallENV15)) {
-                Ok(model) => {
+                Ok(mut model) => {
                     let texts: Vec<String> = self
                         .functions
                         .iter()
