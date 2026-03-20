@@ -67,13 +67,7 @@ impl SemanticIndex {
             .map(|c| {
                 let name = format!("struct {}", c.name);
                 let sig = format!("struct {} {{ /* {} fields */ }}", c.name, c.fields.len());
-                (
-                    name,
-                    c.file.clone(),
-                    c.line,
-                    sig,
-                    EntryKind::Struct,
-                )
+                (name, c.file.clone(), c.line, sig, EntryKind::Struct)
             })
             .collect();
 

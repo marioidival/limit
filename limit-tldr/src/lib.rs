@@ -298,11 +298,7 @@ impl TLDR {
     }
 
     /// Find a function, preferring one in the given file
-    pub fn find_function_in(
-        &self,
-        name: &str,
-        file: &Path,
-    ) -> Result<Option<FunctionInfo>> {
+    pub fn find_function_in(&self, name: &str, file: &Path) -> Result<Option<FunctionInfo>> {
         self.ast.find_function_preferring_file(name, file)
     }
 
