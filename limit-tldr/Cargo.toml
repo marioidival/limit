@@ -56,7 +56,7 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 fastembed = { version = "5", optional = true }
 
 [features]
-default = []
+default = ["semantic"]
 semantic = ["fastembed"]
 tree-sitter-extra = ["tree-sitter-ruby", "tree-sitter-php", "tree-sitter-c-sharp"]
 

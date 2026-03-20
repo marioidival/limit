@@ -10,9 +10,7 @@ use crate::error::Result;
 use crate::layers::CallGraphLayer;
 use crate::types::{FileAnalysis, SearchResult};
 
-#[cfg(feature = "semantic")]
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-#[cfg(feature = "semantic")]
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -24,7 +22,6 @@ const CACHE_VERSION: &str = "v3";
 struct SemanticCache {
     version: String,
     entries: Vec<(String, PathBuf, usize, String, String)>,
-    #[cfg(feature = "semantic")]
     #[serde(skip_serializing_if = "Option::is_none")]
     embeddings: Option<Vec<Vec<f32>>>,
 }
@@ -41,9 +38,7 @@ type Entry = (String, PathBuf, usize, String, EntryKind);
 
 pub struct SemanticIndex {
     entries: Vec<Entry>,
-    #[cfg(feature = "semantic")]
     embeddings: Option<Vec<Vec<f32>>>,
-    #[cfg(feature = "semantic")]
     model: Option<Mutex<TextEmbedding>>,
 }
 
@@ -51,9 +46,7 @@ impl SemanticIndex {
     pub fn new() -> Result<Self> {
         Ok(Self {
             entries: Vec::new(),
-            #[cfg(feature = "semantic")]
             embeddings: None,
-            #[cfg(feature = "semantic")]
             model: None,
         })
     }
@@ -95,48 +88,42 @@ impl SemanticIndex {
         entries.extend(struct_entries);
         self.entries = entries;
 
-        #[cfg(not(feature = "semantic"))]
-        let _ = call_graph;
-
-        #[cfg(feature = "semantic")]
-        {
-            match TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGESmallENV15)) {
-                Ok(mut model) => {
-                    let texts: Vec<String> = self
-                        .entries
-                        .iter()
-                        .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
-                        .map(|(name, _, _, sig, _)| {
-                            let mut text = format!("{} {}", name, sig);
-                            if let Ok(callers) = call_graph.get_backward_calls(name) {
-                                let names: Vec<&str> =
-                                    callers.iter().map(|c| c.function.as_str()).collect();
-                                if !names.is_empty() {
-                                    text.push_str(&format!(" called_by: {}", names.join(", ")));
-                                }
+        match TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGESmallENV15)) {
+            Ok(mut model) => {
+                let texts: Vec<String> = self
+                    .entries
+                    .iter()
+                    .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
+                    .map(|(name, _, _, sig, _)| {
+                        let mut text = format!("{} {}", name, sig);
+                        if let Ok(callers) = call_graph.get_backward_calls(name) {
+                            let names: Vec<&str> =
+                                callers.iter().map(|c| c.function.as_str()).collect();
+                            if !names.is_empty() {
+                                text.push_str(&format!(" called_by: {}", names.join(", ")));
                             }
-                            if let Ok(callees) = call_graph.get_forward_calls(name) {
-                                if !callees.is_empty() {
-                                    text.push_str(&format!(" calls: {}", callees.join(", ")));
-                                }
+                        }
+                        if let Ok(callees) = call_graph.get_forward_calls(name) {
+                            if !callees.is_empty() {
+                                text.push_str(&format!(" calls: {}", callees.join(", ")));
                             }
-                            text
-                        })
-                        .collect();
+                        }
+                        text
+                    })
+                    .collect();
 
-                    match model.embed(texts, None) {
-                        Ok(embeddings) => {
-                            self.embeddings = Some(embeddings);
-                            self.model = Some(Mutex::new(model));
-                        }
-                        Err(e) => {
-                            tracing::warn!("Semantic embedding generation failed: {}", e);
-                        }
+                match model.embed(texts, None) {
+                    Ok(embeddings) => {
+                        self.embeddings = Some(embeddings);
+                        self.model = Some(Mutex::new(model));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Semantic embedding generation failed: {}", e);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to load embedding model: {}", e);
-                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load embedding model: {}", e);
             }
         }
         Ok(())
@@ -153,14 +140,8 @@ impl SemanticIndex {
     }
 
     /// Whether embeddings were generated (only save if true)
-    #[cfg(feature = "semantic")]
     pub fn should_save(&self) -> bool {
         self.embeddings.is_some()
-    }
-
-    #[cfg(not(feature = "semantic"))]
-    pub fn should_save(&self) -> bool {
-        !self.entries.is_empty()
     }
 
     /// Save semantic index to disk
@@ -190,7 +171,6 @@ impl SemanticIndex {
         let cache = SemanticCache {
             version: CACHE_VERSION.to_string(),
             entries,
-            #[cfg(feature = "semantic")]
             embeddings: self.embeddings.clone(),
         };
 
@@ -235,16 +215,12 @@ impl SemanticIndex {
             })
             .collect();
 
-        #[cfg(feature = "semantic")]
-        {
-            self.embeddings = cache.embeddings;
-        }
+        self.embeddings = cache.embeddings;
 
         true
     }
 
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
-        #[cfg(feature = "semantic")]
         if let (Some(model), Some(embeddings)) = (&self.model, &self.embeddings) {
             let mut model = model
                 .lock()
@@ -335,7 +311,6 @@ impl SemanticIndex {
     }
 }
 
-#[cfg(feature = "semantic")]
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
