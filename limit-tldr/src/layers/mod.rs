@@ -3,6 +3,7 @@
 pub mod ast;
 pub mod call_graph;
 pub mod cfg;
+pub mod cfg_builder;
 pub mod dfg;
 pub mod pdg;
 
