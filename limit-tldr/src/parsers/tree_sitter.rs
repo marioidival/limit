@@ -81,9 +81,12 @@ impl TreeSitterParser {
         let root = tree.root_node();
         self.walk_node(root, source, analysis);
 
-        // Set file paths for all extracted functions
+        // Set file paths for all extracted functions and classes
         for func in &mut analysis.functions {
             func.file = analysis.file.clone();
+        }
+        for cls in &mut analysis.classes {
+            cls.file = analysis.file.clone();
         }
 
         Ok(())
@@ -166,6 +169,7 @@ impl TreeSitterParser {
             methods: Vec::new(),
             fields: Vec::new(),
             line: node.start_position().row + 1,
+            end_line: node.end_position().row + 1,
             file: std::path::PathBuf::new(),
             docstring: None,
         })
@@ -307,6 +311,81 @@ impl TreeSitterParser {
 impl Default for TreeSitterParser {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod struct_extraction_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn rust_struct_extraction() {
+        let source = r#"pub struct AppConfig {
+    name: String,
+    port: u16,
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(
+            analysis.classes.len(),
+            1,
+            "Should find 1 struct, found {}: {:?}",
+            analysis.classes.len(),
+            analysis.classes.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
+        assert_eq!(analysis.classes[0].name, "AppConfig");
+        assert_eq!(analysis.classes[0].line, 1);
+        assert!(analysis.classes[0].end_line >= 3, "end_line should be >= 3");
+        assert_eq!(
+            analysis.classes[0].file,
+            PathBuf::from("test.rs"),
+            "ClassInfo.file should be set to the parsed file path"
+        );
+    }
+
+    #[test]
+    fn rust_struct_with_cfg_attrs() {
+        let source = r#"pub struct SemanticIndex {
+    entries: Vec<String>,
+    #[cfg(feature = "semantic")]
+    embeddings: Option<Vec<Vec<f32>>>,
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(
+            analysis.classes.len(),
+            1,
+            "Should find 1 struct with cfg attrs, found {}",
+            analysis.classes.len()
+        );
+        assert_eq!(analysis.classes[0].name, "SemanticIndex");
+    }
+
+    #[test]
+    fn rust_struct_and_function_together() {
+        let source = r#"pub struct MyStruct {
+    value: i32,
+}
+
+pub fn my_function() -> MyStruct {
+    MyStruct { value: 42 }
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.classes.len(), 1, "Should find 1 struct");
+        assert_eq!(analysis.functions.len(), 1, "Should find 1 function");
+        assert_eq!(analysis.classes[0].name, "MyStruct");
+        assert_eq!(analysis.functions[0].name, "my_function");
     }
 }
 

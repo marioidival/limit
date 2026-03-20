@@ -169,6 +169,50 @@ impl TldrTool {
             .join("tldr"))
     }
 
+    /// Build a source result JSON, reading the file and extracting lines
+    async fn build_source_result(
+        &self,
+        function: &str,
+        source_file: PathBuf,
+        start_line: usize,
+        end_line: usize,
+        project_path: &Path,
+    ) -> Result<Value, AgentError> {
+        let relative_file = source_file
+            .strip_prefix(project_path)
+            .unwrap_or(&source_file)
+            .to_path_buf();
+
+        let file_path = project_path.join(&source_file);
+        let source = tokio::fs::read_to_string(&file_path)
+            .await
+            .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
+
+        let lines: Vec<&str> = source.lines().collect();
+        let start = start_line.saturating_sub(1);
+        let end = end_line.min(lines.len());
+        let max_lines = 80;
+        let truncated = (end - start) > max_lines;
+        let actual_end = if truncated { start + max_lines } else { end };
+
+        let function_source = lines[start..actual_end].join("\n");
+
+        let mut result = json!({
+            "type": "source",
+            "function": function,
+            "file": relative_file.display().to_string(),
+            "line": start_line,
+            "end_line": actual_end,
+            "source": function_source
+        });
+        if truncated {
+            result["truncated"] = json!(true);
+            result["total_lines"] = json!(end - start);
+        }
+
+        Ok(result)
+    }
+
     /// Perform analysis based on parameters
     async fn analyze(&self, params: TldrParams) -> Result<Value, AgentError> {
         let project_path = params
@@ -204,78 +248,149 @@ impl TldrTool {
                     AgentError::ToolError("function parameter required for source analysis".into())
                 })?;
 
-                let func_info = if let Some(ref file) = params.file {
-                    // Disambiguate using file parameter
-                    let file_path = project_path.join(file);
-                    tldr.find_function_in(&function, &file_path)
-                        .map_err(|e| {
-                            AgentError::ToolError(format!("Source analysis failed: {}", e))
-                        })?
-                        .ok_or_else(|| {
-                            AgentError::ToolError(format!(
-                                "Function '{}' not found in '{}'",
-                                function, file
-                            ))
-                        })?
-                } else {
-                    // Try find_all to detect ambiguity
-                    let all_matches = tldr.find_all_functions(&function);
-                    if all_matches.len() > 1 {
-                        let match_list: Vec<String> = all_matches
-                            .iter()
-                            .map(|f| {
-                                let relative =
-                                    f.file.strip_prefix(&project_path).unwrap_or(&f.file);
-                                format!("{} ({}:{})", f.name, relative.display(), f.line)
-                            })
-                            .collect();
-                        return Ok(json!({
-                            "type": "disambiguation_needed",
-                            "function": function,
-                            "match_count": all_matches.len(),
-                            "matches": match_list,
-                            "hint": format!(
-                                "Use file parameter to disambiguate, e.g.: {{\"analysis_type\": \"source\", \"function\": \"{}\", \"file\": \"path/to/file.rs\"}}",
-                                function
-                            )
-                        }));
+                // Handle qualified method names: "StructName::method" (Rust/JS)
+                // Resolve the struct to its file, then search for the method name alone
+                let (function, file_override) = if !function.starts_with("struct ") {
+                    if let Some(pos) = function.find("::") {
+                        let class_name = &function[..pos];
+                        let method_name = &function[pos + 2..];
+                        if !method_name.is_empty() {
+                            let class_info = if let Some(ref file) = params.file {
+                                let file_path = project_path.join(file);
+                                tldr.find_class_in(class_name, &file_path).unwrap_or(None)
+                            } else {
+                                tldr.find_class(class_name).unwrap_or(None)
+                            };
+                            if let Some(info) = class_info {
+                                let resolved_file = info
+                                    .file
+                                    .strip_prefix(&project_path)
+                                    .unwrap_or(&info.file)
+                                    .to_string_lossy()
+                                    .to_string();
+                                (method_name.to_string(), Some(resolved_file))
+                            } else {
+                                (function, None)
+                            }
+                        } else {
+                            (function, None)
+                        }
+                    } else {
+                        (function, None)
                     }
-                    tldr.find_function(&function)
-                        .await
-                        .map_err(|e| {
-                            AgentError::ToolError(format!("Source analysis failed: {}", e))
-                        })?
-                        .ok_or_else(|| {
-                            AgentError::ToolError(format!("Function not found: {}", function))
-                        })?
+                } else {
+                    (function, None)
+                };
+                // Use resolved file if available, otherwise keep original
+                let effective_file = file_override.or(params.file.clone());
+
+                let is_struct = function.starts_with("struct ");
+                let lookup_name = if is_struct {
+                    function.strip_prefix("struct ").unwrap()
+                } else {
+                    &function
                 };
 
-                // Make file path relative to project root
-                let relative_file = func_info
-                    .file
-                    .strip_prefix(&project_path)
-                    .unwrap_or(&func_info.file)
-                    .to_path_buf();
+                let (source_file, start_line, end_line) = if is_struct {
+                    // Struct/class lookup
+                    let class_info = if let Some(ref file) = effective_file {
+                        let file_path = project_path.join(file);
+                        tldr.find_class_in(lookup_name, &file_path)
+                            .map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                AgentError::ToolError(format!(
+                                    "Struct '{}' not found in '{}'",
+                                    lookup_name, file
+                                ))
+                            })?
+                    } else {
+                        tldr.find_class(lookup_name)
+                            .map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                AgentError::ToolError(format!("Struct not found: {}", lookup_name))
+                            })?
+                    };
+                    (class_info.file, class_info.line, class_info.end_line)
+                } else {
+                    // Function lookup — also try struct/class fallback
+                    let func_info = if let Some(ref file) = effective_file {
+                        let file_path = project_path.join(file);
+                        // Try function first, then struct fallback
+                        if let Some(func) =
+                            tldr.find_function_in(&function, &file_path).map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                        {
+                            func
+                        } else if let Some(cls) =
+                            tldr.find_class_in(&function, &file_path).map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                        {
+                            // Found as struct — treat as struct lookup
+                            return self
+                                .build_source_result(
+                                    &function,
+                                    cls.file,
+                                    cls.line,
+                                    cls.end_line,
+                                    &project_path,
+                                )
+                                .await;
+                        } else {
+                            return Err(AgentError::ToolError(format!(
+                                "Function or struct '{}' not found in '{}'",
+                                function, file
+                            )));
+                        }
+                    } else {
+                        // Try find_all to detect ambiguity
+                        let all_matches = tldr.find_all_functions(&function);
+                        if all_matches.len() > 1 {
+                            let match_list: Vec<String> = all_matches
+                                .iter()
+                                .take(5)
+                                .map(|f| {
+                                    let relative =
+                                        f.file.strip_prefix(&project_path).unwrap_or(&f.file);
+                                    format!("{} ({}:{})", f.name, relative.display(), f.line)
+                                })
+                                .collect();
+                            return Ok(json!({
+                                "type": "disambiguation_needed",
+                                "function": function,
+                                "match_count": all_matches.len(),
+                                "matches": match_list,
+                                "hint": format!(
+                                    "Use file parameter to disambiguate, e.g.: {{\"analysis_type\": \"source\", \"function\": \"{}\", \"file\": \"path/to/file.rs\"}}",
+                                    function
+                                )
+                            }));
+                        }
+                        tldr.find_function(&function)
+                            .await
+                            .map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                AgentError::ToolError(format!("Function not found: {}", function))
+                            })?
+                    };
+                    (func_info.file, func_info.line, func_info.end_line)
+                };
 
-                let file_path = project_path.join(&func_info.file);
-                let source = tokio::fs::read_to_string(&file_path)
-                    .await
-                    .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
-
-                let lines: Vec<&str> = source.lines().collect();
-                let start = func_info.line.saturating_sub(1);
-                let end = func_info.end_line.min(lines.len());
-
-                let function_source = lines[start..end].join("\n");
-
-                Ok(json!({
-                    "type": "source",
-                    "function": function,
-                    "file": relative_file.display().to_string(),
-                    "line": func_info.line,
-                    "end_line": func_info.end_line,
-                    "source": function_source
-                }))
+                self.build_source_result(
+                    &function,
+                    source_file,
+                    start_line,
+                    end_line,
+                    &project_path,
+                )
+                .await
             }
 
             AnalysisType::Impact => {
@@ -507,7 +622,7 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "project_path": {
                     "type": "string",
-                    "description": "Project path (defaults to current directory)"
+                    "description": "Project root directory (defaults to current directory). Do NOT use file paths here — use 'file' parameter for file paths."
                 }
             },
             "required": ["analysis_type"]

@@ -170,35 +170,45 @@ impl SemanticIndex {
         let mut results: Vec<SearchResult> = self
             .entries
             .iter()
-            .filter(|(name, file, _, _, _)| {
-                name.to_lowercase().contains(&query_lower)
-                    || file.to_string_lossy().to_lowercase().contains(&query_lower)
+            .filter_map(|(name, file, line, signature, _)| {
+                let name_lower = name.to_lowercase();
+                let name_match = name_lower.contains(&query_lower);
+                let file_match = file.to_string_lossy().to_lowercase().contains(&query_lower);
+
+                if !name_match && !file_match {
+                    return None;
+                }
+
+                // Score: name matches rank higher than file-path-only matches
+                let score = if name_lower == query_lower {
+                    1.0 // exact name match
+                } else if name_lower.starts_with(&query_lower) {
+                    0.9 // name starts with query
+                } else if name_match {
+                    0.7 // name contains query
+                } else {
+                    0.3 // file path only
+                };
+
+                Some(SearchResult {
+                    function: name.clone(),
+                    file: file.clone(),
+                    line: *line,
+                    score,
+                    signature: signature.clone(),
+                })
             })
-            .map(|(name, file, line, signature, _)| SearchResult {
-                function: name.clone(),
-                file: file.clone(),
-                line: *line,
-                score: 1.0,
-                signature: signature.clone(),
-            })
-            .take(limit)
             .collect();
 
+        // Sort by score descending, then alphabetically
         results.sort_by(|a, b| {
-            let a_exact = a.function.to_lowercase() == query_lower;
-            let b_exact = b.function.to_lowercase() == query_lower;
-            let a_prefix = a.function.to_lowercase().starts_with(&query_lower);
-            let b_prefix = b.function.to_lowercase().starts_with(&query_lower);
-            match (a_exact, b_exact) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => match (a_prefix, b_prefix) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.function.cmp(&b.function),
-                },
-            }
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.function.cmp(&b.function))
         });
+
+        results.truncate(limit);
         Ok(results)
     }
 }

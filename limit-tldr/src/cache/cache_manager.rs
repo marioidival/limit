@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::types::FileAnalysis;
 
+/// Cache version - bump when parser logic changes to invalidate stale cache
+const CACHE_VERSION: &str = "v2";
+
 /// Cache manager for storing analysis results
 pub struct CacheManager {
     cache_dir: PathBuf,
@@ -49,7 +52,7 @@ impl CacheManager {
         let content =
             std::fs::read(file).map_err(|e| Error::Cache(format!("Failed to read file: {}", e)))?;
 
-        let hash = blake3::hash(&content).to_string();
+        let hash = format!("{}:{}", CACHE_VERSION, blake3::hash(&content).to_hex());
 
         Ok(self
             .file_hashes
@@ -63,7 +66,7 @@ impl CacheManager {
         let content =
             std::fs::read(file).map_err(|e| Error::Cache(format!("Failed to read file: {}", e)))?;
 
-        let hash = blake3::hash(&content).to_string();
+        let hash = format!("{}:{}", CACHE_VERSION, blake3::hash(&content).to_hex());
         self.file_hashes.insert(file.to_path_buf(), hash);
 
         let cache_path = self.cache_path_for_file(file);
