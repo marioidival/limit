@@ -224,10 +224,8 @@ impl TldrTool {
                         let match_list: Vec<String> = all_matches
                             .iter()
                             .map(|f| {
-                                let relative = f
-                                    .file
-                                    .strip_prefix(&project_path)
-                                    .unwrap_or(&f.file);
+                                let relative =
+                                    f.file.strip_prefix(&project_path).unwrap_or(&f.file);
                                 format!("{} ({}:{})", f.name, relative.display(), f.line)
                             })
                             .collect();

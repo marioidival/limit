@@ -513,7 +513,11 @@ impl AgentBridge {
 
                     // Truncate large tool results to prevent context bloat
                     let output_json = if output_json.len() > MAX_TOOL_RESULT_CHARS {
-                        format!("{}...\n\n[Result truncated: {} total chars]", &output_json[..MAX_TOOL_RESULT_CHARS], output_json.len())
+                        format!(
+                            "{}...\n\n[Result truncated: {} total chars]",
+                            &output_json[..MAX_TOOL_RESULT_CHARS],
+                            output_json.len()
+                        )
                     } else {
                         output_json
                     };
