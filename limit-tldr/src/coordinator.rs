@@ -90,28 +90,23 @@ impl ParseCoordinator {
 
     /// Discover source files in the project.
     fn discover_files(&self) -> Result<Vec<PathBuf>> {
-        use walkdir::WalkDir;
+        use ignore::WalkBuilder;
 
         let mut files = Vec::new();
 
-        for entry in WalkDir::new(&self.project_path)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|e| e.ok())
+        for result in WalkBuilder::new(&self.project_path)
+            .hidden(false)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .build()
         {
-            let path = entry.path();
+            let entry = result.map_err(|e| Error::ParseError {
+                file: self.project_path.display().to_string(),
+                message: e.to_string(),
+            })?;
 
-            let relative = path.strip_prefix(&self.project_path).unwrap_or(path);
-            if relative.components().any(|c| {
-                let s = c.as_os_str().to_string_lossy();
-                s.starts_with('.')
-                    || s == "node_modules"
-                    || s == "target"
-                    || s == "venv"
-                    || s == "__pycache__"
-            }) {
-                continue;
-            }
+            let path = entry.path();
 
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 if let Some(lang) = Language::from_extension(ext) {

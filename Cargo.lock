@@ -2340,6 +2340,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "fastembed",
+ "ignore",
  "rayon",
  "regex",
  "serde",
