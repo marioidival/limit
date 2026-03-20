@@ -19,7 +19,7 @@ async-trait = "0.1"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
 limit-llm = { path = "../limit-llm", version = "0.0.28" }
-limit-tldr = { path = "../limit-tldr", version = "0.1.0" }
+limit-tldr = { path = "../limit-tldr", version = "0.0.1" }
 bollard = "0.16"
 uuid = { version = "1.0", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["io"] }
