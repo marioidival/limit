@@ -5,14 +5,16 @@
 
 use crate::error::AgentError;
 use crate::tool::Tool;
+use crate::tools::warm_guard::WarmGuard;
 use async_trait::async_trait;
 use limit_tldr::{Config as TldrConfig, Language, TLDR};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::OnceCell;
-use tracing::{debug, info};
+use tokio::sync::{Notify, OnceCell};
+use tracing::{debug, info, warn};
 
 /// Analysis type to perform
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,14 +85,21 @@ pub struct TldrTool {
     cache: Arc<OnceCell<(PathBuf, Arc<TLDR>)>>,
     /// Default project path
     default_project: PathBuf,
+    /// Notify waiters when background warm completes
+    warm_notify: Arc<Notify>,
+    /// Whether pre_warm has been spawned (lazy, once inside tokio runtime)
+    warm_started: Arc<AtomicBool>,
 }
 
 impl TldrTool {
     /// Create a new TLDR tool with default project path
     pub fn new() -> Self {
+        let default_project = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         Self {
             cache: Arc::new(OnceCell::new()),
-            default_project: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            default_project,
+            warm_notify: Arc::new(Notify::new()),
+            warm_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -99,18 +108,124 @@ impl TldrTool {
         Self {
             cache: Arc::new(OnceCell::new()),
             default_project: project.into(),
+            warm_notify: Arc::new(Notify::new()),
+            warm_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Get or create TLDR instance for a project (thread-safe, initializes once)
+    /// Spawn pre_warm if not already started. Safe to call inside tokio runtime.
+    fn ensure_pre_warm_started(&self) {
+        if self
+            .warm_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            let project = self.default_project.clone();
+            let cache = Arc::clone(&self.cache);
+            let notify = Arc::clone(&self.warm_notify);
+
+            tokio::spawn(async move {
+                Self::pre_warm(project, cache, notify).await;
+            });
+        }
+    }
+
+    /// Background warm: check freshness, warm if stale, notify waiters.
+    async fn pre_warm(
+        project_path: PathBuf,
+        cache: Arc<OnceCell<(PathBuf, Arc<TLDR>)>>,
+        notify: Arc<Notify>,
+    ) {
+        let cache_dir = match Self::get_cache_dir(&project_path) {
+            Ok(dir) => dir,
+            Err(e) => {
+                warn!("pre_warm: failed to get cache dir: {}", e);
+                notify.notify_waiters();
+                return;
+            }
+        };
+
+        let guard = WarmGuard::new(&cache_dir);
+        if guard.is_fresh(&project_path) {
+            info!("pre_warm: skipping, warm is fresh");
+            notify.notify_waiters();
+            return;
+        }
+
+        info!("pre_warm: warming TLDR for {:?}", project_path);
+        let config = TldrConfig {
+            language: Language::Auto,
+            max_depth: 3,
+            cache_dir: Some(cache_dir),
+        };
+
+        match TLDR::new(&project_path, config).await {
+            Ok(mut tldr) => match tldr.warm().await {
+                Ok(()) => {
+                    guard.save(&project_path);
+                    info!("pre_warm: warm complete");
+                    let _ = cache.set((project_path, Arc::new(tldr))).map_err(|_| {
+                        debug!("pre_warm: OnceCell already set (race with get_tldr)");
+                    });
+                    notify.notify_waiters();
+                }
+                Err(e) => warn!("pre_warm: warm failed: {}", e),
+            },
+            Err(e) => warn!("pre_warm: TLDR::new failed: {}", e),
+        }
+        notify.notify_waiters();
+    }
+
+    /// Get or create TLDR instance for a project (thread-safe, initializes once).
+    ///
+    /// If pre_warm is still running, waits for it. Falls back to lazy creation
+    /// if pre_warm fails or hasn't started.
     async fn get_tldr(&self, project_path: &Path) -> Result<Arc<TLDR>, AgentError> {
         let project_path = project_path.to_path_buf();
         let project_path_for_check = project_path.clone();
-        let cache = Arc::clone(&self.cache);
 
+        // Kick off pre_warm on first call inside the tokio runtime
+        self.ensure_pre_warm_started();
+
+        // If cache already populated, return immediately
+        if let Some((cached_path, tldr)) = self.cache.get() {
+            if *cached_path == project_path_for_check {
+                debug!("TLDR cache hit for project: {:?}", project_path_for_check);
+                return Ok(Arc::clone(tldr));
+            }
+            return Err(AgentError::ToolError(format!(
+                "Project path mismatch: cached {:?} != requested {:?}",
+                cached_path, project_path_for_check
+            )));
+        }
+
+        // Wait for background warm to finish (with timeout fallback)
+        info!("get_tldr: waiting for pre_warm...");
+        tokio::select! {
+            _ = self.warm_notify.notified() => {
+                // pre_warm finished — check if it succeeded
+                if let Some((cached_path, tldr)) = self.cache.get() {
+                    if *cached_path == project_path_for_check {
+                        debug!("TLDR cache hit after pre_warm for: {:?}", project_path_for_check);
+                        return Ok(Arc::clone(tldr));
+                    }
+                }
+                // pre_warm failed or was skipped (fresh) — fall through to lazy
+                warn!("get_tldr: pre_warm did not populate cache, falling back to lazy");
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                warn!("get_tldr: pre_warm timed out after 30s, falling back to lazy");
+            }
+        }
+
+        // Lazy fallback
+        let cache = Arc::clone(&self.cache);
         let result: Result<&(PathBuf, Arc<TLDR>), AgentError> = cache
             .get_or_try_init(|| async {
-                info!("Creating TLDR instance for project: {:?}", project_path);
+                info!(
+                    "Lazy creating TLDR instance for project: {:?}",
+                    project_path
+                );
                 let config = TldrConfig {
                     language: Language::Auto,
                     max_depth: 3,
@@ -130,16 +245,11 @@ impl TldrTool {
             })
             .await;
 
-        let (cached_path, tldr) = result?;
-
-        if *cached_path != project_path_for_check {
-            return Err(AgentError::ToolError(format!(
-                "Project path mismatch: cached {:?} != requested {:?}. Only one project per session supported.",
-                cached_path, project_path_for_check
-            )));
-        }
-
-        debug!("TLDR cache hit for project: {:?}", project_path_for_check);
+        let (_cached_path, tldr) = result?;
+        debug!(
+            "TLDR cache hit (lazy) for project: {:?}",
+            project_path_for_check
+        );
         Ok(Arc::clone(tldr))
     }
 

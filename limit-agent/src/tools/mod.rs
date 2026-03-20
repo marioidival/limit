@@ -4,5 +4,7 @@
 //! a [`ToolRegistry`](crate::ToolRegistry).
 
 pub mod tldr;
+pub mod warm_guard;
 
 pub use tldr::{tldr_tool_definition, TldrTool};
+pub use warm_guard::WarmGuard;
