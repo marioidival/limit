@@ -342,7 +342,10 @@ impl Tool for TldrTool {
             debug!("  query: {}", q);
         }
 
-        self.analyze(params).await
+        let result = self.analyze(params).await?;
+        let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
+        info!("tldr_analyze result: {} chars, {} bytes", result_str.chars().count(), result_str.len());
+        Ok(result)
     }
 }
 
@@ -350,7 +353,7 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Use `search` with query='keyword' to find relevant code. Saves 95% tokens vs reading raw code. Also useful for: understanding code structure before editing, finding callers/dependencies (impact analysis), exploring architecture layers, detecting dead code.",
+        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Use `search` with query='keyword' to find relevant code. Saves 95% tokens vs reading raw code. IMPORTANT: Do NOT combine with file_read or other file tools - this tool provides all needed context. Also useful for: understanding code structure before editing, finding callers/dependencies (impact analysis), exploring architecture layers, detecting dead code.",
         "parameters": {
             "type": "object",
             "properties": {
