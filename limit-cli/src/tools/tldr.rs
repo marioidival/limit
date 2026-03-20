@@ -3,10 +3,10 @@
 //! Provides a tool interface for the `limit-tldr` library, enabling agents
 //! to analyze code structure, dependencies, and complexity.
 
-use limit_agent::AgentError;
-use limit_agent::Tool;
 use crate::tools::warm_guard::WarmGuard;
 use async_trait::async_trait;
+use limit_agent::AgentError;
+use limit_agent::Tool;
 use limit_tldr::{Config as TldrConfig, Language, TLDR};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
