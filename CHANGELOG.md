@@ -2,6 +2,184 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.29] - 2026-03-20
+
+### 🚀 Features
+
+- Add limit-tldr crate for code analysis
+
+- Expose TLDR tool in agent registry
+
+- Make CallGraphCache Clone for thread sharing
+
+- Wire TreeSitterParser into AST layer
+
+- Implement call graph extraction with tree-sitter
+
+- Add debug logging for tldr_analyze tool invocation
+
+- Add explicit triggers to tldr_analyze tool description
+
+- Add source analysis type to get function code
+
+- Add missing public API methods
+
+- Implement real CFG with McCabe cyclomatic complexity
+
+- Add CFG basic block splitting with edges
+
+- Implement real DFG with statement-scoped data flows
+
+- Implement backward program slicing via PDG
+
+- Implement embedding-based semantic search with text fallback
+
+- Add disambiguation and class lookup to ASTLayer
+
+- Add find_all_functions and project_path to public API
+
+- Include structs/classes in semantic search index
+
+- Rewrite warm() with parallel parsing, incremental cache, and semantic persistence
+
+- Add pre-warm TLDR on startup with smart freshness detection
+
+- Enable semantic feature by default
+
+
+### 🐛 Bug Fixes
+
+- Resolve all clippy warnings in limit-tldr
+
+- Resolve clippy warnings in TLDR implementation
+
+- Add #[cfg(unix)] guard to daemon module for Windows cross-compilation
+
+- Return cached TLDR instance instead of creating new one
+
+- Filter functions with empty file paths on cache load
+
+- Use blake3 hash for cache path to prevent collisions
+
+- Allow type_complexity for TldrTool cache
+
+- Discourage combining tldr_analyze with file_read
+
+- Limit Architecture output to counts + samples
+
+- Add stronger system prompt instruction to prefer tldr_analyze
+
+- Use OnceCell to prevent race condition in warm()
+
+- Fix PHP language constant and mut model in semantic search
+
+- Tighten system prompt to reduce token cost
+
+- Truncate large tool results to prevent context bloat
+
+- Add efficiency strategy to tool description
+
+- Disambiguate Source by file param, return relative paths
+
+- Add signatures and relative paths to Search results
+
+- Update tool description with disambiguation hints
+
+- Log errors before propagating from analyze()
+
+- Extract only signature line, not full function body
+
+- Resolve multiple source lookup failures causing excessive tokens
+
+- Skip test_tui_app_new in headless environments
+
+- Remove env var mutation from zai validation test
+
+- Fix CI test failure and relocate fastembed cache
+
+
+### 🚜 Refactor
+
+- Convert limit-tldr to pure library
+
+- Remove duplicate TldrTool, re-export from limit-agent
+
+- Remove direct limit-tldr dependency
+
+- Implement file path matching and remove daemon
+
+- Extract find_function_node to shared parser utility
+
+- Move warm_guard to limit-cli
+
+- Move tldr tool to limit-cli
+
+- Wire tldr and warm_guard modules in limit-cli
+
+- Remove tools module from limit-agent
+
+- Remove tool result truncation
+
+- Use .gitignore for file discovery
+
+
+### 📚 Documentation
+
+- Add TLDR analysis workflow to system prompt
+
+- Add warm() rewrite design
+
+- Add pre-warm startup design
+
+
+### 🎨 Styling
+
+- Apply cargo fmt to limit-tldr
+
+
+### 🧪 Testing
+
+- Add comprehensive test suite to limit-tldr
+
+- Add failing test for AST line numbers (RED phase)
+
+- Add failing test for file path matching
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.lock for limit-tldr
+
+- Add GitHub Actions workflow for cargo test
+
+- Remove dead layer caches and unused imports
+
+- Add .worktrees/ to .gitignore
+
+- Add fastembed v5 dependency for semantic search
+
+- Apply cargo fmt and update Cargo.lock
+
+- Run workflow only on pull requests
+
+- Remove plan docs from branch
+
+- Bump limit-tldr version to 0.0.1
+
+- Update Cargo.lock for limit-tldr 0.0.1
+
+- Add limit-tldr and walkdir deps to limit-cli
+
+- Update Cargo.lock
+
+- Remove simulate_session example
+
+- Add limit-tldr to release script
+
+## [0.0.29] - 2026-03-20
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.28] - 2026-03-15
 
 ### 🚀 Features
