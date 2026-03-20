@@ -423,16 +423,15 @@ model = "claude-3-5-sonnet-20241022"
 
     #[test]
     fn test_zai_config_validation() {
-        env::set_var("ZAI_API_KEY", "test-zai-key");
         let config_content = r#"
 provider = "zai"
 
 [providers.zai]
 model = "glm-4.7"
+api_key = "test-key"
 "#;
         let config: Config = toml::from_str(config_content).unwrap();
         config.validate().unwrap();
-        env::remove_var("ZAI_API_KEY");
     }
     #[test]
     fn test_zai_api_key_env_var() {
