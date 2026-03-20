@@ -15,8 +15,18 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 #[cfg(feature = "semantic")]
 use std::sync::Mutex;
 
+/// Entry kind for the search index
+#[derive(Debug, Clone)]
+enum EntryKind {
+    Function,
+    Struct,
+}
+
+/// Internal entry type shared between functions and structs
+type Entry = (String, PathBuf, usize, String, EntryKind);
+
 pub struct SemanticIndex {
-    functions: Vec<(String, PathBuf, usize, String)>,
+    entries: Vec<Entry>,
     #[cfg(feature = "semantic")]
     embeddings: Option<Vec<Vec<f32>>>,
     #[cfg(feature = "semantic")]
@@ -26,7 +36,7 @@ pub struct SemanticIndex {
 impl SemanticIndex {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            functions: Vec::new(),
+            entries: Vec::new(),
             #[cfg(feature = "semantic")]
             embeddings: None,
             #[cfg(feature = "semantic")]
@@ -35,11 +45,40 @@ impl SemanticIndex {
     }
 
     pub async fn warm(&mut self, ast: &ASTLayer, call_graph: &CallGraphLayer) -> Result<()> {
-        self.functions = ast
+        // Index functions
+        let mut entries: Vec<Entry> = ast
             .all_functions()
             .into_iter()
-            .map(|f| (f.name.clone(), f.file.clone(), f.line, f.signature.clone()))
+            .map(|f| {
+                (
+                    f.name.clone(),
+                    f.file.clone(),
+                    f.line,
+                    f.signature.clone(),
+                    EntryKind::Function,
+                )
+            })
             .collect();
+
+        // Index structs/classes (prefix with "struct " to distinguish)
+        let struct_entries: Vec<Entry> = ast
+            .all_classes()
+            .into_iter()
+            .map(|c| {
+                let name = format!("struct {}", c.name);
+                let sig = format!("struct {} {{ /* {} fields */ }}", c.name, c.fields.len());
+                (
+                    name,
+                    c.file.clone(),
+                    c.line,
+                    sig,
+                    EntryKind::Struct,
+                )
+            })
+            .collect();
+
+        entries.extend(struct_entries);
+        self.entries = entries;
 
         #[cfg(not(feature = "semantic"))]
         let _ = call_graph;
@@ -49,9 +88,10 @@ impl SemanticIndex {
             match TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGESmallENV15)) {
                 Ok(mut model) => {
                     let texts: Vec<String> = self
-                        .functions
+                        .entries
                         .iter()
-                        .map(|(name, _, _, sig)| {
+                        .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
+                        .map(|(name, _, _, sig, _)| {
                             let mut text = format!("{} {}", name, sig);
                             if let Ok(callers) = call_graph.get_backward_calls(name) {
                                 let names: Vec<&str> =
@@ -108,7 +148,7 @@ impl SemanticIndex {
                         .into_iter()
                         .take(limit)
                         .map(|(idx, score)| {
-                            let (name, file, line, sig) = &self.functions[idx];
+                            let (name, file, line, sig, _) = &self.entries[idx];
                             SearchResult {
                                 function: name.clone(),
                                 file: file.clone(),
@@ -134,13 +174,13 @@ impl SemanticIndex {
     async fn text_search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
         let query_lower = query.to_lowercase();
         let mut results: Vec<SearchResult> = self
-            .functions
+            .entries
             .iter()
-            .filter(|(name, file, _, _)| {
+            .filter(|(name, file, _, _, _)| {
                 name.to_lowercase().contains(&query_lower)
                     || file.to_string_lossy().to_lowercase().contains(&query_lower)
             })
-            .map(|(name, file, line, signature)| SearchResult {
+            .map(|(name, file, line, signature, _)| SearchResult {
                 function: name.clone(),
                 file: file.clone(),
                 line: *line,
@@ -193,18 +233,20 @@ mod tests {
     #[tokio::test]
     async fn text_search_fallback_works() {
         let mut index = SemanticIndex::new().unwrap();
-        index.functions = vec![
+        index.entries = vec![
             (
                 "verify_access_token".to_string(),
                 PathBuf::from("src/auth.py"),
                 10,
                 "fn verify_access_token(token: str) -> bool".to_string(),
+                EntryKind::Function,
             ),
             (
                 "get_user".to_string(),
                 PathBuf::from("src/db.py"),
                 5,
                 "fn get_user(id: int) -> User".to_string(),
+                EntryKind::Function,
             ),
         ];
 
@@ -216,18 +258,20 @@ mod tests {
     #[tokio::test]
     async fn search_ranks_exact_match_first() {
         let mut index = SemanticIndex::new().unwrap();
-        index.functions = vec![
+        index.entries = vec![
             (
                 "process_payment".to_string(),
                 PathBuf::from("src/pay.py"),
                 1,
                 "fn process_payment(amount: f64)".to_string(),
+                EntryKind::Function,
             ),
             (
                 "process_refund".to_string(),
                 PathBuf::from("src/pay.py"),
                 10,
                 "fn process_refund(amount: f64)".to_string(),
+                EntryKind::Function,
             ),
         ];
 
@@ -238,24 +282,27 @@ mod tests {
     #[tokio::test]
     async fn search_includes_file_path_matches() {
         let mut index = SemanticIndex::new().unwrap();
-        index.functions = vec![
+        index.entries = vec![
             (
                 "run".to_string(),
                 PathBuf::from("src/daemon/mod.rs"),
                 1,
                 "fn run()".to_string(),
+                EntryKind::Function,
             ),
             (
                 "handle".to_string(),
                 PathBuf::from("src/daemon/handler.rs"),
                 1,
                 "fn handle()".to_string(),
+                EntryKind::Function,
             ),
             (
                 "other".to_string(),
                 PathBuf::from("src/other.rs"),
                 1,
                 "fn other()".to_string(),
+                EntryKind::Function,
             ),
         ];
 
@@ -264,5 +311,30 @@ mod tests {
         assert!(results
             .iter()
             .any(|r| r.file.to_string_lossy().contains("daemon")));
+    }
+
+    #[tokio::test]
+    async fn search_finds_structs() {
+        let mut index = SemanticIndex::new().unwrap();
+        index.entries = vec![
+            (
+                "run".to_string(),
+                PathBuf::from("src/main.rs"),
+                1,
+                "fn run()".to_string(),
+                EntryKind::Function,
+            ),
+            (
+                "struct AppConfig".to_string(),
+                PathBuf::from("src/config.rs"),
+                10,
+                "struct AppConfig { /* 3 fields */ }".to_string(),
+                EntryKind::Struct,
+            ),
+        ];
+
+        let results = index.search("Config", 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].function, "struct AppConfig");
     }
 }
