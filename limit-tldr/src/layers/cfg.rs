@@ -3,7 +3,7 @@
 //! Analyzes branching logic and computes cyclomatic complexity using tree-sitter.
 
 use crate::error::{Error, Result};
-use crate::layers::cfg_builder::count_branches;
+use crate::layers::cfg_builder::{build_cfg, count_branches};
 use crate::parsers::tree_sitter::TreeSitterParser;
 use crate::types::{BasicBlock, CFGInfo, FunctionInfo, Language};
 
@@ -59,17 +59,24 @@ impl CFGLayer {
         let branches = count_branches(func_node);
         let complexity = 1 + branches;
 
-        let blocks = vec![BasicBlock {
-            id: 0,
-            statements: vec![format!("// Function: {}", func.name)],
-            start_line: func_node.start_position().row + 1,
-            end_line: func_node.end_position().row + 1,
-        }];
+        let graph = build_cfg(func_node, &source);
+        let blocks: Vec<BasicBlock> = graph
+            .blocks
+            .into_iter()
+            .enumerate()
+            .map(|(id, b)| BasicBlock {
+                id,
+                statements: b.statements,
+                start_line: b.start_line,
+                end_line: b.end_line,
+            })
+            .collect();
+        let edges = graph.edges;
 
         Ok(CFGInfo {
             function: func.name.clone(),
             blocks,
-            edges: vec![],
+            edges,
             complexity,
         })
     }
@@ -238,5 +245,37 @@ fn foo(x: i32) -> i32 {
             "Match with 3 arms should have complexity >= 3, got {}",
             cfg.complexity
         );
+    }
+
+    #[tokio::test]
+    async fn cfg_multiple_blocks_for_if_else() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(
+            dir.path().join("t.py"),
+            r#"
+def foo(x):
+    y = 1
+    if x > 0:
+        y = 2
+    else:
+        y = 3
+    return y
+"#,
+        )
+        .await
+        .unwrap();
+        let ast = ASTLayer::new(Language::Python);
+        let func = &ast
+            .analyze_file(&dir.path().join("t.py"))
+            .await
+            .unwrap()
+            .functions[0];
+
+        let cfg = CFGLayer::new().analyze(func).unwrap();
+        assert!(
+            cfg.blocks.len() >= 2,
+            "Should have at least 2 blocks for if/else"
+        );
+        assert!(!cfg.edges.is_empty(), "Should have edges between blocks");
     }
 }
