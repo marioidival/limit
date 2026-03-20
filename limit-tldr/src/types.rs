@@ -169,6 +169,8 @@ pub struct ClassInfo {
     pub fields: Vec<FieldInfo>,
     /// Line number
     pub line: usize,
+    /// End line number
+    pub end_line: usize,
     /// File path
     pub file: PathBuf,
     /// Docstring
@@ -193,6 +195,19 @@ pub struct ImportInfo {
     pub alias: Option<String>,
     /// Line number
     pub line: usize,
+}
+
+/// Call expression extracted during parsing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CallExpression {
+    /// Function containing the call
+    pub caller: String,
+    /// Function being called
+    pub callee: String,
+    /// Line number of the call
+    pub line: usize,
+    /// File path
+    pub file: PathBuf,
 }
 
 /// Caller information for impact analysis
@@ -313,6 +328,9 @@ pub struct FileAnalysis {
     pub classes: Vec<ClassInfo>,
     /// Imports
     pub imports: Vec<ImportInfo>,
+    /// Call expressions found
+    #[serde(default)]
+    pub call_expressions: Vec<CallExpression>,
     /// Language detected
     pub language: Language,
 }

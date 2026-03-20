@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use crate::error::Result;
-use crate::types::{ClassInfo, FileAnalysis, FunctionInfo, ImportInfo, Language, Parameter};
+use crate::types::{
+    CallExpression, ClassInfo, FileAnalysis, FunctionInfo, ImportInfo, Language, Parameter,
+};
 
 /// Parser using tree-sitter
 pub struct TreeSitterParser;
@@ -42,6 +44,7 @@ impl TreeSitterParser {
             functions: Vec::new(),
             classes: Vec::new(),
             imports: Vec::new(),
+            call_expressions: Vec::new(),
             language,
         };
 
@@ -79,18 +82,30 @@ impl TreeSitterParser {
             })?;
 
         let root = tree.root_node();
-        self.walk_node(root, source, analysis);
+        self.walk_node(root, source, analysis, &mut None);
 
-        // Set file paths for all extracted functions
+        // Set file paths for all extracted functions and classes
         for func in &mut analysis.functions {
             func.file = analysis.file.clone();
+        }
+        for cls in &mut analysis.classes {
+            cls.file = analysis.file.clone();
+        }
+        for call in &mut analysis.call_expressions {
+            call.file = analysis.file.clone();
         }
 
         Ok(())
     }
 
     /// Walk the tree-sitter tree and extract information
-    fn walk_node(&self, node: tree_sitter::Node, source: &str, analysis: &mut FileAnalysis) {
+    fn walk_node(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+        analysis: &mut FileAnalysis,
+        current_function: &mut Option<String>,
+    ) {
         let cursor = &mut node.walk();
 
         for child in node.children(cursor) {
@@ -101,7 +116,13 @@ impl TreeSitterParser {
                 | "method_definition"
                 | "arrow_function" => {
                     if let Some(func) = self.extract_function(child, source) {
+                        let name = func.name.clone();
                         analysis.functions.push(func);
+                        let prev = current_function.take();
+                        *current_function = Some(name);
+                        self.walk_node(child, source, analysis, current_function);
+                        *current_function = prev;
+                        continue;
                     }
                 }
                 // Class/struct definitions
@@ -120,11 +141,19 @@ impl TreeSitterParser {
                         analysis.imports.push(import);
                     }
                 }
+                // Call expressions
+                "call_expression" | "call" | "function_call" | "member_call" => {
+                    if let Some(caller) = current_function.as_deref() {
+                        if let Some(call) = self.extract_call(child, source, caller) {
+                            analysis.call_expressions.push(call);
+                        }
+                    }
+                }
                 _ => {}
             }
 
             // Recurse into children
-            self.walk_node(child, source, analysis);
+            self.walk_node(child, source, analysis, current_function);
         }
     }
 
@@ -136,8 +165,10 @@ impl TreeSitterParser {
             .unwrap_or_default();
         let return_type = self.find_child_by_field(node, "return_type", source);
 
-        let signature = self.node_text(node, source);
-        let is_async = signature.contains("async");
+        let full_text = self.node_text(node, source);
+        let is_async = full_text.contains("async");
+        // Extract only the signature line (fn/async fn ... {), not the full body
+        let signature = full_text.lines().next().unwrap_or(&full_text).to_string();
 
         let params = self.parse_params(&params_text);
 
@@ -164,6 +195,7 @@ impl TreeSitterParser {
             methods: Vec::new(),
             fields: Vec::new(),
             line: node.start_position().row + 1,
+            end_line: node.end_position().row + 1,
             file: std::path::PathBuf::new(),
             docstring: None,
         })
@@ -178,6 +210,38 @@ impl TreeSitterParser {
             names: Vec::new(),
             alias: None,
             line: node.start_position().row + 1,
+        })
+    }
+
+    /// Extract call expression from a tree-sitter node
+    fn extract_call(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+        caller: &str,
+    ) -> Option<CallExpression> {
+        let function_node = node
+            .child_by_field_name("function")
+            .or_else(|| node.child(0))?;
+
+        let callee = self.node_text(function_node, source);
+        // Take last segment: self.method() -> method, foo.bar.baz() -> baz, baz::qux() -> qux
+        let callee = callee
+            .split(['.', ':'])
+            .rfind(|s| !s.is_empty())
+            .unwrap_or(&callee)
+            .trim()
+            .to_string();
+
+        if callee.is_empty() || callee == "self" {
+            return None;
+        }
+
+        Some(CallExpression {
+            caller: caller.to_string(),
+            callee,
+            line: node.start_position().row + 1,
+            file: std::path::PathBuf::new(), // Set by caller
         })
     }
 
@@ -309,6 +373,81 @@ impl Default for TreeSitterParser {
 }
 
 #[cfg(test)]
+mod struct_extraction_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn rust_struct_extraction() {
+        let source = r#"pub struct AppConfig {
+    name: String,
+    port: u16,
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(
+            analysis.classes.len(),
+            1,
+            "Should find 1 struct, found {}: {:?}",
+            analysis.classes.len(),
+            analysis.classes.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
+        assert_eq!(analysis.classes[0].name, "AppConfig");
+        assert_eq!(analysis.classes[0].line, 1);
+        assert!(analysis.classes[0].end_line >= 3, "end_line should be >= 3");
+        assert_eq!(
+            analysis.classes[0].file,
+            PathBuf::from("test.rs"),
+            "ClassInfo.file should be set to the parsed file path"
+        );
+    }
+
+    #[test]
+    fn rust_struct_with_cfg_attrs() {
+        let source = r#"pub struct SemanticIndex {
+    entries: Vec<String>,
+    #[cfg(feature = "semantic")]
+    embeddings: Option<Vec<Vec<f32>>>,
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(
+            analysis.classes.len(),
+            1,
+            "Should find 1 struct with cfg attrs, found {}",
+            analysis.classes.len()
+        );
+        assert_eq!(analysis.classes[0].name, "SemanticIndex");
+    }
+
+    #[test]
+    fn rust_struct_and_function_together() {
+        let source = r#"pub struct MyStruct {
+    value: i32,
+}
+
+pub fn my_function() -> MyStruct {
+    MyStruct { value: 42 }
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.classes.len(), 1, "Should find 1 struct");
+        assert_eq!(analysis.functions.len(), 1, "Should find 1 function");
+        assert_eq!(analysis.classes[0].name, "MyStruct");
+        assert_eq!(analysis.functions[0].name, "my_function");
+    }
+}
+
+#[cfg(test)]
 mod node_finder_tests {
     use super::*;
 
@@ -352,5 +491,73 @@ mod node_finder_tests {
         let found = TreeSitterParser::find_function_node(tree.root_node(), "bar", source);
         assert!(found.is_some());
         assert_eq!(found.unwrap().start_position().row, 1);
+    }
+}
+
+#[cfg(test)]
+mod call_extraction_tests {
+    use super::*;
+
+    #[test]
+    fn rust_call_expressions_extracted() {
+        let source = r#"fn main() {
+    let x = foo();
+    bar(x);
+    baz::qux();
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.functions.len(), 1);
+        assert_eq!(analysis.call_expressions.len(), 3);
+
+        assert_eq!(analysis.call_expressions[0].caller, "main");
+        assert_eq!(analysis.call_expressions[0].callee, "foo");
+        assert_eq!(analysis.call_expressions[0].line, 2);
+
+        assert_eq!(analysis.call_expressions[1].caller, "main");
+        assert_eq!(analysis.call_expressions[1].callee, "bar");
+
+        assert_eq!(analysis.call_expressions[2].caller, "main");
+        assert_eq!(analysis.call_expressions[2].callee, "qux");
+    }
+
+    #[test]
+    fn python_call_expressions_extracted() {
+        let source = r#"def handler():
+    validate()
+    process(data)
+"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.py"), Language::Python)
+            .unwrap();
+
+        assert_eq!(analysis.functions.len(), 1);
+        assert_eq!(analysis.call_expressions.len(), 2);
+
+        assert_eq!(analysis.call_expressions[0].caller, "handler");
+        assert_eq!(analysis.call_expressions[0].callee, "validate");
+        assert_eq!(analysis.call_expressions[1].callee, "process");
+    }
+
+    #[test]
+    fn calls_outside_functions_not_extracted() {
+        let source = r#"fn main() {
+    inner()
+}
+fn inner() {}
+inner();"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        // Only the call inside main() should be captured
+        assert_eq!(analysis.call_expressions.len(), 1);
+        assert_eq!(analysis.call_expressions[0].caller, "main");
+        assert_eq!(analysis.call_expressions[0].callee, "inner");
     }
 }

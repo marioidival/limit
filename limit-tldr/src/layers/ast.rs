@@ -35,6 +35,11 @@ impl ASTLayer {
                 self.file_cache.insert(file, analysis);
             } else if let Some(analysis) = cache.get_file(&file)? {
                 self.file_cache.insert(file, analysis);
+            } else {
+                // Hash says cached but cache file missing — re-parse
+                let analysis = self.analyze_file(&file).await?;
+                cache.store_file(&file, &analysis)?;
+                self.file_cache.insert(file, analysis);
             }
         }
 
@@ -192,9 +197,47 @@ impl ASTLayer {
             .collect()
     }
 
+    /// Find a class/struct by name across all files
+    pub fn find_class(&self, name: &str) -> Result<Option<ClassInfo>> {
+        for analysis in self.file_cache.values() {
+            for cls in &analysis.classes {
+                if cls.name == name {
+                    return Ok(Some(cls.clone()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Find a class/struct by name, preferring one in the given file path
+    pub fn find_class_preferring_file(
+        &self,
+        name: &str,
+        preferred_file: &Path,
+    ) -> Result<Option<ClassInfo>> {
+        if let Some(analysis) = self.file_cache.get(preferred_file) {
+            for cls in &analysis.classes {
+                if cls.name == name {
+                    return Ok(Some(cls.clone()));
+                }
+            }
+        }
+
+        // Fallback: search all files
+        self.find_class(name)
+    }
+
     /// Get all indexed file paths
     pub fn files(&self) -> Vec<PathBuf> {
         self.file_cache.keys().cloned().collect()
+    }
+
+    /// Populate file cache from pre-computed analyses (used by ParseCoordinator flow)
+    pub fn populate(&mut self, analyses: &[crate::types::FileAnalysis]) {
+        for analysis in analyses {
+            self.file_cache
+                .insert(analysis.file.clone(), analysis.clone());
+        }
     }
 
     /// Get all file analyses

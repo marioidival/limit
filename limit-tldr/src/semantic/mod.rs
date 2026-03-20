@@ -4,16 +4,30 @@
 //! With `semantic` feature: local BGE embeddings via fastembed v5.
 //! NOTE: `semantic` feature adds ~50MB to binary via ONNX runtime.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
-use crate::layers::{ASTLayer, CallGraphLayer};
-use crate::types::SearchResult;
+use crate::layers::CallGraphLayer;
+use crate::types::{FileAnalysis, SearchResult};
 
 #[cfg(feature = "semantic")]
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 #[cfg(feature = "semantic")]
 use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+
+const CACHE_VERSION: &str = "v3";
+
+/// Serialized semantic index for persistence
+#[derive(Serialize, Deserialize)]
+struct SemanticCache {
+    version: String,
+    entries: Vec<(String, PathBuf, usize, String, String)>,
+    #[cfg(feature = "semantic")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    embeddings: Option<Vec<Vec<f32>>>,
+}
 
 /// Entry kind for the search index
 #[derive(Debug, Clone)]
@@ -44,30 +58,37 @@ impl SemanticIndex {
         })
     }
 
-    pub async fn warm(&mut self, ast: &ASTLayer, call_graph: &CallGraphLayer) -> Result<()> {
+    /// Build index from pre-computed file analyses
+    pub async fn build(
+        &mut self,
+        analyses: &[FileAnalysis],
+        call_graph: &CallGraphLayer,
+    ) -> Result<()> {
         // Index functions
-        let mut entries: Vec<Entry> = ast
-            .all_functions()
-            .into_iter()
-            .map(|f| {
-                (
-                    f.name.clone(),
-                    f.file.clone(),
-                    f.line,
-                    f.signature.clone(),
-                    EntryKind::Function,
-                )
+        let mut entries: Vec<Entry> = analyses
+            .iter()
+            .flat_map(|a| {
+                a.functions.iter().map(|f| {
+                    (
+                        f.name.clone(),
+                        f.file.clone(),
+                        f.line,
+                        f.signature.clone(),
+                        EntryKind::Function,
+                    )
+                })
             })
             .collect();
 
-        // Index structs/classes (prefix with "struct " to distinguish)
-        let struct_entries: Vec<Entry> = ast
-            .all_classes()
-            .into_iter()
-            .map(|c| {
-                let name = format!("struct {}", c.name);
-                let sig = format!("struct {} {{ /* {} fields */ }}", c.name, c.fields.len());
-                (name, c.file.clone(), c.line, sig, EntryKind::Struct)
+        // Index structs/classes
+        let struct_entries: Vec<Entry> = analyses
+            .iter()
+            .flat_map(|a| {
+                a.classes.iter().map(|c| {
+                    let name = format!("struct {}", c.name);
+                    let sig = format!("struct {} {{ /* {} fields */ }}", c.name, c.fields.len());
+                    (name, c.file.clone(), c.line, sig, EntryKind::Struct)
+                })
             })
             .collect();
 
@@ -121,6 +142,107 @@ impl SemanticIndex {
         Ok(())
     }
 
+    /// Backward-compatible warm using ASTLayer (delegates to build)
+    pub async fn warm(
+        &mut self,
+        ast: &crate::layers::ASTLayer,
+        call_graph: &CallGraphLayer,
+    ) -> Result<()> {
+        let analyses: Vec<FileAnalysis> = ast.file_analyses().into_iter().cloned().collect();
+        self.build(&analyses, call_graph).await
+    }
+
+    /// Whether embeddings were generated (only save if true)
+    #[cfg(feature = "semantic")]
+    pub fn should_save(&self) -> bool {
+        self.embeddings.is_some()
+    }
+
+    #[cfg(not(feature = "semantic"))]
+    pub fn should_save(&self) -> bool {
+        !self.entries.is_empty()
+    }
+
+    /// Save semantic index to disk
+    pub fn save(&self, cache_dir: &Path) -> Result<()> {
+        if self.entries.is_empty() {
+            return Ok(());
+        }
+
+        let entries: Vec<_> = self
+            .entries
+            .iter()
+            .map(|(name, file, line, sig, kind)| {
+                let kind_str = match kind {
+                    EntryKind::Function => "fn",
+                    EntryKind::Struct => "struct",
+                };
+                (
+                    name.clone(),
+                    file.clone(),
+                    *line,
+                    sig.clone(),
+                    kind_str.to_string(),
+                )
+            })
+            .collect();
+
+        let cache = SemanticCache {
+            version: CACHE_VERSION.to_string(),
+            entries,
+            #[cfg(feature = "semantic")]
+            embeddings: self.embeddings.clone(),
+        };
+
+        let path = cache_dir.join("semantic_index.json");
+        let json = serde_json::to_string_pretty(&cache).map_err(|e| {
+            crate::error::Error::Cache(format!("Failed to serialize semantic: {}", e))
+        })?;
+
+        std::fs::write(&path, json)
+            .map_err(|e| crate::error::Error::Cache(format!("Failed to write semantic: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Load semantic index from disk. Returns true if loaded successfully.
+    pub fn load(&mut self, cache_dir: &Path) -> bool {
+        let path = cache_dir.join("semantic_index.json");
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        let cache: SemanticCache = match serde_json::from_str(&content) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+
+        if cache.version != CACHE_VERSION {
+            return false;
+        }
+
+        self.entries = cache
+            .entries
+            .into_iter()
+            .filter_map(|(name, file, line, sig, kind_str)| {
+                let kind = match kind_str.as_str() {
+                    "fn" => EntryKind::Function,
+                    "struct" => EntryKind::Struct,
+                    _ => return None,
+                };
+                Some((name, file, line, sig, kind))
+            })
+            .collect();
+
+        #[cfg(feature = "semantic")]
+        {
+            self.embeddings = cache.embeddings;
+        }
+
+        true
+    }
+
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
         #[cfg(feature = "semantic")]
         if let (Some(model), Some(embeddings)) = (&self.model, &self.embeddings) {
@@ -170,35 +292,45 @@ impl SemanticIndex {
         let mut results: Vec<SearchResult> = self
             .entries
             .iter()
-            .filter(|(name, file, _, _, _)| {
-                name.to_lowercase().contains(&query_lower)
-                    || file.to_string_lossy().to_lowercase().contains(&query_lower)
+            .filter_map(|(name, file, line, signature, _)| {
+                let name_lower = name.to_lowercase();
+                let name_match = name_lower.contains(&query_lower);
+                let file_match = file.to_string_lossy().to_lowercase().contains(&query_lower);
+
+                if !name_match && !file_match {
+                    return None;
+                }
+
+                // Score: name matches rank higher than file-path-only matches
+                let score = if name_lower == query_lower {
+                    1.0 // exact name match
+                } else if name_lower.starts_with(&query_lower) {
+                    0.9 // name starts with query
+                } else if name_match {
+                    0.7 // name contains query
+                } else {
+                    0.3 // file path only
+                };
+
+                Some(SearchResult {
+                    function: name.clone(),
+                    file: file.clone(),
+                    line: *line,
+                    score,
+                    signature: signature.clone(),
+                })
             })
-            .map(|(name, file, line, signature, _)| SearchResult {
-                function: name.clone(),
-                file: file.clone(),
-                line: *line,
-                score: 1.0,
-                signature: signature.clone(),
-            })
-            .take(limit)
             .collect();
 
+        // Sort by score descending, then alphabetically
         results.sort_by(|a, b| {
-            let a_exact = a.function.to_lowercase() == query_lower;
-            let b_exact = b.function.to_lowercase() == query_lower;
-            let a_prefix = a.function.to_lowercase().starts_with(&query_lower);
-            let b_prefix = b.function.to_lowercase().starts_with(&query_lower);
-            match (a_exact, b_exact) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => match (a_prefix, b_prefix) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.function.cmp(&b.function),
-                },
-            }
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.function.cmp(&b.function))
         });
+
+        results.truncate(limit);
         Ok(results)
     }
 }
@@ -330,5 +462,47 @@ mod tests {
         let results = index.search("Config", 5).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].function, "struct AppConfig");
+    }
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut index = SemanticIndex::new().unwrap();
+        index.entries = vec![
+            (
+                "handler".to_string(),
+                PathBuf::from("src/main.rs"),
+                1,
+                "fn handler()".to_string(),
+                EntryKind::Function,
+            ),
+            (
+                "struct Config".to_string(),
+                PathBuf::from("src/config.rs"),
+                5,
+                "struct Config { /* 2 fields */ }".to_string(),
+                EntryKind::Struct,
+            ),
+        ];
+
+        assert!(index.should_save());
+        index.save(dir.path()).unwrap();
+
+        let mut loaded = SemanticIndex::new().unwrap();
+        assert!(loaded.load(dir.path()));
+        assert_eq!(loaded.entries.len(), 2);
+        assert_eq!(loaded.entries[0].0, "handler");
+        assert_eq!(loaded.entries[1].0, "struct Config");
+
+        // Search still works after load
+        assert!(loaded.should_save());
+    }
+
+    #[test]
+    fn load_nonexistent_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut index = SemanticIndex::new().unwrap();
+        assert!(!index.load(dir.path()));
+        assert!(index.entries.is_empty());
     }
 }

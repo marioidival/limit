@@ -41,7 +41,7 @@
 //! ```
 
 pub mod cache;
-
+pub mod coordinator;
 pub mod error;
 pub mod layers;
 pub mod parsers;
@@ -55,6 +55,7 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use cache::CacheManager;
+use coordinator::ParseCoordinator;
 use layers::{
     ast::ASTLayer, call_graph::CallGraphLayer, cfg::CFGLayer, dfg::DFGLayer, pdg::PDGLayer,
 };
@@ -136,17 +137,36 @@ impl TLDR {
 
     /// Build/warm all indexes for the project
     pub async fn warm(&mut self) -> Result<()> {
-        // Layer 1: Parse all files and extract ASTs
-        self.ast.warm(&self.project_path, &mut self.cache).await?;
+        // Clean up old cache format
+        self.cache.cleanup();
 
-        // Layer 2: Build call graph
-        self.call_graph.warm(&self.ast, &mut self.cache).await?;
+        // Try loading semantic index from cache (skip rebuild if nothing changed)
+        if self.semantic.load(self.cache.cache_dir()) {
+            tracing::info!("semantic: loaded from cache");
+        }
 
-        // Layer 3-5: Build CFG, DFG, PDG for each function
-        // These are computed on-demand
+        // ParseCoordinator: discover → hash check → parallel parse → cache
+        let mut coordinator = ParseCoordinator::new(
+            self.project_path.clone(),
+            self.config.language,
+            // Create a fresh cache ref for the coordinator
+            CacheManager::new(self.cache.cache_dir().to_path_buf())?,
+        );
+        let analyses = coordinator.warm().await?;
 
-        // Semantic index
-        self.semantic.warm(&self.ast, &self.call_graph).await?;
+        // Populate AST layer from parsed analyses (for public API)
+        self.ast.populate(&analyses);
+
+        // Build call graph from pre-computed analyses
+        self.call_graph.build(&analyses);
+
+        // Build semantic index
+        self.semantic.build(&analyses, &self.call_graph).await?;
+
+        // Persist semantic index if embeddings were generated
+        if self.semantic.should_save() {
+            self.semantic.save(self.cache.cache_dir())?;
+        }
 
         Ok(())
     }
@@ -300,6 +320,16 @@ impl TLDR {
     /// Find a function, preferring one in the given file
     pub fn find_function_in(&self, name: &str, file: &Path) -> Result<Option<FunctionInfo>> {
         self.ast.find_function_preferring_file(name, file)
+    }
+
+    /// Find a class/struct by name
+    pub fn find_class(&self, name: &str) -> Result<Option<ClassInfo>> {
+        self.ast.find_class(name)
+    }
+
+    /// Find a class/struct, preferring one in the given file
+    pub fn find_class_in(&self, name: &str, file: &Path) -> Result<Option<ClassInfo>> {
+        self.ast.find_class_preferring_file(name, file)
     }
 
     /// Get the project path

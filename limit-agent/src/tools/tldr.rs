@@ -5,14 +5,16 @@
 
 use crate::error::AgentError;
 use crate::tool::Tool;
+use crate::tools::warm_guard::WarmGuard;
 use async_trait::async_trait;
 use limit_tldr::{Config as TldrConfig, Language, TLDR};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::OnceCell;
-use tracing::{debug, info};
+use tokio::sync::{Notify, OnceCell};
+use tracing::{debug, info, warn};
 
 /// Analysis type to perform
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,14 +85,21 @@ pub struct TldrTool {
     cache: Arc<OnceCell<(PathBuf, Arc<TLDR>)>>,
     /// Default project path
     default_project: PathBuf,
+    /// Notify waiters when background warm completes
+    warm_notify: Arc<Notify>,
+    /// Whether pre_warm has been spawned (lazy, once inside tokio runtime)
+    warm_started: Arc<AtomicBool>,
 }
 
 impl TldrTool {
     /// Create a new TLDR tool with default project path
     pub fn new() -> Self {
+        let default_project = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         Self {
             cache: Arc::new(OnceCell::new()),
-            default_project: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            default_project,
+            warm_notify: Arc::new(Notify::new()),
+            warm_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -99,18 +108,124 @@ impl TldrTool {
         Self {
             cache: Arc::new(OnceCell::new()),
             default_project: project.into(),
+            warm_notify: Arc::new(Notify::new()),
+            warm_started: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Get or create TLDR instance for a project (thread-safe, initializes once)
+    /// Spawn pre_warm if not already started. Safe to call inside tokio runtime.
+    fn ensure_pre_warm_started(&self) {
+        if self
+            .warm_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            let project = self.default_project.clone();
+            let cache = Arc::clone(&self.cache);
+            let notify = Arc::clone(&self.warm_notify);
+
+            tokio::spawn(async move {
+                Self::pre_warm(project, cache, notify).await;
+            });
+        }
+    }
+
+    /// Background warm: check freshness, warm if stale, notify waiters.
+    async fn pre_warm(
+        project_path: PathBuf,
+        cache: Arc<OnceCell<(PathBuf, Arc<TLDR>)>>,
+        notify: Arc<Notify>,
+    ) {
+        let cache_dir = match Self::get_cache_dir(&project_path) {
+            Ok(dir) => dir,
+            Err(e) => {
+                warn!("pre_warm: failed to get cache dir: {}", e);
+                notify.notify_waiters();
+                return;
+            }
+        };
+
+        let guard = WarmGuard::new(&cache_dir);
+        if guard.is_fresh(&project_path) {
+            info!("pre_warm: skipping, warm is fresh");
+            notify.notify_waiters();
+            return;
+        }
+
+        info!("pre_warm: warming TLDR for {:?}", project_path);
+        let config = TldrConfig {
+            language: Language::Auto,
+            max_depth: 3,
+            cache_dir: Some(cache_dir),
+        };
+
+        match TLDR::new(&project_path, config).await {
+            Ok(mut tldr) => match tldr.warm().await {
+                Ok(()) => {
+                    guard.save(&project_path);
+                    info!("pre_warm: warm complete");
+                    let _ = cache.set((project_path, Arc::new(tldr))).map_err(|_| {
+                        debug!("pre_warm: OnceCell already set (race with get_tldr)");
+                    });
+                    notify.notify_waiters();
+                }
+                Err(e) => warn!("pre_warm: warm failed: {}", e),
+            },
+            Err(e) => warn!("pre_warm: TLDR::new failed: {}", e),
+        }
+        notify.notify_waiters();
+    }
+
+    /// Get or create TLDR instance for a project (thread-safe, initializes once).
+    ///
+    /// If pre_warm is still running, waits for it. Falls back to lazy creation
+    /// if pre_warm fails or hasn't started.
     async fn get_tldr(&self, project_path: &Path) -> Result<Arc<TLDR>, AgentError> {
         let project_path = project_path.to_path_buf();
         let project_path_for_check = project_path.clone();
-        let cache = Arc::clone(&self.cache);
 
+        // Kick off pre_warm on first call inside the tokio runtime
+        self.ensure_pre_warm_started();
+
+        // If cache already populated, return immediately
+        if let Some((cached_path, tldr)) = self.cache.get() {
+            if *cached_path == project_path_for_check {
+                debug!("TLDR cache hit for project: {:?}", project_path_for_check);
+                return Ok(Arc::clone(tldr));
+            }
+            return Err(AgentError::ToolError(format!(
+                "Project path mismatch: cached {:?} != requested {:?}",
+                cached_path, project_path_for_check
+            )));
+        }
+
+        // Wait for background warm to finish (with timeout fallback)
+        info!("get_tldr: waiting for pre_warm...");
+        tokio::select! {
+            _ = self.warm_notify.notified() => {
+                // pre_warm finished — check if it succeeded
+                if let Some((cached_path, tldr)) = self.cache.get() {
+                    if *cached_path == project_path_for_check {
+                        debug!("TLDR cache hit after pre_warm for: {:?}", project_path_for_check);
+                        return Ok(Arc::clone(tldr));
+                    }
+                }
+                // pre_warm failed or was skipped (fresh) — fall through to lazy
+                warn!("get_tldr: pre_warm did not populate cache, falling back to lazy");
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                warn!("get_tldr: pre_warm timed out after 30s, falling back to lazy");
+            }
+        }
+
+        // Lazy fallback
+        let cache = Arc::clone(&self.cache);
         let result: Result<&(PathBuf, Arc<TLDR>), AgentError> = cache
             .get_or_try_init(|| async {
-                info!("Creating TLDR instance for project: {:?}", project_path);
+                info!(
+                    "Lazy creating TLDR instance for project: {:?}",
+                    project_path
+                );
                 let config = TldrConfig {
                     language: Language::Auto,
                     max_depth: 3,
@@ -130,16 +245,11 @@ impl TldrTool {
             })
             .await;
 
-        let (cached_path, tldr) = result?;
-
-        if *cached_path != project_path_for_check {
-            return Err(AgentError::ToolError(format!(
-                "Project path mismatch: cached {:?} != requested {:?}. Only one project per session supported.",
-                cached_path, project_path_for_check
-            )));
-        }
-
-        debug!("TLDR cache hit for project: {:?}", project_path_for_check);
+        let (_cached_path, tldr) = result?;
+        debug!(
+            "TLDR cache hit (lazy) for project: {:?}",
+            project_path_for_check
+        );
         Ok(Arc::clone(tldr))
     }
 
@@ -167,6 +277,50 @@ impl TldrTool {
             .join("projects")
             .join(&hash)
             .join("tldr"))
+    }
+
+    /// Build a source result JSON, reading the file and extracting lines
+    async fn build_source_result(
+        &self,
+        function: &str,
+        source_file: PathBuf,
+        start_line: usize,
+        end_line: usize,
+        project_path: &Path,
+    ) -> Result<Value, AgentError> {
+        let relative_file = source_file
+            .strip_prefix(project_path)
+            .unwrap_or(&source_file)
+            .to_path_buf();
+
+        let file_path = project_path.join(&source_file);
+        let source = tokio::fs::read_to_string(&file_path)
+            .await
+            .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
+
+        let lines: Vec<&str> = source.lines().collect();
+        let start = start_line.saturating_sub(1);
+        let end = end_line.min(lines.len());
+        let max_lines = 80;
+        let truncated = (end - start) > max_lines;
+        let actual_end = if truncated { start + max_lines } else { end };
+
+        let function_source = lines[start..actual_end].join("\n");
+
+        let mut result = json!({
+            "type": "source",
+            "function": function,
+            "file": relative_file.display().to_string(),
+            "line": start_line,
+            "end_line": actual_end,
+            "source": function_source
+        });
+        if truncated {
+            result["truncated"] = json!(true);
+            result["total_lines"] = json!(end - start);
+        }
+
+        Ok(result)
     }
 
     /// Perform analysis based on parameters
@@ -204,78 +358,149 @@ impl TldrTool {
                     AgentError::ToolError("function parameter required for source analysis".into())
                 })?;
 
-                let func_info = if let Some(ref file) = params.file {
-                    // Disambiguate using file parameter
-                    let file_path = project_path.join(file);
-                    tldr.find_function_in(&function, &file_path)
-                        .map_err(|e| {
-                            AgentError::ToolError(format!("Source analysis failed: {}", e))
-                        })?
-                        .ok_or_else(|| {
-                            AgentError::ToolError(format!(
-                                "Function '{}' not found in '{}'",
-                                function, file
-                            ))
-                        })?
-                } else {
-                    // Try find_all to detect ambiguity
-                    let all_matches = tldr.find_all_functions(&function);
-                    if all_matches.len() > 1 {
-                        let match_list: Vec<String> = all_matches
-                            .iter()
-                            .map(|f| {
-                                let relative =
-                                    f.file.strip_prefix(&project_path).unwrap_or(&f.file);
-                                format!("{} ({}:{})", f.name, relative.display(), f.line)
-                            })
-                            .collect();
-                        return Ok(json!({
-                            "type": "disambiguation_needed",
-                            "function": function,
-                            "match_count": all_matches.len(),
-                            "matches": match_list,
-                            "hint": format!(
-                                "Use file parameter to disambiguate, e.g.: {{\"analysis_type\": \"source\", \"function\": \"{}\", \"file\": \"path/to/file.rs\"}}",
-                                function
-                            )
-                        }));
+                // Handle qualified method names: "StructName::method" (Rust/JS)
+                // Resolve the struct to its file, then search for the method name alone
+                let (function, file_override) = if !function.starts_with("struct ") {
+                    if let Some(pos) = function.find("::") {
+                        let class_name = &function[..pos];
+                        let method_name = &function[pos + 2..];
+                        if !method_name.is_empty() {
+                            let class_info = if let Some(ref file) = params.file {
+                                let file_path = project_path.join(file);
+                                tldr.find_class_in(class_name, &file_path).unwrap_or(None)
+                            } else {
+                                tldr.find_class(class_name).unwrap_or(None)
+                            };
+                            if let Some(info) = class_info {
+                                let resolved_file = info
+                                    .file
+                                    .strip_prefix(&project_path)
+                                    .unwrap_or(&info.file)
+                                    .to_string_lossy()
+                                    .to_string();
+                                (method_name.to_string(), Some(resolved_file))
+                            } else {
+                                (function, None)
+                            }
+                        } else {
+                            (function, None)
+                        }
+                    } else {
+                        (function, None)
                     }
-                    tldr.find_function(&function)
-                        .await
-                        .map_err(|e| {
-                            AgentError::ToolError(format!("Source analysis failed: {}", e))
-                        })?
-                        .ok_or_else(|| {
-                            AgentError::ToolError(format!("Function not found: {}", function))
-                        })?
+                } else {
+                    (function, None)
+                };
+                // Use resolved file if available, otherwise keep original
+                let effective_file = file_override.or(params.file.clone());
+
+                let is_struct = function.starts_with("struct ");
+                let lookup_name = if is_struct {
+                    function.strip_prefix("struct ").unwrap()
+                } else {
+                    &function
                 };
 
-                // Make file path relative to project root
-                let relative_file = func_info
-                    .file
-                    .strip_prefix(&project_path)
-                    .unwrap_or(&func_info.file)
-                    .to_path_buf();
+                let (source_file, start_line, end_line) = if is_struct {
+                    // Struct/class lookup
+                    let class_info = if let Some(ref file) = effective_file {
+                        let file_path = project_path.join(file);
+                        tldr.find_class_in(lookup_name, &file_path)
+                            .map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                AgentError::ToolError(format!(
+                                    "Struct '{}' not found in '{}'",
+                                    lookup_name, file
+                                ))
+                            })?
+                    } else {
+                        tldr.find_class(lookup_name)
+                            .map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                AgentError::ToolError(format!("Struct not found: {}", lookup_name))
+                            })?
+                    };
+                    (class_info.file, class_info.line, class_info.end_line)
+                } else {
+                    // Function lookup — also try struct/class fallback
+                    let func_info = if let Some(ref file) = effective_file {
+                        let file_path = project_path.join(file);
+                        // Try function first, then struct fallback
+                        if let Some(func) =
+                            tldr.find_function_in(&function, &file_path).map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                        {
+                            func
+                        } else if let Some(cls) =
+                            tldr.find_class_in(&function, &file_path).map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                        {
+                            // Found as struct — treat as struct lookup
+                            return self
+                                .build_source_result(
+                                    &function,
+                                    cls.file,
+                                    cls.line,
+                                    cls.end_line,
+                                    &project_path,
+                                )
+                                .await;
+                        } else {
+                            return Err(AgentError::ToolError(format!(
+                                "Function or struct '{}' not found in '{}'",
+                                function, file
+                            )));
+                        }
+                    } else {
+                        // Try find_all to detect ambiguity
+                        let all_matches = tldr.find_all_functions(&function);
+                        if all_matches.len() > 1 {
+                            let match_list: Vec<String> = all_matches
+                                .iter()
+                                .take(5)
+                                .map(|f| {
+                                    let relative =
+                                        f.file.strip_prefix(&project_path).unwrap_or(&f.file);
+                                    format!("{} ({}:{})", f.name, relative.display(), f.line)
+                                })
+                                .collect();
+                            return Ok(json!({
+                                "type": "disambiguation_needed",
+                                "function": function,
+                                "match_count": all_matches.len(),
+                                "matches": match_list,
+                                "hint": format!(
+                                    "Use file parameter to disambiguate, e.g.: {{\"analysis_type\": \"source\", \"function\": \"{}\", \"file\": \"path/to/file.rs\"}}",
+                                    function
+                                )
+                            }));
+                        }
+                        tldr.find_function(&function)
+                            .await
+                            .map_err(|e| {
+                                AgentError::ToolError(format!("Source analysis failed: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                AgentError::ToolError(format!("Function not found: {}", function))
+                            })?
+                    };
+                    (func_info.file, func_info.line, func_info.end_line)
+                };
 
-                let file_path = project_path.join(&func_info.file);
-                let source = tokio::fs::read_to_string(&file_path)
-                    .await
-                    .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
-
-                let lines: Vec<&str> = source.lines().collect();
-                let start = func_info.line.saturating_sub(1);
-                let end = func_info.end_line.min(lines.len());
-
-                let function_source = lines[start..end].join("\n");
-
-                Ok(json!({
-                    "type": "source",
-                    "function": function,
-                    "file": relative_file.display().to_string(),
-                    "line": func_info.line,
-                    "end_line": func_info.end_line,
-                    "source": function_source
-                }))
+                self.build_source_result(
+                    &function,
+                    source_file,
+                    start_line,
+                    end_line,
+                    &project_path,
+                )
+                .await
             }
 
             AnalysisType::Impact => {
@@ -446,7 +671,13 @@ impl Tool for TldrTool {
             debug!("  query: {}", q);
         }
 
-        let result = self.analyze(params).await?;
+        let result = match self.analyze(params).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("tldr_analyze failed: {}", e);
+                return Err(e);
+            }
+        };
         let result_str =
             serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
         info!(
@@ -501,7 +732,7 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "project_path": {
                     "type": "string",
-                    "description": "Project path (defaults to current directory)"
+                    "description": "Project root directory (defaults to current directory). Do NOT use file paths here — use 'file' parameter for file paths."
                 }
             },
             "required": ["analysis_type"]
