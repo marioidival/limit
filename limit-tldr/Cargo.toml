@@ -1,6 +1,6 @@
 [package]
 name = "limit-tldr"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "Code analysis library that actually fits in context - 95% token savings"
 license = "Apache-2.0"
