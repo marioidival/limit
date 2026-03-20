@@ -446,7 +446,13 @@ impl Tool for TldrTool {
             debug!("  query: {}", q);
         }
 
-        let result = self.analyze(params).await?;
+        let result = match self.analyze(params).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("tldr_analyze failed: {}", e);
+                return Err(e);
+            }
+        };
         let result_str =
             serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
         info!(
