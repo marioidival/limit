@@ -401,11 +401,19 @@ impl TldrTool {
                 Ok(json!({
                     "type": "search",
                     "query": query,
-                    "results": results.iter().map(|r| json!({
-                        "function": r.function,
-                        "file": r.file.display().to_string(),
-                        "score": r.score
-                    })).collect::<Vec<_>>()
+                    "results": results.iter().map(|r| {
+                        let relative = r
+                            .file
+                            .strip_prefix(&project_path)
+                            .unwrap_or(&r.file);
+                        json!({
+                            "function": r.function,
+                            "file": relative.display().to_string(),
+                            "line": r.line,
+                            "score": r.score,
+                            "signature": r.signature
+                        })
+                    }).collect::<Vec<_>>()
                 }))
             }
         };
