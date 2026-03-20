@@ -1,16 +1,12 @@
 use crate::error::CliError;
 use crate::system_prompt::SYSTEM_PROMPT;
+use crate::tools::tldr_tool_definition;
 use crate::tools::{
     AstGrepTool, BashTool, BrowserTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool,
     GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool,
     GrepTool, LspTool, TldrTool, WebFetchTool, WebSearchTool,
 };
 use chrono::Datelike;
-
-/// Maximum chars per tool result to prevent context bloat.
-/// Results longer than this are truncated with a notice.
-const MAX_TOOL_RESULT_CHARS: usize = 4000;
-use crate::tools::tldr_tool_definition;
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
@@ -510,17 +506,6 @@ impl AgentBridge {
                         name: tool_call.function.name.clone(),
                         result: output_json.clone(),
                     });
-
-                    // Truncate large tool results to prevent context bloat
-                    let output_json = if output_json.len() > MAX_TOOL_RESULT_CHARS {
-                        format!(
-                            "{}...\n\n[Result truncated: {} total chars]",
-                            &output_json[..MAX_TOOL_RESULT_CHARS],
-                            output_json.len()
-                        )
-                    } else {
-                        output_json
-                    };
 
                     // OpenAI tool result format
                     let tool_result_message = Message {
