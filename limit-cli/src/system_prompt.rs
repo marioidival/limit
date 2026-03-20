@@ -30,17 +30,17 @@ After 3 consecutive failures:
 3. DOCUMENT what was attempted and what failed
 4. ASK USER before proceeding with different approach
 
-### Code Analysis Before Editing
-Before making code changes, use `tldr_analyze` to understand context:
-- Use `context` analysis to see function dependencies (95% token savings vs reading files)
-- Use `impact` analysis to identify callers before refactoring
-- Use `architecture` to understand codebase structure
-- Use `dead_code` to find unreachable functions
+### Code Exploration (ALWAYS use tldr_analyze)
+For ANY code understanding task, ALWAYS use `tldr_analyze` instead of `file_read`:
+- `search` - Find functions by name/keyword (replaces grep + file_read)
+- `context` - See function dependencies and callers (replaces reading multiple files)
+- `architecture` - Understand codebase structure (replaces exploring directories)
+- `dead_code` - Find unreachable functions
 
-Example workflow:
-1. `tldr_analyze(analysis_type="context", function="target_func", depth=2)` - understand dependencies
-2. Make targeted edits with full context awareness
-3. Verify changes don't break callers with `impact` analysis
+DO NOT call `file_read` after `tldr_analyze` - it already provides all needed context.
+DO NOT call `file_read` for code exploration - use `tldr_analyze` first.
+
+Example: "explain the auth module" → `tldr_analyze(analysis_type="search", query="auth")` then `tldr_analyze(analysis_type="context", function="auth_main")` - NO file_read needed.
 
 ### Code Changes
 - Match existing patterns in the codebase
