@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::OnceCell;
 use tracing::{debug, info};
 
 /// Analysis type to perform
@@ -78,10 +78,9 @@ fn default_limit() -> usize {
 }
 
 /// TLDR tool for code analysis
-#[allow(clippy::type_complexity)]
 pub struct TldrTool {
-    /// Cached TLDR instance per project
-    cache: Arc<RwLock<Option<(PathBuf, Arc<TLDR>)>>>,
+    /// Cached TLDR instance (initialized once per session)
+    cache: Arc<OnceCell<(PathBuf, Arc<TLDR>)>>,
     /// Default project path
     default_project: PathBuf,
 }
@@ -90,7 +89,7 @@ impl TldrTool {
     /// Create a new TLDR tool with default project path
     pub fn new() -> Self {
         Self {
-            cache: Arc::new(RwLock::new(None)),
+            cache: Arc::new(OnceCell::new()),
             default_project: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         }
     }
@@ -98,46 +97,50 @@ impl TldrTool {
     /// Create TLDR tool with a specific project path
     pub fn with_project<P: Into<PathBuf>>(project: P) -> Self {
         Self {
-            cache: Arc::new(RwLock::new(None)),
+            cache: Arc::new(OnceCell::new()),
             default_project: project.into(),
         }
     }
 
-    /// Get or create TLDR instance for a project
+    /// Get or create TLDR instance for a project (thread-safe, initializes once)
     async fn get_tldr(&self, project_path: &Path) -> Result<Arc<TLDR>, AgentError> {
-        {
-            let cache = self.cache.read().await;
-            if let Some((cached_path, cached_tldr)) = cache.as_ref() {
-                if cached_path == project_path {
-                    debug!("TLDR cache hit for project: {:?}", project_path);
-                    return Ok(Arc::clone(cached_tldr));
-                }
-            }
+        let project_path = project_path.to_path_buf();
+        let project_path_for_check = project_path.clone();
+        let cache = Arc::clone(&self.cache);
+
+        let result: Result<&(PathBuf, Arc<TLDR>), AgentError> = cache
+            .get_or_try_init(|| async {
+                info!("Creating TLDR instance for project: {:?}", project_path);
+                let config = TldrConfig {
+                    language: Language::Auto,
+                    max_depth: 3,
+                    cache_dir: Some(Self::get_cache_dir(&project_path)?),
+                };
+
+                let mut tldr = TLDR::new(&project_path, config)
+                    .await
+                    .map_err(|e| AgentError::ToolError(format!("Failed to create TLDR: {}", e)))?;
+
+                info!("Warming TLDR indexes...");
+                tldr.warm()
+                    .await
+                    .map_err(|e| AgentError::ToolError(format!("Failed to warm TLDR: {}", e)))?;
+
+                Ok((project_path, Arc::new(tldr)))
+            })
+            .await;
+
+        let (cached_path, tldr) = result?;
+
+        if *cached_path != project_path_for_check {
+            return Err(AgentError::ToolError(format!(
+                "Project path mismatch: cached {:?} != requested {:?}. Only one project per session supported.",
+                cached_path, project_path_for_check
+            )));
         }
 
-        info!("Creating TLDR instance for project: {:?}", project_path);
-        let config = TldrConfig {
-            language: Language::Auto,
-            max_depth: 3,
-            cache_dir: Some(Self::get_cache_dir(project_path)?),
-        };
-
-        let mut tldr = TLDR::new(project_path, config)
-            .await
-            .map_err(|e| AgentError::ToolError(format!("Failed to create TLDR: {}", e)))?;
-
-        info!("Warming TLDR indexes...");
-        tldr.warm()
-            .await
-            .map_err(|e| AgentError::ToolError(format!("Failed to warm TLDR: {}", e)))?;
-
-        let tldr = Arc::new(tldr);
-        {
-            let mut cache = self.cache.write().await;
-            *cache = Some((project_path.to_path_buf(), Arc::clone(&tldr)));
-        }
-
-        Ok(tldr)
+        debug!("TLDR cache hit for project: {:?}", project_path_for_check);
+        Ok(Arc::clone(tldr))
     }
 
     /// Get cache directory for a project (~/.limit/projects/<project-hash>/tldr)
