@@ -232,6 +232,14 @@ impl ASTLayer {
         self.file_cache.keys().cloned().collect()
     }
 
+    /// Populate file cache from pre-computed analyses (used by ParseCoordinator flow)
+    pub fn populate(&mut self, analyses: &[crate::types::FileAnalysis]) {
+        for analysis in analyses {
+            self.file_cache
+                .insert(analysis.file.clone(), analysis.clone());
+        }
+    }
+
     /// Get all file analyses
     pub fn file_analyses(&self) -> Vec<&FileAnalysis> {
         self.file_cache.values().collect()

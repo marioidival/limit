@@ -3,13 +3,12 @@
 //! Tracks forward and backward dependencies between functions.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 
 use crate::cache::CacheManager;
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::layers::ast::ASTLayer;
-use crate::parsers::tree_sitter::TreeSitterParser;
-use crate::types::{ArchitectureInfo, CallerInfo, FunctionInfo, Language};
+use crate::layers::trait_def::AnalysisLayer;
+use crate::types::{ArchitectureInfo, CallerInfo, FileAnalysis, FunctionInfo};
 
 /// Call graph layer
 pub struct CallGraphLayer {
@@ -30,165 +29,42 @@ impl CallGraphLayer {
         }
     }
 
-    fn extract_calls_from_file(
-        &self,
-        file: &Path,
-        source: &str,
-        language: Language,
-    ) -> Result<Vec<(String, String, usize)>> {
-        let mut calls = Vec::new();
-
-        let parser = TreeSitterParser::new();
-
-        if let Some(ts_lang) = parser.get_ts_language(language) {
-            let mut ts_parser = tree_sitter::Parser::new();
-            ts_parser
-                .set_language(&ts_lang)
-                .map_err(|e| Error::ParseError {
-                    file: file.display().to_string(),
-                    message: format!("Tree-sitter language error: {}", e),
-                })?;
-
-            let tree = ts_parser
-                .parse(source, None)
-                .ok_or_else(|| Error::ParseError {
-                    file: file.display().to_string(),
-                    message: "Failed to parse source".to_string(),
-                })?;
-
-            let root = tree.root_node();
-            self.collect_calls(root, source, &mut calls);
-        }
-
-        Ok(calls)
-    }
-
-    fn collect_calls(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-        calls: &mut Vec<(String, String, usize)>,
-    ) {
-        let cursor = &mut node.walk();
-
-        for child in node.children(cursor) {
-            match child.kind() {
-                // Call expressions vary by language
-                "call" | "call_expression" | "function_call" | "member_call" => {
-                    if let Some((caller, callee, line)) = self.extract_call_info(child, source) {
-                        calls.push((caller, callee, line));
-                    }
-                }
-                _ => {}
+    /// Build call graph from pre-computed file analyses
+    pub fn build(&mut self, analyses: &[FileAnalysis]) {
+        // Build function location index
+        for analysis in analyses {
+            for func in &analysis.functions {
+                self.function_locations
+                    .insert(func.name.clone(), (func.file.clone(), func.line));
             }
-
-            self.collect_calls(child, source, calls);
-        }
-    }
-
-    fn extract_call_info(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-    ) -> Option<(String, String, usize)> {
-        let function_node = node
-            .child_by_field_name("function")
-            .or_else(|| node.child(0))?;
-
-        let callee = self.node_text(function_node, source);
-
-        let callee = callee.split('.').next_back().unwrap_or(&callee).to_string();
-        let callee = callee.trim().to_string();
-
-        if callee.is_empty() {
-            return None;
         }
 
-        let caller = self.find_enclosing_function(node, source)?;
-        let line = node.start_position().row + 1;
-
-        Some((caller, callee, line))
-    }
-
-    fn find_enclosing_function(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
-        let mut current = node.parent();
-
-        while let Some(parent) = current {
-            match parent.kind() {
-                "function_definition"
-                | "function_item"
-                | "method_definition"
-                | "arrow_function"
-                | "function_declaration" => {
-                    let name_node = parent
-                        .child_by_field_name("name")
-                        .or_else(|| parent.child(0));
-
-                    if let Some(name_node) = name_node {
-                        return Some(self.node_text(name_node, source));
-                    }
-                }
-                _ => {}
-            }
-            current = parent.parent();
-        }
-
-        None
-    }
-
-    fn node_text(&self, node: tree_sitter::Node, source: &str) -> String {
-        let start = node.start_byte();
-        let end = node.end_byte();
-        source[start..end].to_string()
-    }
-
-    pub async fn warm(&mut self, ast: &ASTLayer, cache: &mut CacheManager) -> Result<()> {
-        for func in ast.all_functions() {
-            self.function_locations
-                .insert(func.name.clone(), (func.file.clone(), func.line));
-        }
-
-        let mut files_to_analyze: std::collections::HashSet<PathBuf> =
-            std::collections::HashSet::new();
-        for func in ast.all_functions() {
-            files_to_analyze.insert(func.file.clone());
-        }
-
-        for file in files_to_analyze {
-            let source = tokio::fs::read_to_string(&file)
-                .await
-                .map_err(|e: std::io::Error| Error::PathNotFound(file.display().to_string(), e))?;
-
-            let lang = file
-                .extension()
-                .and_then(|e: &std::ffi::OsStr| e.to_str())
-                .and_then(crate::types::Language::from_extension)
-                .unwrap_or(Language::Auto);
-
-            let calls = self.extract_calls_from_file(&file, &source, lang)?;
-
-            for (caller, callee, line) in calls {
-                if self.function_locations.contains_key(&callee) {
+        // Build call graph from call expressions
+        for analysis in analyses {
+            for call in &analysis.call_expressions {
+                if self.function_locations.contains_key(&call.callee) {
                     self.forward_calls
-                        .entry(caller.clone())
+                        .entry(call.caller.clone())
                         .or_default()
-                        .push(callee.clone());
+                        .push(call.callee.clone());
 
                     let caller_info = CallerInfo {
-                        function: caller.clone(),
-                        file: file.clone(),
-                        line,
+                        function: call.caller.clone(),
+                        file: call.file.clone(),
+                        line: call.line,
                     };
                     self.backward_calls
-                        .entry(callee)
+                        .entry(call.callee.clone())
                         .or_default()
                         .push(caller_info);
                 }
             }
         }
+    }
 
-        cache.store_call_graph(&self.forward_calls, &self.backward_calls)?;
-
+    pub async fn warm(&mut self, ast: &ASTLayer, _cache: &mut CacheManager) -> Result<()> {
+        let analyses: Vec<FileAnalysis> = ast.file_analyses().into_iter().cloned().collect();
+        self.build(&analyses);
         Ok(())
     }
 
@@ -286,5 +162,85 @@ impl CallGraphLayer {
 impl Default for CallGraphLayer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl AnalysisLayer for CallGraphLayer {
+    fn build(&mut self, analyses: &[FileAnalysis]) -> Result<()> {
+        CallGraphLayer::build(self, analyses);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{CallExpression, FunctionInfo, Language};
+    use std::path::PathBuf;
+
+    fn make_analysis(
+        file: &str,
+        funcs: Vec<(&str, usize)>,
+        calls: Vec<(&str, &str, usize)>,
+    ) -> FileAnalysis {
+        FileAnalysis {
+            file: PathBuf::from(file),
+            functions: funcs
+                .into_iter()
+                .map(|(name, line)| FunctionInfo {
+                    name: name.to_string(),
+                    signature: format!("fn {}()", name),
+                    params: Vec::new(),
+                    return_type: None,
+                    is_async: false,
+                    line,
+                    end_line: line + 10,
+                    file: PathBuf::from(file),
+                    docstring: None,
+                    complexity: None,
+                })
+                .collect(),
+            classes: Vec::new(),
+            imports: Vec::new(),
+            call_expressions: calls
+                .into_iter()
+                .map(|(caller, callee, line)| CallExpression {
+                    caller: caller.to_string(),
+                    callee: callee.to_string(),
+                    line,
+                    file: PathBuf::from(file),
+                })
+                .collect(),
+            language: Language::Rust,
+        }
+    }
+
+    #[test]
+    fn build_from_analyses() {
+        let analyses = vec![
+            make_analysis(
+                "src/main.rs",
+                vec![("main", 1), ("helper", 10)],
+                vec![("main", "helper", 3)],
+            ),
+            make_analysis(
+                "src/lib.rs",
+                vec![("helper", 1), ("core", 5)],
+                vec![("helper", "core", 2)],
+            ),
+        ];
+
+        let mut cg = CallGraphLayer::new();
+        cg.build(&analyses);
+
+        let fwd = cg.get_forward_calls("main").unwrap();
+        assert_eq!(fwd, vec!["helper"]);
+
+        let bwd = cg.get_backward_calls("helper").unwrap();
+        assert_eq!(bwd.len(), 1);
+        assert_eq!(bwd[0].function, "main");
+
+        let fwd2 = cg.get_forward_calls("helper").unwrap();
+        assert_eq!(fwd2, vec!["core"]);
     }
 }
