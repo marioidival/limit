@@ -475,11 +475,11 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "function": {
                     "type": "string",
-                    "description": "Function name (required for context, source, impact, cfg, dfg)"
+                    "description": "Function or struct name (required for context, source, impact, cfg, dfg). For structs, prefix with 'struct ' (e.g., 'struct AppConfig')"
                 },
                 "file": {
                     "type": "string",
-                    "description": "File path relative to project root (required for cfg, dfg)"
+                    "description": "File path relative to project root. Required for cfg, dfg. Optional for source (use to disambiguate when function name exists in multiple files)"
                 },
                 "depth": {
                     "type": "integer",
