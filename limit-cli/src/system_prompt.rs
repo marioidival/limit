@@ -34,13 +34,12 @@ After 3 consecutive failures:
 For ANY code understanding task, ALWAYS use `tldr_analyze` instead of `file_read`:
 - `search` - Find functions by name/keyword (replaces grep + file_read)
 - `context` - See function dependencies and callers (replaces reading multiple files)
+- `source` - Get function implementation code (replaces file_read for single functions)
 - `architecture` - Understand codebase structure (replaces exploring directories)
-- `dead_code` - Find unreachable functions
 
-DO NOT call `file_read` after `tldr_analyze` - it already provides all needed context.
-DO NOT call `file_read` for code exploration - use `tldr_analyze` first.
+DO NOT call `file_read` - use `tldr_analyze` with `source` analysis type instead.
 
-Example: "explain the auth module" → `tldr_analyze(analysis_type="search", query="auth")` then `tldr_analyze(analysis_type="context", function="auth_main")` - NO file_read needed.
+Example: "explain the auth module" → `tldr_analyze(analysis_type="search", query="auth")` then `tldr_analyze(analysis_type="source", function="auth_main")` - NO file_read needed.
 
 ### Code Changes
 - Match existing patterns in the codebase
