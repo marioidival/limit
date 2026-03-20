@@ -114,6 +114,147 @@ mod token_counter_tests {
     }
 }
 
+mod api_tests {
+    use super::*;
+    use crate::TLDR;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn tree_returns_file_list() {
+        let dir = tempdir().unwrap();
+        tokio::fs::create_dir_all(dir.path().join("src"))
+            .await
+            .unwrap();
+        tokio::fs::write(dir.path().join("src/main.py"), "def foo(): pass")
+            .await
+            .unwrap();
+        tokio::fs::write(dir.path().join("src/lib.rs"), "fn bar() {}")
+            .await
+            .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let tree = tldr.tree().unwrap();
+        assert!(tree.len() >= 2);
+    }
+
+    #[tokio::test]
+    async fn structure_returns_functions() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(
+            dir.path().join("test.py"),
+            "def foo():\n    pass\ndef bar():\n    return 1",
+        )
+        .await
+        .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let structure = tldr.structure().unwrap();
+        assert_eq!(structure.len(), 1);
+        assert_eq!(structure[0].functions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn search_finds_by_pattern() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(
+            dir.path().join("test.py"),
+            "def authenticate():\n    pass\ndef authorize():\n    pass",
+        )
+        .await
+        .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let results = tldr.search("auth").unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn extract_returns_file_analysis() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(
+            dir.path().join("test.py"),
+            "import os\ndef foo():\n    pass",
+        )
+        .await
+        .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let analysis = tldr.extract("test.py").unwrap();
+        assert_eq!(analysis.imports.len(), 1);
+        assert_eq!(analysis.functions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn calls_returns_forward_calls() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(
+            dir.path().join("test.py"),
+            "def foo():\n    return bar()\ndef bar():\n    return 1",
+        )
+        .await
+        .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let calls = tldr.get_calls("foo").unwrap();
+        assert!(calls.contains(&"bar".to_string()));
+    }
+
+    #[tokio::test]
+    async fn imports_returns_file_imports() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(
+            dir.path().join("test.py"),
+            "import os\nimport sys\n\ndef foo():\n    pass",
+        )
+        .await
+        .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let imports = tldr.get_imports("test.py").unwrap();
+        assert!(imports.len() >= 2);
+        assert!(imports.iter().any(|i| i.module.contains("os")));
+        assert!(imports.iter().any(|i| i.module.contains("sys")));
+    }
+
+    #[tokio::test]
+    async fn importers_returns_file_paths() {
+        let dir = tempdir().unwrap();
+        tokio::fs::write(dir.path().join("a.py"), "import os\ndef foo():\n    pass")
+            .await
+            .unwrap();
+        tokio::fs::write(
+            dir.path().join("b.py"),
+            "from sys import argv\ndef bar():\n    pass",
+        )
+        .await
+        .unwrap();
+
+        let mut tldr = TLDR::new(dir.path(), Config::default()).await.unwrap();
+        tldr.warm().await.unwrap();
+
+        let importers = tldr.get_importers("os").unwrap();
+        assert_eq!(importers.len(), 1);
+        assert!(importers[0]
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("a.py"));
+    }
+}
+
 mod ast_tests {
     use super::*;
     use crate::layers::ast::ASTLayer;

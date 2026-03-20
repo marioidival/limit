@@ -55,7 +55,9 @@ impl ASTLayer {
             let path = entry.path();
 
             // Skip hidden directories and common non-source directories
-            if path.components().any(|c| {
+            // Only check components relative to the project root
+            let relative = path.strip_prefix(project_path).unwrap_or(path);
+            if relative.components().any(|c| {
                 let s = c.as_os_str().to_string_lossy();
                 s.starts_with('.')
                     || s == "node_modules"
@@ -135,5 +137,27 @@ impl ASTLayer {
             .values()
             .flat_map(|a| a.functions.iter())
             .collect()
+    }
+
+    /// Get all indexed file paths
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.file_cache.keys().cloned().collect()
+    }
+
+    /// Get all file analyses
+    pub fn file_analyses(&self) -> Vec<&FileAnalysis> {
+        self.file_cache.values().collect()
+    }
+
+    /// Get file analysis by filename
+    pub fn get_by_name(&self, file_name: &str) -> Option<&FileAnalysis> {
+        self.file_cache
+            .values()
+            .find(|a| a.file.file_name().map(|n| n == file_name).unwrap_or(false))
+    }
+
+    /// Iterate over all file analyses
+    pub fn iter_analyses(&self) -> impl Iterator<Item = &FileAnalysis> {
+        self.file_cache.values()
     }
 }
