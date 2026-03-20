@@ -10,10 +10,10 @@ use chrono::Datelike;
 /// Maximum chars per tool result to prevent context bloat.
 /// Results longer than this are truncated with a notice.
 const MAX_TOOL_RESULT_CHARS: usize = 4000;
+use crate::tools::tldr_tool_definition;
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
-use crate::tools::tldr_tool_definition;
 use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use limit_llm::ProviderFactory;
