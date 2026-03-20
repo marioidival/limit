@@ -287,4 +287,85 @@ impl TLDR {
     pub async fn find_function(&self, name: &str) -> Result<Option<FunctionInfo>> {
         self.ast.find_function(name)
     }
+
+    /// Find all functions matching name (for disambiguation when name is ambiguous)
+    pub fn find_all_functions(&self, name: &str) -> Vec<FunctionInfo> {
+        self.ast
+            .find_all_functions(name)
+            .into_iter()
+            .cloned()
+            .collect()
+    }
+
+    /// Find a function, preferring one in the given file
+    pub fn find_function_in(&self, name: &str, file: &Path) -> Result<Option<FunctionInfo>> {
+        self.ast.find_function_preferring_file(name, file)
+    }
+
+    /// Get the project path
+    pub fn project_path(&self) -> &Path {
+        &self.project_path
+    }
+
+    /// Get file tree of indexed files
+    pub fn tree(&self) -> Result<Vec<PathBuf>> {
+        Ok(self.ast.files())
+    }
+
+    /// Get structure (functions, classes) per file
+    pub fn structure(&self) -> Result<Vec<&FileAnalysis>> {
+        Ok(self.ast.file_analyses())
+    }
+
+    /// Text pattern search across function names
+    pub fn search(&self, pattern: &str) -> Result<Vec<FunctionInfo>> {
+        let pattern_lower = pattern.to_lowercase();
+        Ok(self
+            .ast
+            .all_functions()
+            .into_iter()
+            .filter(|f| f.name.to_lowercase().contains(&pattern_lower))
+            .cloned()
+            .collect())
+    }
+
+    /// Extract full file analysis by filename
+    pub fn extract(&self, file_name: &str) -> Result<FileAnalysis> {
+        self.ast
+            .get_by_name(file_name)
+            .cloned()
+            .ok_or_else(|| Error::FileNotFound(PathBuf::from(file_name)))
+    }
+
+    /// Get forward calls for a function
+    pub fn get_calls(&self, function: &str) -> Result<Vec<String>> {
+        self.call_graph.get_forward_calls(function)
+    }
+
+    /// Get imports for a file
+    pub fn get_imports(&self, file_name: &str) -> Result<Vec<ImportInfo>> {
+        Ok(self.extract(file_name)?.imports)
+    }
+
+    /// Find files that import a module (returns file paths)
+    pub fn get_importers(&self, module: &str) -> Result<Vec<PathBuf>> {
+        let module_lower = module.to_lowercase();
+        let mut files = Vec::new();
+
+        for analysis in self.ast.iter_analyses() {
+            for imp in &analysis.imports {
+                if imp.module.to_lowercase().contains(&module_lower)
+                    || imp
+                        .names
+                        .iter()
+                        .any(|n: &String| n.to_lowercase() == module_lower)
+                {
+                    files.push(analysis.file.clone());
+                    break;
+                }
+            }
+        }
+
+        Ok(files)
+    }
 }

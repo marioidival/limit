@@ -204,13 +204,58 @@ impl TldrTool {
                     AgentError::ToolError("function parameter required for source analysis".into())
                 })?;
 
-                let func_info = tldr
-                    .find_function(&function)
-                    .await
-                    .map_err(|e| AgentError::ToolError(format!("Source analysis failed: {}", e)))?
-                    .ok_or_else(|| {
-                        AgentError::ToolError(format!("Function not found: {}", function))
-                    })?;
+                let func_info = if let Some(ref file) = params.file {
+                    // Disambiguate using file parameter
+                    let file_path = project_path.join(file);
+                    tldr.find_function_in(&function, &file_path)
+                        .map_err(|e| {
+                            AgentError::ToolError(format!("Source analysis failed: {}", e))
+                        })?
+                        .ok_or_else(|| {
+                            AgentError::ToolError(format!(
+                                "Function '{}' not found in '{}'",
+                                function, file
+                            ))
+                        })?
+                } else {
+                    // Try find_all to detect ambiguity
+                    let all_matches = tldr.find_all_functions(&function);
+                    if all_matches.len() > 1 {
+                        let match_list: Vec<String> = all_matches
+                            .iter()
+                            .map(|f| {
+                                let relative =
+                                    f.file.strip_prefix(&project_path).unwrap_or(&f.file);
+                                format!("{} ({}:{})", f.name, relative.display(), f.line)
+                            })
+                            .collect();
+                        return Ok(json!({
+                            "type": "disambiguation_needed",
+                            "function": function,
+                            "match_count": all_matches.len(),
+                            "matches": match_list,
+                            "hint": format!(
+                                "Use file parameter to disambiguate, e.g.: {{\"analysis_type\": \"source\", \"function\": \"{}\", \"file\": \"path/to/file.rs\"}}",
+                                function
+                            )
+                        }));
+                    }
+                    tldr.find_function(&function)
+                        .await
+                        .map_err(|e| {
+                            AgentError::ToolError(format!("Source analysis failed: {}", e))
+                        })?
+                        .ok_or_else(|| {
+                            AgentError::ToolError(format!("Function not found: {}", function))
+                        })?
+                };
+
+                // Make file path relative to project root
+                let relative_file = func_info
+                    .file
+                    .strip_prefix(&project_path)
+                    .unwrap_or(&func_info.file)
+                    .to_path_buf();
 
                 let file_path = project_path.join(&func_info.file);
                 let source = tokio::fs::read_to_string(&file_path)
@@ -226,7 +271,7 @@ impl TldrTool {
                 Ok(json!({
                     "type": "source",
                     "function": function,
-                    "file": func_info.file.display().to_string(),
+                    "file": relative_file.display().to_string(),
                     "line": func_info.line,
                     "end_line": func_info.end_line,
                     "source": function_source
@@ -354,11 +399,19 @@ impl TldrTool {
                 Ok(json!({
                     "type": "search",
                     "query": query,
-                    "results": results.iter().map(|r| json!({
-                        "function": r.function,
-                        "file": r.file.display().to_string(),
-                        "score": r.score
-                    })).collect::<Vec<_>>()
+                    "results": results.iter().map(|r| {
+                        let relative = r
+                            .file
+                            .strip_prefix(&project_path)
+                            .unwrap_or(&r.file);
+                        json!({
+                            "function": r.function,
+                            "file": relative.display().to_string(),
+                            "line": r.line,
+                            "score": r.score,
+                            "signature": r.signature
+                        })
+                    }).collect::<Vec<_>>()
                 }))
             }
         };
@@ -409,7 +462,7 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. IMPORTANT: Do NOT combine with file_read - this tool provides all needed context. Analysis types: search=find functions, context=dependencies, source=function code (replaces file_read), impact=callers, architecture=layers.",
+        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. Do NOT combine with file_read or bash — this tool provides all needed context. STRATEGY: (1) search to find functions, (2) source for 1-3 key functions only, (3) write answer. Do NOT read every function. Analysis types: search=find functions, context=dependencies, source=function code, impact=callers, architecture=layers.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -420,11 +473,11 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "function": {
                     "type": "string",
-                    "description": "Function name (required for context, source, impact, cfg, dfg)"
+                    "description": "Function or struct name (required for context, source, impact, cfg, dfg). For structs, prefix with 'struct ' (e.g., 'struct AppConfig')"
                 },
                 "file": {
                     "type": "string",
-                    "description": "File path relative to project root (required for cfg, dfg)"
+                    "description": "File path relative to project root. Required for cfg, dfg. Optional for source (use to disambiguate when function name exists in multiple files)"
                 },
                 "depth": {
                     "type": "integer",

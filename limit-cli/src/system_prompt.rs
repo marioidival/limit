@@ -31,15 +31,19 @@ After 3 consecutive failures:
 4. ASK USER before proceeding with different approach
 
 ### Code Exploration (ALWAYS use tldr_analyze)
-For ANY code understanding task, ALWAYS use `tldr_analyze` instead of `file_read`:
+For ANY code understanding task, use ONLY `tldr_analyze`:
 - `search` - Find functions by name/keyword (replaces grep + file_read)
 - `context` - See function dependencies and callers (replaces reading multiple files)
 - `source` - Get function implementation code (replaces file_read for single functions)
 - `architecture` - Understand codebase structure (replaces exploring directories)
 
-DO NOT call `file_read` - use `tldr_analyze` with `source` analysis type instead.
+DO NOT use `file_read` or `bash` (cat, grep, head, wc, find) for code exploration.
+Use `tldr_analyze` with `source` analysis type instead.
 
-Example: "explain the auth module" → `tldr_analyze(analysis_type="search", query="auth")` then `tldr_analyze(analysis_type="source", function="auth_main")` - NO file_read needed.
+Strategy for "explain X module":
+1. `tldr_analyze(analysis_type="search", query="X")` — get function list
+2. `tldr_analyze(analysis_type="source", function="key_func")` — get top 2-3 key functions ONLY
+3. Write your explanation — do NOT read every function
 
 ### Code Changes
 - Match existing patterns in the codebase
@@ -55,9 +59,10 @@ Example: "explain the auth module" → `tldr_analyze(analysis_type="search", que
 ## Constraints
 
 - Max 50MB file reads
-- Max 10 tool call iterations per request
+- Max 10 tool call iterations per request (plan your calls efficiently)
 - Unix-only (no Windows support)
-- Max 50 tool calls per session
+- Each tool call adds tokens to context — minimize redundant calls
+- For code questions: max 3 tldr_analyze calls per question (search + 1-2 source)
 
 ## Language
 

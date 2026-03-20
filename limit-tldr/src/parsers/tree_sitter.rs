@@ -28,7 +28,7 @@ impl TreeSitterParser {
             #[cfg(feature = "tree-sitter-extra")]
             Language::Ruby => Some(tree_sitter_ruby::LANGUAGE.into()),
             #[cfg(feature = "tree-sitter-extra")]
-            Language::PHP => Some(tree_sitter_php::LANGUAGE.into()),
+            Language::PHP => Some(tree_sitter_php::LANGUAGE_PHP.into()),
             #[cfg(feature = "tree-sitter-extra")]
             Language::CSharp => Some(tree_sitter_c_sharp::LANGUAGE.into()),
             _ => None,
@@ -274,10 +274,83 @@ impl TreeSitterParser {
 
         Ok(())
     }
+
+    /// Find a function's tree-sitter node by name (shared utility for CFG/DFG/PDG)
+    pub fn find_function_node<'a>(
+        root: tree_sitter::Node<'a>,
+        name: &str,
+        source: &str,
+    ) -> Option<tree_sitter::Node<'a>> {
+        let cursor = &mut root.walk();
+        for child in root.children(cursor) {
+            if matches!(
+                child.kind(),
+                "function_definition" | "function_item" | "method_definition" | "arrow_function"
+            ) {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let func_name = &source[name_node.start_byte()..name_node.end_byte()];
+                    if func_name == name {
+                        return Some(child);
+                    }
+                }
+            }
+            if let Some(found) = Self::find_function_node(child, name, source) {
+                return Some(found);
+            }
+        }
+        None
+    }
 }
 
 impl Default for TreeSitterParser {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod node_finder_tests {
+    use super::*;
+
+    #[test]
+    fn finds_python_function() {
+        let source = "def hello():\n    pass\ndef world():\n    pass";
+        let parser = TreeSitterParser::new();
+        let ts_lang = parser.get_ts_language(Language::Python).unwrap();
+        let mut ts_parser = tree_sitter::Parser::new();
+        ts_parser.set_language(&ts_lang).unwrap();
+        let tree = ts_parser.parse(source, None).unwrap();
+
+        let found = TreeSitterParser::find_function_node(tree.root_node(), "hello", source);
+        assert!(found.is_some(), "Should find hello function");
+        assert_eq!(found.unwrap().start_position().row, 0);
+    }
+
+    #[test]
+    fn returns_none_for_missing_function() {
+        let source = "def hello():\n    pass";
+        let parser = TreeSitterParser::new();
+        let ts_lang = parser.get_ts_language(Language::Python).unwrap();
+        let mut ts_parser = tree_sitter::Parser::new();
+        ts_parser.set_language(&ts_lang).unwrap();
+        let tree = ts_parser.parse(source, None).unwrap();
+
+        assert!(
+            TreeSitterParser::find_function_node(tree.root_node(), "missing", source).is_none()
+        );
+    }
+
+    #[test]
+    fn finds_rust_function() {
+        let source = "fn main() { bar(); }\nfn bar() {}";
+        let parser = TreeSitterParser::new();
+        let ts_lang = parser.get_ts_language(Language::Rust).unwrap();
+        let mut ts_parser = tree_sitter::Parser::new();
+        ts_parser.set_language(&ts_lang).unwrap();
+        let tree = ts_parser.parse(source, None).unwrap();
+
+        let found = TreeSitterParser::find_function_node(tree.root_node(), "bar", source);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().start_position().row, 1);
     }
 }
