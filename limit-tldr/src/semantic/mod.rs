@@ -56,6 +56,7 @@ impl SemanticIndex {
         &mut self,
         analyses: &[FileAnalysis],
         call_graph: &CallGraphLayer,
+        cache_dir: &Path,
     ) -> Result<()> {
         // Index functions
         let mut entries: Vec<Entry> = analyses
@@ -88,7 +89,10 @@ impl SemanticIndex {
         entries.extend(struct_entries);
         self.entries = entries;
 
-        match TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGESmallENV15)) {
+        let model_cache = cache_dir.join("fastembed");
+        match TextEmbedding::try_new(
+            InitOptions::new(EmbeddingModel::BGESmallENV15).with_cache_dir(model_cache),
+        ) {
             Ok(mut model) => {
                 let texts: Vec<String> = self
                     .entries
@@ -134,9 +138,10 @@ impl SemanticIndex {
         &mut self,
         ast: &crate::layers::ASTLayer,
         call_graph: &CallGraphLayer,
+        cache_dir: &Path,
     ) -> Result<()> {
         let analyses: Vec<FileAnalysis> = ast.file_analyses().into_iter().cloned().collect();
-        self.build(&analyses, call_graph).await
+        self.build(&analyses, call_graph, cache_dir).await
     }
 
     /// Whether embeddings were generated (only save if true)
@@ -459,6 +464,7 @@ mod tests {
                 EntryKind::Struct,
             ),
         ];
+        index.embeddings = Some(vec![vec![0.1; 384]]);
 
         assert!(index.should_save());
         index.save(dir.path()).unwrap();
@@ -469,7 +475,7 @@ mod tests {
         assert_eq!(loaded.entries[0].0, "handler");
         assert_eq!(loaded.entries[1].0, "struct Config");
 
-        // Search still works after load
+        // Embeddings and save flag preserved through roundtrip
         assert!(loaded.should_save());
     }
 

@@ -161,7 +161,9 @@ impl TLDR {
         self.call_graph.build(&analyses);
 
         // Build semantic index
-        self.semantic.build(&analyses, &self.call_graph).await?;
+        self.semantic
+            .build(&analyses, &self.call_graph, self.cache.cache_dir())
+            .await?;
 
         // Persist semantic index if embeddings were generated
         if self.semantic.should_save() {

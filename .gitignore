@@ -5,6 +5,7 @@ target/
 docs/plans/*
 *.db
 *.bin
+.fastembed_cache/
 
 # Temporary study folder
 tmp-study/
