@@ -169,6 +169,8 @@ pub struct ClassInfo {
     pub fields: Vec<FieldInfo>,
     /// Line number
     pub line: usize,
+    /// End line number
+    pub end_line: usize,
     /// File path
     pub file: PathBuf,
     /// Docstring

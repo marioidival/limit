@@ -302,6 +302,16 @@ impl TLDR {
         self.ast.find_function_preferring_file(name, file)
     }
 
+    /// Find a class/struct by name
+    pub fn find_class(&self, name: &str) -> Result<Option<ClassInfo>> {
+        self.ast.find_class(name)
+    }
+
+    /// Find a class/struct, preferring one in the given file
+    pub fn find_class_in(&self, name: &str, file: &Path) -> Result<Option<ClassInfo>> {
+        self.ast.find_class_preferring_file(name, file)
+    }
+
     /// Get the project path
     pub fn project_path(&self) -> &Path {
         &self.project_path
