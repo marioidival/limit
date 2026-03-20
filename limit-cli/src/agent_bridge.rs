@@ -13,7 +13,7 @@ const MAX_TOOL_RESULT_CHARS: usize = 4000;
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
-use limit_agent::tldr_tool_definition;
+use crate::tools::tldr_tool_definition;
 use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use limit_llm::ProviderFactory;
