@@ -51,9 +51,12 @@ tree-sitter-ruby = { version = "0.23", optional = true }
 tree-sitter-php = { version = "0.23", optional = true }
 tree-sitter-c-sharp = { version = "0.23", optional = true }
 
+# Semantic embeddings
+fastembed = { version = "5", optional = true }
+
 [features]
 default = []
-semantic = []
+semantic = ["fastembed"]
 tree-sitter-extra = ["tree-sitter-ruby", "tree-sitter-php", "tree-sitter-c-sharp"]
 
 [dev-dependencies]
