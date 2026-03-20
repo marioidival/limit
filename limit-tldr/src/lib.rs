@@ -282,4 +282,9 @@ impl TLDR {
     pub fn detect_architecture(&self) -> Result<ArchitectureInfo> {
         self.call_graph.detect_layers()
     }
+
+    /// Find a function by name
+    pub async fn find_function(&self, name: &str) -> Result<Option<FunctionInfo>> {
+        self.ast.find_function(name)
+    }
 }

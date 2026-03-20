@@ -20,6 +20,8 @@ use tracing::{debug, info};
 pub enum AnalysisType {
     /// Get compressed context for a function (token-efficient)
     Context,
+    /// Get source code of a function (use instead of file_read for implementation details)
+    Source,
     /// Find who calls a function (impact analysis for refactoring)
     Impact,
     /// Get control flow graph (complexity analysis)
@@ -191,6 +193,40 @@ impl TldrTool {
                     "function": function,
                     "depth": params.depth,
                     "context": context
+                }))
+            }
+
+            AnalysisType::Source => {
+                let function = params.function.ok_or_else(|| {
+                    AgentError::ToolError("function parameter required for source analysis".into())
+                })?;
+
+                let func_info = tldr
+                    .find_function(&function)
+                    .await
+                    .map_err(|e| AgentError::ToolError(format!("Source analysis failed: {}", e)))?
+                    .ok_or_else(|| {
+                        AgentError::ToolError(format!("Function not found: {}", function))
+                    })?;
+
+                let file_path = project_path.join(&func_info.file);
+                let source = tokio::fs::read_to_string(&file_path)
+                    .await
+                    .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
+
+                let lines: Vec<&str> = source.lines().collect();
+                let start = func_info.line.saturating_sub(1);
+                let end = func_info.end_line.min(lines.len());
+
+                let function_source = lines[start..end].join("\n");
+
+                Ok(json!({
+                    "type": "source",
+                    "function": function,
+                    "file": func_info.file.display().to_string(),
+                    "line": func_info.line,
+                    "end_line": func_info.end_line,
+                    "source": function_source
                 }))
             }
 
@@ -370,18 +406,18 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Use `search` with query='keyword' to find relevant code. Saves 95% tokens vs reading raw code. IMPORTANT: Do NOT combine with file_read or other file tools - this tool provides all needed context. Also useful for: understanding code structure before editing, finding callers/dependencies (impact analysis), exploring architecture layers, detecting dead code.",
+        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. IMPORTANT: Do NOT combine with file_read - this tool provides all needed context. Analysis types: search=find functions, context=dependencies, source=function code (replaces file_read), impact=callers, architecture=layers.",
         "parameters": {
             "type": "object",
             "properties": {
                 "analysis_type": {
                     "type": "string",
-                    "enum": ["context", "impact", "cfg", "dfg", "dead_code", "architecture", "search"],
-                    "description": "Type of analysis: context=function dependencies, impact=callers, cfg=control flow, dfg=data flow, dead_code=unreachable, architecture=module layers, search=find functions"
+                    "enum": ["search", "context", "source", "impact", "cfg", "dfg", "dead_code", "architecture"],
+                    "description": "Type: search=find by keyword, context=dependencies+callers, source=function code (use instead of file_read), impact=who calls this, cfg=control flow, dfg=data flow, dead_code=unreachable, architecture=module layers"
                 },
                 "function": {
                     "type": "string",
-                    "description": "Function name to analyze (required for context, impact, cfg, dfg)"
+                    "description": "Function name (required for context, source, impact, cfg, dfg)"
                 },
                 "file": {
                     "type": "string",
