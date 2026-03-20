@@ -282,11 +282,23 @@ impl TldrTool {
                     AgentError::ToolError(format!("Architecture detection failed: {}", e))
                 })?;
 
+                // Return counts + samples to keep output small
+                // Full lists can be huge (20k+ chars) defeating token efficiency goal
+                let entry_sample: Vec<_> = arch.entry.iter().take(10).collect();
+                let middle_sample: Vec<_> = arch.middle.iter().take(10).collect();
+                let leaf_sample: Vec<_> = arch.leaf.iter().take(10).collect();
+
                 Ok(json!({
                     "type": "architecture",
-                    "entry_points": arch.entry,
-                    "middle_layer": arch.middle,
-                    "leaf_functions": arch.leaf
+                    "summary": {
+                        "entry_points_count": arch.entry.len(),
+                        "middle_layer_count": arch.middle.len(),
+                        "leaf_functions_count": arch.leaf.len()
+                    },
+                    "sample_entry_points": entry_sample,
+                    "sample_middle_layer": middle_sample,
+                    "sample_leaf_functions": leaf_sample,
+                    "note": "Showing top 10 of each category. Use Search analysis for specific functions."
                 }))
             }
 
@@ -343,8 +355,13 @@ impl Tool for TldrTool {
         }
 
         let result = self.analyze(params).await?;
-        let result_str = serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
-        info!("tldr_analyze result: {} chars, {} bytes", result_str.chars().count(), result_str.len());
+        let result_str =
+            serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
+        info!(
+            "tldr_analyze result: {} chars, {} bytes",
+            result_str.chars().count(),
+            result_str.len()
+        );
         Ok(result)
     }
 }
