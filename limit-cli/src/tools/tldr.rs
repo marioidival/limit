@@ -3,6 +3,7 @@
 //! Provides a tool interface for the `limit-tldr` library, enabling agents
 //! to analyze code structure, dependencies, and complexity.
 
+use crate::project_settings::ProjectSettings;
 use crate::tools::warm_guard::WarmGuard;
 use async_trait::async_trait;
 use limit_agent::AgentError;
@@ -698,9 +699,28 @@ impl Tool for TldrTool {
     }
 
     async fn execute(&self, args: Value) -> Result<Value, AgentError> {
-        // Parse parameters
         let params: TldrParams = serde_json::from_value(args)
             .map_err(|e| AgentError::ToolError(format!("Invalid parameters: {}", e)))?;
+
+        let project_path = params
+            .project_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.default_project.clone());
+
+        let settings = ProjectSettings::new().map_err(|e| {
+            AgentError::ToolError(format!("Failed to check project settings: {}", e))
+        })?;
+
+        if !settings.is_warm_enabled(&project_path) {
+            info!("tldr_analyze: warm not enabled for project, requesting permission");
+            return Ok(json!({
+                "type": "warm_permission_required",
+                "message": "Code analysis (TLDR) is not enabled for this project.",
+                "instruction": "Ask the user if they want to enable code analysis. If yes, tell them to run: /tldr",
+                "benefit": "Enabling allows fast code search, context analysis, and impact tracking with 95% token savings."
+            }));
+        }
 
         info!("tldr_analyze invoked: type={:?}", params.analysis_type);
         if let Some(ref f) = &params.function {
@@ -732,7 +752,7 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. Do NOT combine with file_read or bash — this tool provides all needed context. STRATEGY: (1) search to find functions/constants/structs, (2) source for 1-3 key items only, (3) write answer. Do NOT read every function. Analysis types: search=find by keyword (functions, constants, structs), context=dependencies, source=function code, impact=callers, architecture=layers.",
+        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. Do NOT combine with file_read or bash — this tool provides all needed context. STRATEGY: (1) search to find functions/constants/structs, (2) source for 1-3 key items only, (3) write answer. Do NOT read every function. Analysis types: search=find by keyword (functions, constants, structs), context=dependencies, source=function code, impact=callers, architecture=layers. NOTE: If this tool returns 'warm_permission_required', ask the user if they want to enable code analysis for this project.",
         "parameters": {
             "type": "object",
             "properties": {
