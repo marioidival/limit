@@ -125,9 +125,10 @@ impl TreeSitterParser {
                         continue;
                     }
                 }
-                // Class/struct definitions
+                // Class/struct/trait definitions
                 "class_definition"
                 | "struct_item"
+                | "trait_item"
                 | "class_declaration"
                 | "interface_declaration" => {
                     if let Some(class) = self.extract_class(child, source) {
@@ -444,6 +445,21 @@ pub fn my_function() -> MyStruct {
         assert_eq!(analysis.functions.len(), 1, "Should find 1 function");
         assert_eq!(analysis.classes[0].name, "MyStruct");
         assert_eq!(analysis.functions[0].name, "my_function");
+    }
+
+    #[test]
+    fn rust_trait_extraction() {
+        let source = r#"pub trait LlmProvider {
+    async fn complete(&self, prompt: &str) -> Result<String>;
+}"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.classes.len(), 1, "Should find 1 trait");
+        assert_eq!(analysis.classes[0].name, "LlmProvider");
+        assert_eq!(analysis.classes[0].line, 1);
     }
 }
 
