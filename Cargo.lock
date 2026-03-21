@@ -2290,6 +2290,7 @@ version = "0.0.34"
 dependencies = [
  "anyhow",
  "blake3",
+ "dirs 5.0.1",
  "fastembed",
  "ignore",
  "rayon",

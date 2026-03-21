@@ -89,7 +89,9 @@ impl SemanticIndex {
         entries.extend(struct_entries);
         self.entries = entries;
 
-        let model_cache = cache_dir.join("fastembed");
+        let model_cache = dirs::home_dir()
+            .map(|h| h.join(".limit").join("fastembed"))
+            .unwrap_or_else(|| cache_dir.join("fastembed"));
         match TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::BGESmallENV15).with_cache_dir(model_cache),
         ) {
