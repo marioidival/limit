@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["full"] }
 
 # Hashing for incremental updates
 blake3 = "1.5"
+rustc-hash = "2"
 
 # Error handling
 thiserror = "1.0"
