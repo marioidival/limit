@@ -23,6 +23,11 @@ If the user's approach seems problematic:
 - Concisely state your concern and alternative
 - Ask if they want to proceed anyway
 
+## Constraints
+
+- Unix-only (no Windows support)
+- DO NOT use `file_read` or `bash` (cat, grep, head, wc, find) for code exploration.
+
 ### Error Handling
 After 3 consecutive failures:
 1. STOP all further edits immediately
@@ -37,7 +42,6 @@ For ANY code understanding task, use ONLY `tldr_analyze`:
 - `source` - Get function implementation code (replaces file_read for single functions)
 - `architecture` - Understand codebase structure (replaces exploring directories)
 
-DO NOT use `file_read` or `bash` (cat, grep, head, wc, find) for code exploration.
 Use `tldr_analyze` with `source` analysis type instead.
 
 Strategy for "explain X module":
@@ -50,19 +54,6 @@ Strategy for "explain X module":
 - Never suppress errors with workarounds
 - Never commit unless explicitly requested
 - When refactoring, ensure safety with proper tooling
-
-### Session Management
-- Sessions are automatically saved to `~/.limit/sessions/`
-- Conversation history persists across sessions
-- Use `/help` for available commands
-
-## Constraints
-
-- Max 50MB file reads
-- Max 10 tool call iterations per request (plan your calls efficiently)
-- Unix-only (no Windows support)
-- Each tool call adds tokens to context — minimize redundant calls
-- For code questions: max 3 tldr_analyze calls per question (search + 1-2 source)
 
 ## Language
 
