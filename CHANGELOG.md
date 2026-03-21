@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.34] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Replace native-tls with rustls to eliminate OpenSSL dependency
+
+## [0.0.34] - 2026-03-20
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.33] - 2026-03-21
 
 ### 🐛 Bug Fixes
