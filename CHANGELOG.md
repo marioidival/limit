@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.30] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Publish
+
+## [0.0.30] - 2026-03-20
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.29] - 2026-03-20
 
 ### 🚀 Features
