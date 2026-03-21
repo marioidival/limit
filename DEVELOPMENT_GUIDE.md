@@ -20,12 +20,13 @@ cargo build --workspace
 
 ## Project Structure
 
-Limit is a Cargo workspace with 4 crates:
+Limit is a Cargo workspace with 5 crates:
 
 | Crate | Purpose |
 |-------|---------|
-| `limit-llm` | Multi-provider LLM client (Anthropic, OpenAI, z.ai) |
+| `limit-llm` | Multi-provider LLM client (Anthropic, OpenAI, z.ai, local) |
 | `limit-agent` | Agent runtime with tool registry and Docker sandbox |
+| `limit-tldr` | Code analysis library (AST, call graph, CFG, DFG, PDG) |
 | `limit-cli` | CLI application with REPL and TUI modes |
 | `limit-tui` | Terminal UI components with Virtual DOM |
 
@@ -53,6 +54,20 @@ limit/
 │   │   └── state.rs        # Agent state management
 │   └── tests/
 │
+├── limit-tldr/             # Code analysis library
+│   ├── src/
+│   │   ├── lib.rs          # TLDR main API
+│   │   ├── layers/         # Analysis layers
+│   │   │   ├── ast.rs      # Layer 1: Structure
+│   │   │   ├── call_graph.rs # Layer 2: Dependencies
+│   │   │   ├── cfg.rs      # Layer 3: Control flow
+│   │   │   ├── dfg.rs      # Layer 4: Data flow
+│   │   │   └── pdg.rs      # Layer 5: Program dependence
+│   │   ├── parsers/        # Tree-sitter parsers
+│   │   ├── semantic/       # Semantic search (embeddings)
+│   │   └── cache/          # Incremental cache
+│   └── tests/
+│
 ├── limit-cli/              # CLI application
 │   ├── src/
 │   │   ├── main.rs         # Entry point
@@ -60,6 +75,12 @@ limit/
 │   │   ├── tui_bridge.rs   # TUI integration
 │   │   ├── session.rs      # Session persistence
 │   │   └── tools/          # Tool implementations
+│   │       ├── tldr.rs     # tldr_analyze tool
+│   │       ├── analysis.rs # grep, ast_grep, lsp
+│   │       ├── bash.rs
+│   │       ├── git.rs
+│   │       ├── web.rs
+│   │       └── browser/    # Browser automation
 │   └── tests/
 │
 └── limit-tui/              # Terminal UI
@@ -224,11 +245,11 @@ pub struct MyTool;
 #[async_trait]
 impl Tool for MyTool {
     fn name(&self) -> &str { "my_tool" }
-    
+
     fn description(&self) -> &str {
         "Description of what the tool does"
     }
-    
+
     fn parameters(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -238,14 +259,14 @@ impl Tool for MyTool {
             "required": ["input"]
         })
     }
-    
-    async fn execute(&self, args: serde_json::Value) -> Result<String> {
+
+    async fn execute(&self, args: serde_json::Value) -> Result<Value, AgentError> {
         let input: String = args["input"].as_str()
-            .ok_or_else(|| anyhow!("Missing input"))?
+            .ok_or_else(|| AgentError::ToolError("Missing input".into()))?
             .to_string();
-        
+
         // Tool implementation
-        Ok(format!("Result: {}", input))
+        Ok(json!({ "result": input }))
     }
 }
 ```
@@ -256,7 +277,33 @@ impl Tool for MyTool {
 registry.register(Box::new(MyTool));
 ```
 
-3. **Add tests** in `limit-cli/tests/`
+3. **Add tests** in `limit-cli/src/tools/` or `limit-cli/tests/`
+
+### Example: tldr_analyze Tool
+
+The `tldr_analyze` tool (`limit-cli/src/tools/tldr.rs`) wraps `limit-tldr` library:
+
+```rust
+pub struct TldrTool {
+    tldr: Arc<RwLock<Option<TLDR>>>,
+}
+
+#[async_trait]
+impl Tool for TldrTool {
+    fn name(&self) -> &str { "tldr_analyze" }
+
+    async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+        let params: TldrParams = serde_json::from_value(args)?;
+
+        match params.analysis_type {
+            AnalysisType::Search => self.search(&params),
+            AnalysisType::Context => self.get_context(&params),
+            AnalysisType::Source => self.get_source(&params),
+            // ...
+        }
+    }
+}
+```
 
 ---
 
@@ -288,6 +335,72 @@ match provider_name {
 3. **Add config support** in `limit-llm/src/config.rs`
 
 4. **Add tests** in `limit-llm/tests/`
+
+---
+
+## limit-tldr: Code Analysis Library
+
+The `limit-tldr` crate provides token-efficient code analysis with 95% savings vs raw code. It's used by the `tldr_analyze` tool.
+
+### Architecture (5 Layers)
+
+| Layer | File | Purpose |
+|-------|------|---------|
+| **1** | `layers/ast.rs` | Structure — "What functions exist?" |
+| **2** | `layers/call_graph.rs` | Dependencies — "Who calls what?" |
+| **3** | `layers/cfg.rs` | Control Flow — "How complex is this?" |
+| **4** | `layers/dfg.rs` | Data Flow — "Where does this value come from?" |
+| **5** | `layers/pdg.rs` | Program Dependence — "What affects this line?" |
+
+### Key Components
+
+- **TLDR** (`lib.rs`) — Main API entry point
+- **ParseCoordinator** (`coordinator.rs`) — Discovers and parses files in parallel
+- **CacheManager** (`cache/`) — Incremental cache with BLAKE3 hashing
+- **SemanticIndex** (`semantic/`) — Optional semantic search with embeddings
+- **TreeSitterParser** (`parsers/`) — Multi-language parsing (Rust, Python, JS, TS, Go, Java, C, C++)
+
+### Analysis Types
+
+| Type | Method | Description |
+|------|--------|-------------|
+| `search` | `search()` | Find functions by name/keyword |
+| `context` | `get_context()` | Get function dependencies + callers |
+| `source` | `find_function()` | Extract function implementation |
+| `impact` | `get_impact()` | Who calls this function? |
+| `cfg` | `get_cfg()` | Control flow graph (complexity) |
+| `dfg` | `get_dfg()` | Data flow graph (variable origins) |
+| `dead_code` | `find_dead_code()` | Find unreachable functions |
+| `architecture` | `detect_architecture()` | Detect module layers |
+
+### Adding Language Support
+
+To add a new language to limit-tldr:
+
+1. **Add tree-sitter dependency** in `limit-tldr/Cargo.toml`:
+```toml
+tree-sitter-my-language = "0.23"
+```
+
+2. **Register language** in `limit-tldr/src/parsers/tree_sitter.rs`:
+```rust
+pub fn get_ts_language(&self, lang: Language) -> Option<TsLanguage> {
+    match lang {
+        Language::MyLanguage => Some(tree_sitter_my_language::language()),
+        // ...
+    }
+}
+```
+
+3. **Add language enum** in `limit-tldr/src/types.rs`:
+```rust
+pub enum Language {
+    MyLanguage,
+    // ...
+}
+```
+
+4. **Add tests** in `limit-tldr/tests/`
 
 ---
 
@@ -344,6 +457,10 @@ RUST_LOG=debug cargo run --package limit-cli
 | Session not loading | Check `~/.limit/sessions/` permissions |
 | Docker sandbox fails | Ensure Docker daemon is running |
 | Build fails | Run `cargo clean` then rebuild |
+| `tldr_analyze` returns empty | Run `tldr.warm()` first to build indexes |
+| Semantic search unavailable | Install `fastembed` feature: `cargo build --features semantic` |
+| `ast_grep` not found | Install: `brew install ast-grep` or `cargo install ast-grep` |
+| LSP operations fail | Install language server (rust-analyzer, typescript-language-server, pylsp) |
 
 ---
 
