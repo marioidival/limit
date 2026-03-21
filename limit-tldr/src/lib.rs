@@ -193,6 +193,7 @@ impl TLDR {
         let semantic = Arc::clone(&self.semantic);
         let cache_dir = self.cache.cache_dir().to_path_buf();
         std::thread::spawn(move || {
+            SemanticIndex::init_runtime();
             tracing::info!("semantic: background model load started");
             semantic.load_model(&cache_dir);
 

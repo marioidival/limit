@@ -2295,6 +2295,7 @@ dependencies = [
  "ignore",
  "rayon",
  "regex",
+ "rustc-hash 2.1.1",
  "serde",
  "serde_json",
  "tempfile",
@@ -2326,6 +2327,7 @@ dependencies = [
  "syntect",
  "thiserror 1.0.69",
  "tracing",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
