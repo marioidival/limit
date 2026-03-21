@@ -151,12 +151,60 @@ Features:
 | `/clear` | Clear the screen |
 | `/help` | Show available commands |
 | `/model` | Show current model configuration |
+| `/tldr` | Enable code analysis for this project |
+| `/warm` | Alias for `/tldr` |
 | `/session list` | List all saved sessions |
 | `/session new` | Create a new session |
 | `/session load <id>` | Load a specific session |
 | `/share` | Copy session to clipboard |
 | `/share md` | Export session as markdown |
 | `/share json` | Export session as JSON |
+
+## Code Analysis (TLDR)
+
+TLDR provides token-efficient code analysis with 95% savings vs reading raw code. It's **opt-in per project** for performance reasons.
+
+### Enabling TLDR
+
+```bash
+# In the TUI, run:
+/tldr
+
+# Or use the alias:
+/warm
+```
+
+This enables code analysis for the current project. The setting persists in `~/.limit/tracking.db`.
+
+### Permissive Mode
+
+If the AI tries to use code analysis but TLDR isn't enabled, it will ask for permission:
+
+```
+AI: Code analysis (TLDR) is not enabled for this project. 
+    Would you like to enable it? Run /tldr to activate.
+```
+
+### Available Analysis Types
+
+| Type | Description |
+|------|-------------|
+| `search` | Find functions/structs by keyword |
+| `context` | Get dependencies and callers |
+| `source` | Get function code (instead of file_read) |
+| `impact` | Find who calls a function |
+| `cfg` | Control flow graph |
+| `dfg` | Data flow graph |
+| `dead_code` | Find unreachable functions |
+| `architecture` | Detect module layers |
+
+### Example Usage
+
+Ask the AI natural language questions:
+- "What does the `process_message` function do?"
+- "Who calls `handle_request`?"
+- "Find all functions related to authentication"
+- "Show me the architecture of this codebase"
 
 ## Token Tracking
 

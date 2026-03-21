@@ -2,6 +2,17 @@
 //!
 //! Provides a tool interface for the `limit-tldr` library, enabling agents
 //! to analyze code structure, dependencies, and complexity.
+//!
+//! # Permissive Mode
+//!
+//! Code analysis is opt-in per project. The tool checks `ProjectSettings::is_warm_enabled()`
+//! before allowing analysis. If not enabled, returns `warm_permission_required` response
+//! with instructions for the LLM to ask the user to run `/tldr`.
+//!
+//! # Usage
+//!
+//! Users enable code analysis with `/tldr` or `/warm` command. The setting persists
+//! in `~/.limit/tracking.db` across sessions.
 
 use crate::project_settings::ProjectSettings;
 use crate::tools::warm_guard::WarmGuard;

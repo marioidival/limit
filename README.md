@@ -104,7 +104,7 @@ model = "claude-sonnet-4-6-20260217"
 ### Code Analysis
 | Tool | Description |
 |------|-------------|
-| `tldr_analyze` | Token-efficient analysis (95% savings) — search, context, source, impact, cfg, dfg, dead_code, architecture. See [limit-tldr/README.md](limit-tldr/README.md) |
+| `tldr_analyze` | Token-efficient analysis (95% savings) — search, context, source, impact, cfg, dfg, dead_code, architecture. **Requires `/tldr` to enable per project.** See [limit-tldr/README.md](limit-tldr/README.md) |
 | `ast_grep` | AST-aware search (Rust, TS, Python) |
 | `lsp` | Go-to-definition, find-references |
 
@@ -123,6 +123,8 @@ model = "claude-sonnet-4-6-20260217"
 | `/clear` | Clear screen |
 | `/help` | Show commands |
 | `/model` | Show config |
+| `/tldr` | Enable code analysis for this project |
+| `/warm` | Alias for `/tldr` |
 | `/session list` | List sessions |
 | `/session new` | New session |
 | `/share` | Export session (clipboard/md/json) |
