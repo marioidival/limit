@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.36] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Skip embedding rebuild when cache is valid and add progress logging
+
+- Move load_model to background to prevent pre_warm timeout
+
+- Index Rust traits in tree-sitter parser
+
+- Graceful project_path mismatch handling and debug log cleanup
+
+- Resolve ONNX Runtime cross-compilation failure
+
+
+### 🚜 Refactor
+
+- Make semantic embedding build non-blocking
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove old files
+
+## [0.0.36] - 2026-03-21
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.35] - 2026-03-21
 
 ### 🚜 Refactor
