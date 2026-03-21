@@ -31,6 +31,7 @@ struct SemanticCache {
 enum EntryKind {
     Function,
     Struct,
+    Constant,
 }
 
 /// Internal entry type shared between functions and structs
@@ -114,6 +115,23 @@ impl SemanticIndex {
             .collect();
 
         entries.extend(struct_entries);
+
+        let constant_entries: Vec<Entry> = analyses
+            .iter()
+            .flat_map(|a| {
+                a.constants.iter().map(|c| {
+                    let name = format!("const {}", c.name);
+                    let sig = format!(
+                        "const {}: {:?}",
+                        c.name,
+                        c.value.as_deref().unwrap_or_default()
+                    );
+                    (name, c.file.clone(), c.line, sig, EntryKind::Constant)
+                })
+            })
+            .collect();
+
+        entries.extend(constant_entries);
         self.entries = entries;
 
         // Pre-compute embedding texts for functions (using call graph context)
@@ -311,6 +329,7 @@ impl SemanticIndex {
                 let kind_str = match kind {
                     EntryKind::Function => "fn",
                     EntryKind::Struct => "struct",
+                    EntryKind::Constant => "const",
                 };
                 (
                     name.clone(),
@@ -364,6 +383,7 @@ impl SemanticIndex {
                 let kind = match kind_str.as_str() {
                     "fn" => EntryKind::Function,
                     "struct" => EntryKind::Struct,
+                    "const" => EntryKind::Constant,
                     _ => return None,
                 };
                 Some((name, file, line, sig, kind))
