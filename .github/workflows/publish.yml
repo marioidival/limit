@@ -16,6 +16,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+
       - name: Publish limit-llm
         run: cargo publish -p limit-llm
         continue-on-error: true
@@ -32,6 +35,12 @@ jobs:
 
       - name: Publish limit-agent
         run: cargo publish -p limit-agent
+
+      - name: Wait for index update
+        run: sleep 10
+
+      - name: Publish limit-tldr
+        run: cargo publish -p limit-tldr
 
       - name: Wait for index update
         run: sleep 10
