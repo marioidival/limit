@@ -5,10 +5,12 @@ passthrough = [
 
 [target.x86_64-unknown-linux-gnu]
 pre-build = [
-    "apt-get update && apt-get install -y --no-install-recommends libssl-dev pkg-config",
+    "apt-get update && apt-get install -y --no-install-recommends pkg-config make perl",
 ]
+env = { OPENSSL_NO_PKG_CONFIG = "1" }
 
 [target.aarch64-unknown-linux-gnu]
 pre-build = [
-    "apt-get update && apt-get install -y --no-install-recommends libssl-dev pkg-config",
+    "apt-get update && apt-get install -y --no-install-recommends pkg-config make perl",
 ]
+env = { OPENSSL_NO_PKG_CONFIG = "1" }
