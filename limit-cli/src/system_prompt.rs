@@ -42,11 +42,15 @@ For ANY code understanding task, use ONLY `tldr_analyze`:
 - `source` - Get function implementation code (replaces file_read for single functions)
 - `architecture` - Understand codebase structure (replaces exploring directories)
 
-Use `tldr_analyze` with `source` analysis type instead.
+**Critical rules for `source` and `context`:**
+- Both require a `function` parameter that MUST exist in the index
+- ALWAYS run `search` first to get exact function names before using `source` or `context`
+- NEVER guess function names — if `search` doesn't find it, it doesn't exist in the index
+- Do NOT pass `project_path` — the tool uses the workspace root automatically
 
 Strategy for "explain X module":
 1. `tldr_analyze(analysis_type="search", query="X")` — get function list
-2. `tldr_analyze(analysis_type="source", function="key_func")` — get top 2-3 key functions ONLY
+2. `tldr_analyze(analysis_type="source", function="key_func")` — use exact name from search results
 3. Write your explanation — do NOT read every function
 
 ### Code Changes
