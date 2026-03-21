@@ -851,7 +851,9 @@ impl TuiApp {
                         let mut attempts = 0;
                         loop {
                             if cancel_token.is_cancelled() {
-                                tracing::debug!("Operation cancelled while waiting for messages lock");
+                                tracing::debug!(
+                                    "Operation cancelled while waiting for messages lock"
+                                );
                                 return;
                             }
                             match messages.try_lock() {
@@ -884,7 +886,9 @@ impl TuiApp {
                         let mut attempts = 0;
                         loop {
                             if cancel_token.is_cancelled() {
-                                tracing::debug!("Operation cancelled while waiting for bridge lock");
+                                tracing::debug!(
+                                    "Operation cancelled while waiting for bridge lock"
+                                );
                                 return;
                             }
                             match agent_bridge.try_lock() {
@@ -927,7 +931,11 @@ impl TuiApp {
                                 input_tokens,
                                 output_tokens,
                             ) {
-                                tracing::error!("✗ Failed to auto-save session {}: {}", session_id, e);
+                                tracing::error!(
+                                    "✗ Failed to auto-save session {}: {}",
+                                    session_id,
+                                    e
+                                );
                             } else {
                                 tracing::info!(
                                     "✓ Session {} auto-saved ({} messages, {} in, {} out tokens)",
