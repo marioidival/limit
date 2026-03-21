@@ -33,7 +33,7 @@ After 3 consecutive failures:
 ### Code Exploration (ALWAYS use tldr_analyze)
 For ANY code understanding task, use ONLY `tldr_analyze`:
 - `search` - Find functions by name/keyword (replaces grep + file_read)
-- `context` - See function dependencies and callers (replaces reading multiple files)
+- `context` - See function dependencies and callers (replaces reading multiple files and cat, grep, head, wc, find)
 - `source` - Get function implementation code (replaces file_read for single functions)
 - `architecture` - Understand codebase structure (replaces exploring directories)
 

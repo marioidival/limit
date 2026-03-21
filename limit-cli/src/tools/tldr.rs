@@ -147,7 +147,27 @@ impl TldrTool {
 
         let guard = WarmGuard::new(&cache_dir);
         if guard.is_fresh(&project_path) {
-            info!("pre_warm: skipping, warm is fresh");
+            info!("pre_warm: cache files fresh, loading without re-warming");
+            // Cache files are up-to-date, but OnceCell is empty on each session.
+            // Create TLDR and warm() (which is fast when files are cached),
+            // then populate the OnceCell so get_tldr() doesn't lazy-create.
+            let config = TldrConfig {
+                language: Language::Auto,
+                max_depth: 3,
+                cache_dir: Some(cache_dir),
+            };
+            match TLDR::new(&project_path, config).await {
+                Ok(mut tldr) => match tldr.warm().await {
+                    Ok(()) => {
+                        let _ = cache.set((project_path, Arc::new(tldr))).map_err(|_| {
+                            debug!("pre_warm: OnceCell already set (race with get_tldr)");
+                        });
+                        info!("pre_warm: warm from cache complete");
+                    }
+                    Err(e) => warn!("pre_warm: warm from cache failed: {}", e),
+                },
+                Err(e) => warn!("pre_warm: TLDR::new failed: {}", e),
+            }
             notify.notify_waiters();
             return;
         }
