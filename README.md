@@ -114,6 +114,18 @@ cargo build --workspace --release
 - git
 - Unix-like OS (Linux, macOS)
 
+### Supported Platforms
+
+Prebuilt binaries are available for:
+
+| Platform | Architecture | Binary |
+|----------|-------------|--------|
+| Linux | x86_64 | `lim-linux-x86_64` |
+| Linux | aarch64 (ARM64) | `lim-linux-aarch64` |
+| macOS | aarch64 (Apple Silicon) | `lim-macos-aarch64` |
+
+> Note: macOS Intel (x86_64) is not supported due to ONNX Runtime not providing prebuilt binaries for that target. Apple Silicon Macs can still run the x86_64 binary via Rosetta 2.
+
 ---
 
 ## Configuration

@@ -54,6 +54,10 @@ detect_platform() {
     esac
     
     info "Detected: ${OS}/${ARCH}"
+
+    if [ "$OS" = "macos" ] && [ "$ARCH" = "x86_64" ]; then
+        error "macOS x86_64 (Intel) is not supported.\n\nPrebuilt binaries require Apple Silicon (aarch64).\nOptions:\n  1. Use an Apple Silicon Mac\n  2. Build from source: cargo install limit-cli (requires compiling ONNX Runtime)\n\nSee https://github.com/marioidival/limit/releases"
+    fi
 }
 
 # Get latest release version
