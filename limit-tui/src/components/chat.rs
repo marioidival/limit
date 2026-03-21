@@ -697,17 +697,35 @@ impl ChatView {
 
             while word_index < words.len() {
                 let word = words[word_index];
-                let word_len = word.len();
+                let word_len = unicode_width::UnicodeWidthStr::width(word);
 
                 if current_line_len == 0 {
                     // First word on line
                     if word_len > width {
-                        // Very long word - split it
+                        // Very long word - split by char width
                         let mut chars_left = word;
                         while !chars_left.is_empty() {
-                            let take = chars_left.len().min(width);
-                            lines += 1;
-                            chars_left = &chars_left[take..];
+                            let take = chars_left
+                                .char_indices()
+                                .take_while(|(_, c)| {
+                                    unicode_width::UnicodeWidthChar::width(*c)
+                                        .map(|w| w <= width)
+                                        .unwrap_or(true)
+                                })
+                                .count();
+                            if take == 0 {
+                                // Single char wider than width (e.g. emoji) — force advance
+                                let next = chars_left
+                                    .char_indices()
+                                    .nth(1)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(chars_left.len());
+                                lines += 1;
+                                chars_left = &chars_left[next..];
+                            } else {
+                                lines += 1;
+                                chars_left = &chars_left[take..];
+                            }
                         }
                         current_line_len = 0;
                     } else {
@@ -720,12 +738,29 @@ impl ChatView {
                     // Need new line
                     lines += 1;
                     current_line_len = if word_len > width {
-                        // Very long word - split it
+                        // Very long word - split by char width
                         let mut chars_left = word;
                         while !chars_left.is_empty() {
-                            let take = chars_left.len().min(width);
-                            lines += 1;
-                            chars_left = &chars_left[take..];
+                            let take = chars_left
+                                .char_indices()
+                                .take_while(|(_, c)| {
+                                    unicode_width::UnicodeWidthChar::width(*c)
+                                        .map(|w| w <= width)
+                                        .unwrap_or(true)
+                                })
+                                .count();
+                            if take == 0 {
+                                let next = chars_left
+                                    .char_indices()
+                                    .nth(1)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(chars_left.len());
+                                lines += 1;
+                                chars_left = &chars_left[next..];
+                            } else {
+                                lines += 1;
+                                chars_left = &chars_left[take..];
+                            }
                         }
                         0
                     } else {

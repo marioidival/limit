@@ -12,6 +12,7 @@ readme = "README.md"
 
 [dependencies]
 ratatui = "0.29"
+unicode-width = "0.2"
 tracing = "0.1"
 crossterm = "0.29"
 chrono = "0.4.44"
