@@ -833,124 +833,135 @@ impl TuiApp {
 
         // Spawn a thread to process the message without blocking the UI
         std::thread::spawn(move || {
-            // Create a new tokio runtime for this thread
-            let rt = tokio::runtime::Runtime::new().unwrap();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                // Create a new tokio runtime for this thread
+                let rt = tokio::runtime::Runtime::new().unwrap();
 
-            // Safe: we're in a dedicated thread, this won't cause issues
-            #[allow(clippy::await_holding_lock)]
-            rt.block_on(async {
-                // Check for cancellation BEFORE acquiring locks
-                if cancel_token.is_cancelled() {
-                    tracing::debug!("Operation cancelled before acquiring locks");
-                    return;
-                }
+                // Safe: we're in a dedicated thread, this won't cause issues
+                #[allow(clippy::await_holding_lock)]
+                rt.block_on(async {
+                    // Check for cancellation BEFORE acquiring locks
+                    if cancel_token.is_cancelled() {
+                        tracing::debug!("Operation cancelled before acquiring locks");
+                        return;
+                    }
 
-                // Try to acquire locks with timeout to avoid blocking indefinitely
-                let messages_guard = {
-                    let mut attempts = 0;
-                    loop {
-                        if cancel_token.is_cancelled() {
-                            tracing::debug!("Operation cancelled while waiting for messages lock");
-                            return;
-                        }
-                        match messages.try_lock() {
-                            Ok(guard) => break guard,
-                            Err(std::sync::TryLockError::WouldBlock) => {
-                                attempts += 1;
-                                if attempts > 50 {
-                                    tracing::error!("Timeout waiting for messages lock");
-                                    return;
-                                }
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to lock messages: {}", e);
+                    // Try to acquire locks with timeout to avoid blocking indefinitely
+                    let messages_guard = {
+                        let mut attempts = 0;
+                        loop {
+                            if cancel_token.is_cancelled() {
+                                tracing::debug!("Operation cancelled while waiting for messages lock");
                                 return;
                             }
-                        }
-                    }
-                };
-
-                let mut messages_guard = messages_guard;
-
-                // Check cancellation again before acquiring bridge lock
-                if cancel_token.is_cancelled() {
-                    tracing::debug!("Operation cancelled before acquiring bridge lock");
-                    return;
-                }
-
-                let bridge_guard = {
-                    let mut attempts = 0;
-                    loop {
-                        if cancel_token.is_cancelled() {
-                            tracing::debug!("Operation cancelled while waiting for bridge lock");
-                            return;
-                        }
-                        match agent_bridge.try_lock() {
-                            Ok(guard) => break guard,
-                            Err(std::sync::TryLockError::WouldBlock) => {
-                                attempts += 1;
-                                if attempts > 50 {
-                                    tracing::error!("Timeout waiting for bridge lock");
+                            match messages.try_lock() {
+                                Ok(guard) => break guard,
+                                Err(std::sync::TryLockError::WouldBlock) => {
+                                    attempts += 1;
+                                    if attempts > 50 {
+                                        tracing::error!("Timeout waiting for messages lock");
+                                        return;
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to lock messages: {}", e);
                                     return;
                                 }
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to lock agent_bridge: {}", e);
-                                return;
                             }
                         }
+                    };
+
+                    let mut messages_guard = messages_guard;
+
+                    // Check cancellation again before acquiring bridge lock
+                    if cancel_token.is_cancelled() {
+                        tracing::debug!("Operation cancelled before acquiring bridge lock");
+                        return;
                     }
-                };
 
-                let mut bridge = bridge_guard;
+                    let bridge_guard = {
+                        let mut attempts = 0;
+                        loop {
+                            if cancel_token.is_cancelled() {
+                                tracing::debug!("Operation cancelled while waiting for bridge lock");
+                                return;
+                            }
+                            match agent_bridge.try_lock() {
+                                Ok(guard) => break guard,
+                                Err(std::sync::TryLockError::WouldBlock) => {
+                                    attempts += 1;
+                                    if attempts > 50 {
+                                        tracing::error!("Timeout waiting for bridge lock");
+                                        return;
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to lock agent_bridge: {}", e);
+                                    return;
+                                }
+                            }
+                        }
+                    };
 
-                // Set cancellation token and operation ID
-                bridge.set_cancellation_token(cancel_token.clone(), operation_id);
+                    let mut bridge = bridge_guard;
 
-                match bridge.process_message(&text, &mut messages_guard).await {
-                    Ok(_response) => {
-                        // Don't sync ChatView here - it causes race conditions with ContentChunk events
-                        // ChatView is already updated via ContentChunk events during streaming
-                        // The messages_guard is the authoritative source for session persistence
+                    // Set cancellation token and operation ID
+                    bridge.set_cancellation_token(cancel_token.clone(), operation_id);
 
-                        // Auto-save session after successful response
-                        let msgs = messages_guard.clone();
-                        let input_tokens = *total_input_tokens.lock().unwrap();
-                        let output_tokens = *total_output_tokens.lock().unwrap();
+                    match bridge.process_message(&text, &mut messages_guard).await {
+                        Ok(_response) => {
+                            // Don't sync ChatView here - it causes race conditions with ContentChunk events
+                            // ChatView is already updated via ContentChunk events during streaming
+                            // The messages_guard is the authoritative source for session persistence
 
-                        if let Err(e) = session_manager.lock().unwrap().save_session(
-                            &session_id,
-                            &msgs,
-                            input_tokens,
-                            output_tokens,
-                        ) {
-                            tracing::error!("✗ Failed to auto-save session {}: {}", session_id, e);
-                        } else {
-                            tracing::info!(
-                                "✓ Session {} auto-saved ({} messages, {} in, {} out tokens)",
-                                session_id,
-                                msgs.len(),
+                            // Auto-save session after successful response
+                            let msgs = messages_guard.clone();
+                            let input_tokens = *total_input_tokens.lock().unwrap();
+                            let output_tokens = *total_output_tokens.lock().unwrap();
+
+                            if let Err(e) = session_manager.lock().unwrap().save_session(
+                                &session_id,
+                                &msgs,
                                 input_tokens,
-                                output_tokens
-                            );
+                                output_tokens,
+                            ) {
+                                tracing::error!("✗ Failed to auto-save session {}: {}", session_id, e);
+                            } else {
+                                tracing::info!(
+                                    "✓ Session {} auto-saved ({} messages, {} in, {} out tokens)",
+                                    session_id,
+                                    msgs.len(),
+                                    input_tokens,
+                                    output_tokens
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            // Check if it was a cancellation
+                            let error_msg = e.to_string();
+                            if error_msg.contains("cancelled") {
+                                tracing::info!("Request cancelled by user");
+                            } else {
+                                tracing::error!("LLM error: {}", e);
+                            }
                         }
                     }
-                    Err(e) => {
-                        // Check if it was a cancellation
-                        let error_msg = e.to_string();
-                        if error_msg.contains("cancelled") {
-                            tracing::info!("Request cancelled by user");
-                        } else {
-                            tracing::error!("LLM error: {}", e);
-                        }
-                    }
-                }
 
-                // Clear cancellation token
-                bridge.clear_cancellation_token();
-            });
+                    // Clear cancellation token
+                    bridge.clear_cancellation_token();
+                });
+            }));
+
+            if let Err(panic_payload) = result {
+                let msg = panic_payload
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| panic_payload.downcast_ref::<String>().map(|s| s.as_str()))
+                    .unwrap_or("unknown panic");
+                tracing::error!("LLM thread panicked: {}", msg);
+            }
         });
 
         Ok(())
