@@ -1,6 +1,6 @@
 [package]
 name = "limit-agent"
-version = "0.0.32"
+version = "0.0.33"
 edition = "2021"
 description = "Agent runtime for AI applications with tool registry, parallel execution, and Docker sandbox support."
 authors = ["Mário Idival <marioidival@gmail.com>"]
@@ -18,7 +18,7 @@ serde_json = "1.0"
 async-trait = "0.1"
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync"] }
 futures = "0.3"
-limit-llm = { path = "../limit-llm", version = "0.0.32" }
+limit-llm = { path = "../limit-llm", version = "0.0.33" }
 bollard = "0.16"
 uuid = { version = "1.0", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["io"] }

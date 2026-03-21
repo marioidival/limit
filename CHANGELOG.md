@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.33] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Use vendored OpenSSL for cross-compilation
+
+## [0.0.33] - 2026-03-20
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.32] - 2026-03-21
 
 ### 🐛 Bug Fixes
