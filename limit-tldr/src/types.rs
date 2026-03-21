@@ -184,6 +184,27 @@ pub struct FieldInfo {
     pub type_annotation: Option<String>,
 }
 
+/// Constant/variable information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstantInfo {
+    /// Constant name
+    pub name: String,
+    /// Type annotation (if known)
+    pub type_annotation: Option<String>,
+    /// Constant value (truncated to 200 chars)
+    pub value: Option<String>,
+    /// Line number where constant starts
+    pub line: usize,
+    /// Line number where constant ends
+    pub end_line: usize,
+    /// File path
+    pub file: PathBuf,
+    /// Docstring/comment
+    pub docstring: Option<String>,
+    /// Whether the constant is mutable (e.g., static mut in Rust, let in JS)
+    pub is_mutable: bool,
+}
+
 /// Import statement
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportInfo {
@@ -331,6 +352,9 @@ pub struct FileAnalysis {
     /// Call expressions found
     #[serde(default)]
     pub call_expressions: Vec<CallExpression>,
+    /// Constants found
+    #[serde(default)]
+    pub constants: Vec<ConstantInfo>,
     /// Language detected
     pub language: Language,
 }

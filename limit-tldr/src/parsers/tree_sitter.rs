@@ -6,7 +6,8 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::types::{
-    CallExpression, ClassInfo, FileAnalysis, FunctionInfo, ImportInfo, Language, Parameter,
+    CallExpression, ClassInfo, ConstantInfo, FileAnalysis, FunctionInfo, ImportInfo, Language,
+    Parameter,
 };
 
 /// Parser using tree-sitter
@@ -45,6 +46,7 @@ impl TreeSitterParser {
             classes: Vec::new(),
             imports: Vec::new(),
             call_expressions: Vec::new(),
+            constants: Vec::new(),
             language,
         };
 
@@ -93,6 +95,9 @@ impl TreeSitterParser {
         }
         for call in &mut analysis.call_expressions {
             call.file = analysis.file.clone();
+        }
+        for constant in &mut analysis.constants {
+            constant.file = analysis.file.clone();
         }
 
         Ok(())
@@ -148,6 +153,32 @@ impl TreeSitterParser {
                         if let Some(call) = self.extract_call(child, source, caller) {
                             analysis.call_expressions.push(call);
                         }
+                    }
+                }
+                // Constants/variables
+                "const_item" | "static_item" => {
+                    let node_text = self.node_text(child, source);
+                    let is_mutable = node_text.contains("mut");
+                    if let Some(constant) = self.extract_constant(child, source, is_mutable) {
+                        analysis.constants.push(constant);
+                    }
+                }
+                "assignment" => {
+                    // Python module-level ALL_CAPS heuristic
+                    if let Some(constant) = self.extract_python_constant(child, source) {
+                        analysis.constants.push(constant);
+                    }
+                }
+                "variable_declaration" | "lexical_declaration" => {
+                    // TypeScript/JavaScript const/let
+                    if let Some(constant) = self.extract_ts_js_constant(child, source) {
+                        analysis.constants.push(constant);
+                    }
+                }
+                "const_declaration" | "var_declaration" => {
+                    // Go const/var
+                    if let Some(constants) = self.extract_go_constants(child, source) {
+                        analysis.constants.extend(constants);
                     }
                 }
                 _ => {}
@@ -244,6 +275,147 @@ impl TreeSitterParser {
             line: node.start_position().row + 1,
             file: std::path::PathBuf::new(), // Set by caller
         })
+    }
+
+    /// Extract constant information from Rust const/static nodes
+    fn extract_constant(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+        is_mutable: bool,
+    ) -> Option<ConstantInfo> {
+        let name = self.find_child_by_field(node, "name", source)?;
+        let type_annotation = self.find_child_by_field(node, "type", source);
+        let value = self
+            .find_child_by_field(node, "value", source)
+            .map(|v| self.truncate_value(&v));
+
+        Some(ConstantInfo {
+            name,
+            type_annotation,
+            value,
+            line: node.start_position().row + 1,
+            end_line: node.end_position().row + 1,
+            file: std::path::PathBuf::new(),
+            docstring: None,
+            is_mutable,
+        })
+    }
+
+    /// Extract Python constants using ALL_CAPS heuristic
+    fn extract_python_constant(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+    ) -> Option<ConstantInfo> {
+        let left = node.child_by_field_name("left")?;
+        let right = node.child_by_field_name("right")?;
+
+        let name = self.node_text(left, source).trim().to_string();
+        let value = self.node_text(right, source);
+
+        // Only extract if name is ALL_CAPS
+        let is_all_caps = name.chars().all(|c| c.is_uppercase() || c == '_') && name.contains('_');
+
+        if is_all_caps {
+            Some(ConstantInfo {
+                name,
+                type_annotation: None,
+                value: Some(self.truncate_value(&value)),
+                line: node.start_position().row + 1,
+                end_line: node.end_position().row + 1,
+                file: std::path::PathBuf::new(),
+                docstring: None,
+                is_mutable: false,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Extract TypeScript/JavaScript const/let declarations
+    fn extract_ts_js_constant(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+    ) -> Option<ConstantInfo> {
+        let node_text = self.node_text(node, source);
+        let is_mutable = node_text.starts_with("let") || node_text.starts_with("var");
+
+        // Find the variable_declarator child
+        let mut cursor = node.walk();
+        let declarator = node
+            .children(&mut cursor)
+            .find(|child| child.kind() == "variable_declarator")?;
+
+        let name = declarator.child_by_field_name("name")?;
+        let name_text = self.node_text(name, source);
+
+        let value = declarator
+            .child_by_field_name("value")
+            .map(|v| self.node_text(v, source));
+
+        Some(ConstantInfo {
+            name: name_text,
+            type_annotation: None,
+            value: value.map(|v| self.truncate_value(&v)),
+            line: node.start_position().row + 1,
+            end_line: node.end_position().row + 1,
+            file: std::path::PathBuf::new(),
+            docstring: None,
+            is_mutable,
+        })
+    }
+
+    /// Extract Go const/var declarations (can have multiple in parenthesized block)
+    fn extract_go_constants(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+    ) -> Option<Vec<ConstantInfo>> {
+        let node_text = self.node_text(node, source);
+        let is_mutable = node_text.starts_with("var");
+
+        let mut constants = Vec::new();
+        let mut cursor = node.walk();
+
+        // Go can have multiple constants in a parenthesized block or single declaration
+        for child in node.children(&mut cursor) {
+            if child.kind() == "const_spec" || child.kind() == "var_spec" {
+                if let Some(name) = child.child_by_field_name("name") {
+                    let name_text = self.node_text(name, source);
+                    let value = child
+                        .child_by_field_name("value")
+                        .map(|v| self.node_text(v, source));
+
+                    constants.push(ConstantInfo {
+                        name: name_text,
+                        type_annotation: None,
+                        value: value.map(|v| self.truncate_value(&v)),
+                        line: child.start_position().row + 1,
+                        end_line: child.end_position().row + 1,
+                        file: std::path::PathBuf::new(),
+                        docstring: None,
+                        is_mutable,
+                    });
+                }
+            }
+        }
+
+        if constants.is_empty() {
+            None
+        } else {
+            Some(constants)
+        }
+    }
+
+    /// Truncate value to 200 characters maximum
+    fn truncate_value(&self, value: &str) -> String {
+        if value.len() > 200 {
+            format!("{}...", &value[..197])
+        } else {
+            value.to_string()
+        }
     }
 
     /// Find child node by field name
@@ -575,5 +747,106 @@ inner();"#;
         assert_eq!(analysis.call_expressions.len(), 1);
         assert_eq!(analysis.call_expressions[0].caller, "main");
         assert_eq!(analysis.call_expressions[0].callee, "inner");
+    }
+}
+
+#[cfg(test)]
+mod constant_extraction_tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn rust_const_extraction() {
+        let source = r#"const MAX_RETRIES: u32 = 3;
+const SYSTEM_PROMPT: &str = "You are a helpful assistant";"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.constants.len(), 2);
+        assert_eq!(analysis.constants[0].name, "MAX_RETRIES");
+        assert_eq!(
+            analysis.constants[0].type_annotation,
+            Some("u32".to_string())
+        );
+        assert_eq!(analysis.constants[0].value, Some("3".to_string()));
+        assert!(!analysis.constants[0].is_mutable);
+    }
+
+    #[test]
+    fn rust_static_extraction() {
+        let source = r#"static GLOBAL_COUNTER: AtomicUsize = AtomicUsize::new(0);
+static mut LEGACY_STATE: bool = false;"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.constants.len(), 2);
+        assert_eq!(analysis.constants[0].name, "GLOBAL_COUNTER");
+        assert!(!analysis.constants[0].is_mutable);
+        assert_eq!(analysis.constants[1].name, "LEGACY_STATE");
+        assert!(analysis.constants[1].is_mutable);
+    }
+
+    #[test]
+    fn python_module_constant_heuristic() {
+        let source = r#"MAX_CONNECTIONS = 100
+DEFAULT_TIMEOUT = 30
+not_a_constant = "lowercase""#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.py"), Language::Python)
+            .unwrap();
+
+        // Should extract ALL_CAPS constants only
+        assert_eq!(analysis.constants.len(), 2);
+        assert_eq!(analysis.constants[0].name, "MAX_CONNECTIONS");
+        assert_eq!(analysis.constants[1].name, "DEFAULT_TIMEOUT");
+    }
+
+    #[test]
+    fn typescript_const_extraction() {
+        let source = r#"const API_KEY = "secret";
+const MAX_ITEMS: number = 100;
+let mutableVar = "changeable";"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.ts"), Language::TypeScript)
+            .unwrap();
+
+        assert_eq!(analysis.constants.len(), 3);
+        assert_eq!(analysis.constants[0].name, "API_KEY");
+        assert!(!analysis.constants[0].is_mutable);
+        assert_eq!(analysis.constants[2].name, "mutableVar");
+        assert!(analysis.constants[2].is_mutable);
+    }
+
+    #[test]
+    fn go_const_extraction() {
+        let source = r#"const (
+    MaxRetries = 3
+    DefaultTimeout = 30
+)"#;
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(source, Path::new("test.go"), Language::Go)
+            .unwrap();
+
+        assert!(analysis.constants.len() >= 2);
+    }
+
+    #[test]
+    fn value_truncation() {
+        let long_value = "x".repeat(300);
+        let source = format!(r#"const LONG_VALUE: &str = "{}";"#, long_value);
+        let parser = TreeSitterParser::new();
+        let analysis = parser
+            .parse(&source, Path::new("test.rs"), Language::Rust)
+            .unwrap();
+
+        assert_eq!(analysis.constants.len(), 1);
+        assert!(analysis.constants[0].value.as_ref().unwrap().len() <= 200);
     }
 }

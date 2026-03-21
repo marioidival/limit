@@ -732,7 +732,7 @@ impl Tool for TldrTool {
 pub fn tldr_tool_definition() -> Value {
     json!({
         "name": "tldr_analyze",
-        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. Do NOT combine with file_read or bash — this tool provides all needed context. STRATEGY: (1) search to find functions, (2) source for 1-3 key functions only, (3) write answer. Do NOT read every function. Analysis types: search=find functions, context=dependencies, source=function code, impact=callers, architecture=layers.",
+        "description": "Token-efficient code analysis. ALWAYS USE THIS when the user asks: 'what does X do', 'how does X work', 'explain X', 'tell me about X', 'what is X'. Saves 95% tokens vs reading raw code. Do NOT combine with file_read or bash — this tool provides all needed context. STRATEGY: (1) search to find functions/constants/structs, (2) source for 1-3 key items only, (3) write answer. Do NOT read every function. Analysis types: search=find by keyword (functions, constants, structs), context=dependencies, source=function code, impact=callers, architecture=layers.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -762,7 +762,7 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "query": {
                     "type": "string",
-                    "description": "Search query for finding functions (supports patterns like 'daemon', 'auth', 'handle_*')"
+                    "description": "Search query for finding functions, constants, or structs (supports patterns like 'daemon', 'SYSTEM_PROMPT', 'handle_*')"
                 },
                 "limit": {
                     "type": "integer",

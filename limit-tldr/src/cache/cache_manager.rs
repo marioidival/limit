@@ -183,6 +183,7 @@ mod tests {
             classes: Vec::new(),
             imports: Vec::new(),
             call_expressions: Vec::new(),
+            constants: Vec::new(),
             language: Language::Rust,
         }
     }

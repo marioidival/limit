@@ -211,6 +211,7 @@ mod tests {
                     file: PathBuf::from(file),
                 })
                 .collect(),
+            constants: Vec::new(),
             language: Language::Rust,
         }
     }
