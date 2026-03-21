@@ -54,10 +54,11 @@ tree-sitter-c-sharp = { version = "0.23", optional = true }
 
 # Semantic embeddings
 fastembed = { version = "5", optional = true }
+openssl-sys = { version = "0.9", features = ["vendored"], optional = true }
 
 [features]
 default = ["semantic"]
-semantic = ["fastembed"]
+semantic = ["fastembed", "openssl-sys"]
 tree-sitter-extra = ["tree-sitter-ruby", "tree-sitter-php", "tree-sitter-c-sharp"]
 
 [dev-dependencies]
