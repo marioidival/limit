@@ -39,3 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Set library path for ONNX Runtime
 ENV LD_LIBRARY_PATH=/opt/onnxruntime/lib:${LD_LIBRARY_PATH}
+
+# Configure cross-compilation linker
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
