@@ -10,7 +10,7 @@ impl Command for TldrCommand {
     }
 
     fn aliases(&self) -> Vec<&str> {
-        vec!["warm"]
+        vec![]
     }
 
     fn description(&self) -> &str {
@@ -18,7 +18,7 @@ impl Command for TldrCommand {
     }
 
     fn usage(&self) -> Vec<&str> {
-        vec!["/tldr", "/warm"]
+        vec!["/tldr"]
     }
 
     fn execute(&self, _args: &str, ctx: &mut CommandContext) -> Result<CommandResult, CliError> {

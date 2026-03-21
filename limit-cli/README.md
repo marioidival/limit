@@ -152,7 +152,6 @@ Features:
 | `/help` | Show available commands |
 | `/model` | Show current model configuration |
 | `/tldr` | Enable code analysis for this project |
-| `/warm` | Alias for `/tldr` |
 | `/session list` | List all saved sessions |
 | `/session new` | Create a new session |
 | `/session load <id>` | Load a specific session |

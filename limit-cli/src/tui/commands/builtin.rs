@@ -34,7 +34,6 @@ impl Command for HelpCommand {
                  /exit  - Exit the application\n\
                  /quit  - Exit the application\n\
                  /tldr  - Enable code analysis for this project\n\
-                 /warm  - Alias for /tldr\n\
                  /session list  - List all sessions\n\
                  /session new   - Create a new session\n\
                  /session load  <id> - Load a session by ID\n\

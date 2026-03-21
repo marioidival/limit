@@ -124,7 +124,6 @@ model = "claude-sonnet-4-6-20260217"
 | `/help` | Show commands |
 | `/model` | Show config |
 | `/tldr` | Enable code analysis for this project |
-| `/warm` | Alias for `/tldr` |
 | `/session list` | List sessions |
 | `/session new` | New session |
 | `/share` | Export session (clipboard/md/json) |
