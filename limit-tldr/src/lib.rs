@@ -378,6 +378,37 @@ impl TLDR {
         self.ast.find_class_preferring_file(name, file)
     }
 
+    /// Find a constant by name across all files
+    pub fn find_constant(&self, name: &str) -> Result<Option<ConstantInfo>> {
+        self.ast.find_constant(name)
+    }
+
+    /// Find all constants matching a name (for disambiguation)
+    pub fn find_all_constants(&self, name: &str) -> Vec<&ConstantInfo> {
+        self.ast.find_all_constants(name)
+    }
+
+    /// Search constants by pattern
+    pub fn search_constants(&self, pattern: &str) -> Result<Vec<ConstantInfo>> {
+        let pattern_lower = pattern.to_lowercase();
+        let mut results: Vec<ConstantInfo> = self
+            .ast
+            .all_constants()
+            .into_iter()
+            .filter(|c| {
+                c.name.to_lowercase().contains(&pattern_lower)
+                    || c.file
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .contains(&pattern_lower)
+            })
+            .cloned()
+            .collect();
+
+        results.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(results)
+    }
+
     /// Get the project path
     pub fn project_path(&self) -> &Path {
         &self.project_path
