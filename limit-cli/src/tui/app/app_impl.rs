@@ -67,7 +67,6 @@ impl TuiApp {
 
         let clipboard = match ClipboardManager::new() {
             Ok(cb) => {
-                tracing::debug!("✓ Clipboard initialized successfully");
                 tracing::info!("Clipboard initialized successfully");
                 Some(Arc::new(Mutex::new(cb)))
             }

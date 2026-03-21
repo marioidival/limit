@@ -248,7 +248,7 @@ impl AgentBridge {
     ///
     /// # Returns
     /// The final response from the LLM or an error
-    #[instrument(skip(self, _messages))]
+    #[instrument(skip(self, _messages, user_input))]
     pub async fn process_message(
         &mut self,
         user_input: &str,
