@@ -193,10 +193,11 @@ impl TldrTool {
                 debug!("TLDR cache hit for project: {:?}", project_path_for_check);
                 return Ok(Arc::clone(tldr));
             }
-            return Err(AgentError::ToolError(format!(
-                "Project path mismatch: cached {:?} != requested {:?}",
-                cached_path, project_path_for_check
-            )));
+            warn!(
+                "get_tldr: ignoring project_path {:?}, using cached {:?}",
+                project_path_for_check, cached_path
+            );
+            return Ok(Arc::clone(tldr));
         }
 
         // Wait for background warm to finish (with timeout fallback)
@@ -209,6 +210,11 @@ impl TldrTool {
                         debug!("TLDR cache hit after pre_warm for: {:?}", project_path_for_check);
                         return Ok(Arc::clone(tldr));
                     }
+                    warn!(
+                        "get_tldr: ignoring project_path {:?}, using cached {:?}",
+                        project_path_for_check, cached_path
+                    );
+                    return Ok(Arc::clone(tldr));
                 }
                 // pre_warm failed or was skipped (fresh) — fall through to lazy
                 warn!("get_tldr: pre_warm did not populate cache, falling back to lazy");
@@ -221,6 +227,11 @@ impl TldrTool {
                         info!("get_tldr: pre_warm completed during timeout, using cached result");
                         return Ok(Arc::clone(tldr));
                     }
+                    warn!(
+                        "get_tldr: ignoring project_path {:?}, using cached {:?}",
+                        project_path_for_check, cached_path
+                    );
+                    return Ok(Arc::clone(tldr));
                 }
                 info!("get_tldr: falling back to lazy creation");
             }

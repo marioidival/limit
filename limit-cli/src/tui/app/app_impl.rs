@@ -153,14 +153,6 @@ impl TuiApp {
             {
                 match event::read().map_err(|e| CliError::IoError(io::Error::other(e)))? {
                     Event::Key(key) => {
-                        // Log ALL key events (not just Press) to debug modifier detection
-                        tracing::debug!(
-                            "Event::Key - code={:?} mod={:?} kind={:?}",
-                            key.code,
-                            key.modifiers,
-                            key.kind
-                        );
-
                         if key.kind == KeyEventKind::Press {
                             self.handle_key_event(key)?;
                         }
@@ -168,22 +160,12 @@ impl TuiApp {
                     Event::Mouse(mouse) => {
                         match mouse.kind {
                             MouseEventKind::Down(MouseButton::Left) => {
-                                tracing::debug!("MouseDown at ({}, {})", mouse.column, mouse.row);
                                 self.mouse_selection_start = Some((mouse.column, mouse.row));
                                 // Map screen position to message/offset and start selection
                                 let chat = self.tui_bridge.chat_view().lock().unwrap();
-                                tracing::debug!(
-                                    "  render_positions count: {}",
-                                    chat.render_position_count()
-                                );
                                 if let Some((msg_idx, char_offset)) =
                                     chat.screen_to_text_pos(mouse.column, mouse.row)
                                 {
-                                    tracing::debug!(
-                                        "  -> Starting selection at msg={}, offset={}",
-                                        msg_idx,
-                                        char_offset
-                                    );
                                     drop(chat);
                                     self.tui_bridge
                                         .chat_view()
@@ -191,7 +173,6 @@ impl TuiApp {
                                         .unwrap()
                                         .start_selection(msg_idx, char_offset);
                                 } else {
-                                    tracing::debug!("  -> No match, clearing selection");
                                     drop(chat);
                                     self.tui_bridge
                                         .chat_view()
@@ -309,7 +290,7 @@ impl TuiApp {
             let has_super = key.modifiers.contains(KeyModifiers::SUPER);
             let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
             let result = key.code == KeyCode::Char(char) && (has_super || has_ctrl);
-            tracing::debug!("is_copy_paste_modifier('{}') macOS: code={:?}, mod={:?}, super={}, ctrl={}, result={}", 
+            tracing::debug!("is_copy_paste_modifier('{}') macOS: code={:?}, mod={:?}, super={}, ctrl={}, result={}",
                 char, key.code, key.modifiers, has_super, has_ctrl, result);
             result
         }
@@ -335,29 +316,6 @@ impl TuiApp {
     }
 
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), CliError> {
-        // Direct file logging (always works)
-        tracing::debug!(
-            "handle_key_event: code={:?} mod={:?} kind={:?}",
-            key.code,
-            key.modifiers,
-            key.kind
-        );
-
-        // Special log for 'c' and 'v' keys to debug copy/paste
-        if matches!(key.code, KeyCode::Char('c') | KeyCode::Char('v')) {
-            tracing::debug!(
-                ">>> SPECIAL: '{}' key detected with modifiers: {:?} (SUPER={:?}, CONTROL={:?})",
-                if matches!(key.code, KeyCode::Char('c')) {
-                    'c'
-                } else {
-                    'v'
-                },
-                key.modifiers,
-                key.modifiers.contains(KeyModifiers::SUPER),
-                key.modifiers.contains(KeyModifiers::CONTROL)
-            );
-        }
-
         // Copy selection to clipboard (Ctrl/Cmd+C)
         if self.is_copy_paste_modifier(&key, 'c') {
             tracing::debug!("✓ Copy shortcut CONFIRMED - processing...");
