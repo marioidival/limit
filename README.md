@@ -50,7 +50,7 @@ That's it! Start chatting with your AI coding assistant.
 ## Features
 
 - **Multi-Provider LLM Support** — Anthropic Claude, OpenAI, z.ai, and local LLMs (Ollama, LM Studio, vLLM)
-- **18 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis, web search/fetch, browser automation
+- **18 Built-in Tools** — File I/O, Bash execution, Git operations, code analysis (including tldr_analyze), web search/fetch, browser automation
 - **Session Persistence** — Auto-save/restore conversation history
 - **Token Tracking** — SQLite-based usage tracking with cost estimation
 - **Docker Sandbox** — Optional containerized tool execution for isolation
@@ -318,6 +318,7 @@ Input: Analyze @src/main.rs and explain
 | `grep` | Search files with regex |
 | `ast_grep` | AST-aware code search (Rust, TypeScript, Python) |
 | `lsp` | LSP operations (go-to-definition, find-references) |
+| `tldr_analyze` | Token-efficient code analysis - 95% token savings vs raw code. See [limit-tldr](#limit-tldr) for details |
 
 ### Web
 | Tool | Description |
@@ -332,13 +333,71 @@ Input: Analyze @src/main.rs and explain
 
 ---
 
+## limit-tldr
+
+**Code analysis that actually fits in context — 95% token savings vs raw code.**
+
+The `limit-tldr` crate extracts structure, traces dependencies, and delivers exactly what an LLM needs without reading entire files.
+
+### Architecture (5 Layers)
+
+| Layer | Name | Purpose |
+|-------|------|---------|
+| **1** | AST | Structure — "What functions exist?" |
+| **2** | Call Graph | Dependencies — "Who calls what?" |
+| **3** | CFG | Control Flow — "How complex is this?" |
+| **4** | DFG | Data Flow — "Where does this value come from?" |
+| **5** | PDG | Program Dependence — "What affects this line?" |
+
+### Analysis Types
+
+| Type | Description |
+|------|-------------|
+| `search` | Find functions by name/keyword |
+| `context` | Get function dependencies + callers |
+| `source` | Extract function implementation code |
+| `impact` | Who calls this function? |
+| `cfg` | Control flow graph (complexity) |
+| `dfg` | Data flow graph (variable origins) |
+| `dead_code` | Find unreachable functions |
+| `architecture` | Detect module layers |
+
+### Features
+
+- **Semantic Search** — Code search using embeddings (optional)
+- **Multi-language** — Rust, Python, JavaScript, TypeScript, Go, Java, C, C++
+- **Incremental Cache** — BLAKE3 hashing for fast re-indexing
+- **Dead Code Detection** — Find functions never called
+- **Program Slicing** — Extract relevant lines for a specific point
+
+### Example
+
+```rust
+use limit_tldr::{TLDR, Config};
+
+let mut tldr = TLDR::new("./my-project", Config::default()).await?;
+tldr.warm().await?;
+
+// Get context for LLM
+let context = tldr.get_context("process_data", 2).await?;
+
+// Impact analysis
+let callers = tldr.get_impact("hash_password")?;
+
+// Find dead code
+let dead = tldr.find_dead_code(&["main"])?;
+```
+
+---
+
 ## Crates
 
 | Crate | Description |
 |-------|-------------|
 | [`limit-llm`](limit-llm) | Multi-provider LLM client with streaming, SQLite tracking, binary persistence, model handoff |
 | [`limit-agent`](limit-agent) | Agent runtime with tool registry, parallel execution, event system, Docker sandbox |
-| [`limit-cli`](limit-cli) | REPL interface with 17 tools, markdown rendering, session management |
+| [`limit-tldr`](limit-tldr) | Code analysis library with 95% token savings — AST, call graph, CFG, DFG, PDG, semantic search |
+| [`limit-cli`](limit-cli) | REPL interface with 18 tools, markdown rendering, session management |
 
 ---
 
