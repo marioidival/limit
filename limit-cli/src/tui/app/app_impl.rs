@@ -290,7 +290,7 @@ impl TuiApp {
             let has_super = key.modifiers.contains(KeyModifiers::SUPER);
             let has_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
             let result = key.code == KeyCode::Char(char) && (has_super || has_ctrl);
-            tracing::debug!("is_copy_paste_modifier('{}') macOS: code={:?}, mod={:?}, super={}, ctrl={}, result={}",
+            tracing::trace!("is_copy_paste_modifier('{}') macOS: code={:?}, mod={:?}, super={}, ctrl={}, result={}",
                 char, key.code, key.modifiers, has_super, has_ctrl, result);
             result
         }
@@ -298,7 +298,7 @@ impl TuiApp {
         {
             let result =
                 key.code == KeyCode::Char(char) && key.modifiers.contains(KeyModifiers::CONTROL);
-            tracing::debug!(
+            tracing::trace!(
                 "is_copy_paste_modifier('{}') non-macOS: code={:?}, mod={:?}, ctrl={:?}, result={}",
                 char,
                 key.code,
@@ -318,20 +318,20 @@ impl TuiApp {
     fn handle_key_event(&mut self, key: KeyEvent) -> Result<(), CliError> {
         // Copy selection to clipboard (Ctrl/Cmd+C)
         if self.is_copy_paste_modifier(&key, 'c') {
-            tracing::debug!("✓ Copy shortcut CONFIRMED - processing...");
+            tracing::trace!("✓ Copy shortcut CONFIRMED - processing...");
             let mut chat = self.tui_bridge.chat_view().lock().unwrap();
             let has_selection = chat.has_selection();
-            tracing::debug!("has_selection={}", has_selection);
+            tracing::trace!("has_selection={}", has_selection);
 
             if has_selection {
                 if let Some(selected) = chat.get_selected_text() {
-                    tracing::debug!("Selected text length={}", selected.len());
+                    tracing::trace!("Selected text length={}", selected.len());
                     if !selected.is_empty() {
                         if let Some(ref clipboard) = self.clipboard {
-                            tracing::debug!("Attempting to copy to clipboard...");
+                            tracing::trace!("Attempting to copy to clipboard...");
                             match clipboard.lock().unwrap().set_text(&selected) {
                                 Ok(()) => {
-                                    tracing::debug!("✓ Clipboard copy successful");
+                                    tracing::trace!("✓ Clipboard copy successful");
                                     self.status_message = "Copied to clipboard".to_string();
                                     self.status_is_error = false;
                                 }
@@ -347,25 +347,25 @@ impl TuiApp {
                             self.status_is_error = true;
                         }
                     } else {
-                        tracing::debug!("Selected text is empty");
+                        tracing::trace!("Selected text is empty");
                     }
                     chat.clear_selection();
                 } else {
-                    tracing::debug!("get_selected_text() returned None");
+                    tracing::trace!("get_selected_text() returned None");
                 }
                 return Ok(());
             }
 
             // No selection - do nothing (Ctrl+C is only for copying text)
-            tracing::debug!("Ctrl/Cmd+C with no selection - ignoring");
+            tracing::trace!("Ctrl/Cmd+C with no selection - ignoring");
             return Ok(());
         }
 
         // Paste from clipboard (Ctrl/Cmd+V)
         if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
-            tracing::debug!("✓ Paste shortcut CONFIRMED - processing...");
+            tracing::trace!("✓ Paste shortcut CONFIRMED - processing...");
             let clipboard_result = if let Some(ref clipboard) = self.clipboard {
-                tracing::debug!("Attempting to read from clipboard...");
+                tracing::trace!("Attempting to read from clipboard...");
                 Some(clipboard.lock().unwrap().get_text())
             } else {
                 None
@@ -373,11 +373,11 @@ impl TuiApp {
 
             match clipboard_result {
                 Some(Ok(text)) if !text.is_empty() => {
-                    tracing::debug!("Read {} chars from clipboard", text.len());
+                    tracing::trace!("Read {} chars from clipboard", text.len());
                     self.insert_paste(&text);
                 }
                 Some(Ok(_)) => {
-                    tracing::debug!("Clipboard is empty");
+                    tracing::trace!("Clipboard is empty");
                 }
                 Some(Err(e)) => {
                     tracing::debug!("✗ Failed to read clipboard: {}", e);
@@ -395,7 +395,7 @@ impl TuiApp {
 
         // Handle autocomplete navigation FIRST (before general scrolling)
         let autocomplete_active = self.autocomplete_manager.is_active();
-        tracing::debug!(
+        tracing::trace!(
             "Key handling: autocomplete_active={}, is_busy={}, history_len={}",
             autocomplete_active,
             self.tui_bridge.is_busy(),
