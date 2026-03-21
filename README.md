@@ -401,6 +401,32 @@ let dead = tldr.find_dead_code(&["main"])?;
 
 ---
 
+## Optional Dependencies
+
+Limit works out-of-the-box, but some features require external tools:
+
+### Required (tool fails if missing)
+
+| Tool | Feature | Install |
+|------|---------|---------|
+| **git** | Git operations | `brew install git` |
+| **grep** | Regex search in files | Usually pre-installed |
+| **sh** | Shell command execution | Usually pre-installed |
+
+### Optional (feature disabled if missing)
+
+| Tool | Feature | Install |
+|------|---------|---------|
+| **Docker** | Sandbox isolation | [Install Docker](https://docs.docker.com/get-docker/) |
+| **ast-grep** | AST-aware code search | `brew install ast-grep` or `cargo install ast-grep` |
+| **rust-analyzer** | LSP for Rust | `rustup component add rust-analyzer` |
+| **typescript-language-server** | LSP for TypeScript/JavaScript | `npm i -g typescript-language-server` |
+| **pylsp** | LSP for Python | `pip install python-lsp-server` |
+
+> **Note:** LSP integration is currently a placeholder. Full implementation requires an LSP client library.
+
+---
+
 ## Development
 
 See [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) for:
