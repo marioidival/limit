@@ -7,3 +7,6 @@ members = [
     "limit-tldr",
 ]
 resolver = "2"
+
+[profile.release]
+debug = true
