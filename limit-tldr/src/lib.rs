@@ -77,6 +77,8 @@ pub struct TLDR {
     dfg: DFGLayer,
     pdg: PDGLayer,
     semantic: Arc<SemanticIndex>,
+    /// Background thread handle for semantic embedding build
+    bg_thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Configuration for TLDR
@@ -133,6 +135,7 @@ impl TLDR {
             dfg,
             pdg,
             semantic,
+            bg_thread: None,
         })
     }
 
@@ -192,7 +195,7 @@ impl TLDR {
         // All semantic work (model load + optional embedding build) runs in background
         let semantic = Arc::clone(&self.semantic);
         let cache_dir = self.cache.cache_dir().to_path_buf();
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             SemanticIndex::init_runtime();
             tracing::info!("semantic: background model load started");
             semantic.load_model(&cache_dir);
@@ -214,6 +217,7 @@ impl TLDR {
                 }
             }
         });
+        self.bg_thread = Some(handle);
 
         Ok(())
     }
@@ -475,5 +479,13 @@ impl TLDR {
         }
 
         Ok(files)
+    }
+}
+
+impl Drop for TLDR {
+    fn drop(&mut self) {
+        if let Some(handle) = self.bg_thread.take() {
+            handle.join().ok();
+        }
     }
 }
