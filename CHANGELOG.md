@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.37] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Use Ubuntu 22.04 base for glibc 2.35+ compatibility
+
+## [0.0.37] - 2026-03-21
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.36] - 2026-03-21
 
 ### 🐛 Bug Fixes
