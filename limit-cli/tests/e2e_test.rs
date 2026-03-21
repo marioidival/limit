@@ -59,8 +59,6 @@ fn test_e2e_chat_with_mock_api() {
         tools.iter().any(|t| t.function.name == "bash"),
         "Should have bash tool"
     );
-
-    println!("✅ Chat mock test passed: {} tools available", tools.len());
 }
 
 /// Scenario 2: Read file, verify content
@@ -93,8 +91,6 @@ async fn test_e2e_file_read_and_verify() {
         file_read_tool.function.parameters["properties"]["path"]["type"] == "string",
         "Tool should have path parameter"
     );
-
-    println!("✅ File read test passed");
 }
 
 /// Scenario 3: Bash command, verify output
@@ -123,8 +119,6 @@ async fn test_e2e_bash_command_and_verify() {
             .contains(&"command".into()),
         "Command should be required"
     );
-
-    println!("✅ Bash command test passed");
 }
 
 /// Scenario 4: Git status, verify parsing
@@ -151,11 +145,6 @@ async fn test_e2e_git_status_and_verify() {
     assert!(tool_names.contains(&"git_log"), "Should have git_log");
     assert!(tool_names.contains(&"git_add"), "Should have git_add");
     assert!(tool_names.contains(&"git_commit"), "Should have git_commit");
-
-    println!(
-        "✅ Git status test passed: {} git tools available",
-        git_tools.len()
-    );
 }
 
 /// Scenario 5: Session save/load, verify persistence
@@ -187,8 +176,6 @@ fn test_e2e_session_save_and_load() {
         sessions.iter().any(|s| s.id == session_id),
         "Created session should be in list"
     );
-
-    println!("✅ Session save/load test passed: session {}", session_id);
 }
 
 /// Scenario 6: TUI rendering, verify components
@@ -258,11 +245,6 @@ fn test_e2e_tui_rendering_components() {
     let chat_view = tui_bridge.chat_view();
     let message_count = chat_view.lock().unwrap().message_count();
     assert!(message_count > 0, "Chat view should have messages");
-
-    println!(
-        "✅ TUI rendering test passed: {} messages in chat view",
-        message_count
-    );
 }
 
 /// Test all tools are registered
@@ -297,11 +279,6 @@ fn test_e2e_all_tools_registered() {
     for expected in &expected_tools {
         assert!(tool_names.contains(expected), "Missing tool: {}", expected);
     }
-
-    println!(
-        "✅ All {} expected tools are registered",
-        expected_tools.len()
-    );
 }
 
 /// Test event ordering in TUI
@@ -352,6 +329,4 @@ fn test_e2e_event_ordering() {
 
     // Final state should be Idle
     assert_eq!(tui_bridge.state(), TuiState::Idle);
-
-    println!("✅ Event ordering test passed");
 }

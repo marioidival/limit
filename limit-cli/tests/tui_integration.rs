@@ -40,8 +40,6 @@ fn test_tui_integration_full_conversation() {
     let tools = agent_bridge.get_tool_definitions();
     assert!(!tools.is_empty());
     assert!(tools.iter().any(|t| t.function.name == "file_read"));
-
-    println!("Agent bridge created with {} tools", tools.len());
 }
 
 #[test]
