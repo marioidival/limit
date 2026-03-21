@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.35] - 2026-03-21
+
+### 🚜 Refactor
+
+- Use global fastembed cache at ~/.limit/fastembed
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove macOS x86_64 target from release
+
+## [0.0.35] - 2026-03-20
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.34] - 2026-03-21
 
 ### 🐛 Bug Fixes
