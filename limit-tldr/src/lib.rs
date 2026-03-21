@@ -140,8 +140,9 @@ impl TLDR {
         // Clean up old cache format
         self.cache.cleanup();
 
-        // Try loading semantic index from cache (skip rebuild if nothing changed)
-        if self.semantic.load(self.cache.cache_dir()) {
+        // Try loading semantic index from cache
+        let cache_loaded = self.semantic.load(self.cache.cache_dir());
+        if cache_loaded {
             tracing::info!("semantic: loaded from cache");
         }
 
@@ -149,7 +150,6 @@ impl TLDR {
         let mut coordinator = ParseCoordinator::new(
             self.project_path.clone(),
             self.config.language,
-            // Create a fresh cache ref for the coordinator
             CacheManager::new(self.cache.cache_dir().to_path_buf())?,
         );
         let analyses = coordinator.warm().await?;
@@ -160,14 +160,25 @@ impl TLDR {
         // Build call graph from pre-computed analyses
         self.call_graph.build(&analyses);
 
-        // Build semantic index
-        self.semantic
-            .build(&analyses, &self.call_graph, self.cache.cache_dir())
-            .await?;
+        // Build semantic index only if cache is missing or stale
+        if !cache_loaded || self.semantic.needs_rebuild(&analyses) {
+            tracing::info!(
+                "semantic: {}",
+                if cache_loaded {
+                    "cache stale, rebuilding embeddings"
+                } else {
+                    "no cache, building embeddings"
+                },
+            );
+            self.semantic
+                .build(&analyses, &self.call_graph, self.cache.cache_dir())
+                .await?;
 
-        // Persist semantic index if embeddings were generated
-        if self.semantic.should_save() {
-            self.semantic.save(self.cache.cache_dir())?;
+            if self.semantic.should_save() {
+                self.semantic.save(self.cache.cache_dir())?;
+            }
+        } else {
+            tracing::info!("semantic: cache is valid, skipping build");
         }
 
         Ok(())

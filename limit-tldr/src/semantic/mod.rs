@@ -92,10 +92,22 @@ impl SemanticIndex {
         let model_cache = dirs::home_dir()
             .map(|h| h.join(".limit").join("fastembed"))
             .unwrap_or_else(|| cache_dir.join("fastembed"));
+
+        let fn_count = self
+            .entries
+            .iter()
+            .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
+            .count();
+        tracing::info!(
+            "semantic: loading embedding model ({} functions to index)",
+            fn_count
+        );
+
         match TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::BGESmallENV15).with_cache_dir(model_cache),
         ) {
             Ok(mut model) => {
+                tracing::info!("semantic: model loaded, generating embeddings...");
                 let texts: Vec<String> = self
                     .entries
                     .iter()
@@ -118,8 +130,13 @@ impl SemanticIndex {
                     })
                     .collect();
 
+                tracing::info!("semantic: embedding {} texts...", texts.len());
                 match model.embed(texts, None) {
                     Ok(embeddings) => {
+                        tracing::info!(
+                            "semantic: embeddings generated ({} vectors)",
+                            embeddings.len()
+                        );
                         self.embeddings = Some(embeddings);
                         self.model = Some(Mutex::new(model));
                     }
@@ -149,6 +166,45 @@ impl SemanticIndex {
     /// Whether embeddings were generated (only save if true)
     pub fn should_save(&self) -> bool {
         self.embeddings.is_some()
+    }
+
+    /// Check if loaded entries match current analyses (to skip embedding rebuild)
+    pub fn needs_rebuild(&self, analyses: &[FileAnalysis]) -> bool {
+        if self.entries.is_empty() || self.embeddings.is_none() {
+            return true;
+        }
+        let current: Vec<_> = analyses
+            .iter()
+            .flat_map(|a| {
+                a.functions.iter().map(|f| {
+                    (
+                        f.name.clone(),
+                        f.file.clone(),
+                        f.line,
+                        f.signature.clone(),
+                        "fn".to_string(),
+                    )
+                })
+            })
+            .chain(analyses.iter().flat_map(|a| {
+                a.classes.iter().map(|c| {
+                    (
+                        format!("struct {}", c.name),
+                        c.file.clone(),
+                        c.line,
+                        format!("struct {} {{ /* {} fields */ }}", c.name, c.fields.len()),
+                        "struct".to_string(),
+                    )
+                })
+            }))
+            .collect();
+
+        if current.len() != self.entries.len() {
+            return true;
+        }
+        current.iter().zip(self.entries.iter()).any(|(c, loaded)| {
+            c.0 != loaded.0 || c.1 != loaded.1 || c.2 != loaded.2 || c.3 != loaded.3
+        })
     }
 
     /// Save semantic index to disk

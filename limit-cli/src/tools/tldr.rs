@@ -214,7 +214,15 @@ impl TldrTool {
                 warn!("get_tldr: pre_warm did not populate cache, falling back to lazy");
             }
             _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
-                warn!("get_tldr: pre_warm timed out after 30s, falling back to lazy");
+                warn!("get_tldr: pre_warm timed out after 30s");
+                // pre_warm may have just completed — check cache once before lazy
+                if let Some((cached_path, tldr)) = self.cache.get() {
+                    if *cached_path == project_path_for_check {
+                        info!("get_tldr: pre_warm completed during timeout, using cached result");
+                        return Ok(Arc::clone(tldr));
+                    }
+                }
+                info!("get_tldr: falling back to lazy creation");
             }
         }
 
