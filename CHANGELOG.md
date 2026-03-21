@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.39] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Set cross-compilation linker for aarch64 target
+
+## [0.0.39] - 2026-03-21
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.38] - 2026-03-21
 
 ### 🐛 Bug Fixes
