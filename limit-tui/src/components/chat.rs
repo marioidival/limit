@@ -316,7 +316,7 @@ impl ChatView {
     pub fn append_to_last_assistant(&mut self, content: &str) {
         // Skip empty content - don't create new messages for empty chunks
         if content.is_empty() {
-            debug!("append_to_last_assistant: skipping empty content");
+            trace!("append_to_last_assistant: skipping empty content");
             return;
         }
 
@@ -325,7 +325,7 @@ impl ChatView {
             .last()
             .map(|m| format!("{:?}", m.role))
             .unwrap_or_else(|| "None".to_string());
-        debug!(
+        trace!(
             "append_to_last_assistant: content.len()={}, messages.count()={}, last_role={}",
             content.len(),
             self.messages.len(),
@@ -334,7 +334,7 @@ impl ChatView {
 
         if let Some(last) = self.messages.last_mut() {
             if matches!(last.role, Role::Assistant) {
-                debug!(
+                trace!(
                     "append_to_last_assistant: appending to existing assistant message (content now {} chars)",
                     last.content.len() + content.len()
                 );
