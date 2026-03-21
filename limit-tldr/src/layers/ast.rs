@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::cache::CacheManager;
 use crate::error::{Error, Result};
 use crate::parsers::tree_sitter::TreeSitterParser;
-use crate::types::{ClassInfo, FileAnalysis, FunctionInfo, Language};
+use crate::types::{ClassInfo, ConstantInfo, FileAnalysis, FunctionInfo, Language};
 
 /// AST analysis layer
 pub struct ASTLayer {
@@ -187,6 +187,35 @@ impl ASTLayer {
         self.file_cache
             .values()
             .flat_map(|a| a.classes.iter())
+            .collect()
+    }
+
+    /// Find a constant by name across all files
+    pub fn find_constant(&self, name: &str) -> Result<Option<ConstantInfo>> {
+        for analysis in self.file_cache.values() {
+            for constant in &analysis.constants {
+                if constant.name == name {
+                    return Ok(Some(constant.clone()));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Get all constants matching name across all files (for disambiguation)
+    pub fn find_all_constants(&self, name: &str) -> Vec<&ConstantInfo> {
+        self.file_cache
+            .values()
+            .flat_map(|a| a.constants.iter())
+            .filter(|c| c.name == name)
+            .collect()
+    }
+
+    /// Get all constants
+    pub fn all_constants(&self) -> Vec<&ConstantInfo> {
+        self.file_cache
+            .values()
+            .flat_map(|a| a.constants.iter())
             .collect()
     }
 
