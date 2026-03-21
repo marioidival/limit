@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 /// Manages file autocomplete state and operations
 pub struct FileAutocompleteManager {
+    /// Base path for file searching
+    base_path: PathBuf,
     /// File finder instance
     file_finder: FileFinder,
     /// Current autocomplete state
@@ -35,10 +37,17 @@ impl FileAutocompleteManager {
     /// Create a new autocomplete manager
     pub fn new(working_dir: PathBuf) -> Self {
         Self {
+            base_path: working_dir.clone(),
             file_finder: FileFinder::new(working_dir),
             state: None,
             matches_buffer: Vec::with_capacity(64),
         }
+    }
+
+    /// Get the base path for file searching
+    #[inline]
+    pub fn base_path(&self) -> &PathBuf {
+        &self.base_path
     }
 
     /// Check if autocomplete is currently active

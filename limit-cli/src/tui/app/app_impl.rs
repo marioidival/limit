@@ -714,6 +714,7 @@ impl TuiApp {
                 self.tui_bridge.total_input_tokens_arc(),
                 self.tui_bridge.total_output_tokens_arc(),
                 self.clipboard.clone(),
+                self.autocomplete_manager.base_path().to_path_buf(),
             );
 
             // Execute command via registry
@@ -743,6 +744,11 @@ impl TuiApp {
                                 *cmd_ctx.total_input_tokens.lock().unwrap();
                             *self.tui_bridge.total_output_tokens_arc().lock().unwrap() =
                                 *cmd_ctx.total_output_tokens.lock().unwrap();
+                            return Ok(());
+                        }
+                        CommandResult::TldrWarm => {
+                            // TLDR warm enabled for project - background indexing will start
+                            // The command already added a system message
                             return Ok(());
                         }
                         CommandResult::Continue
@@ -790,6 +796,8 @@ impl TuiApp {
                  /clear - Clear chat history\n\
                  /exit  - Exit the application\n\
                  /quit  - Exit the application\n\
+                 /tldr  - Enable code analysis for this project\n\
+                 /warm  - Alias for /tldr\n\
                  /session list  - List all sessions\n\
                  /session new   - Create a new session\n\
                  /session load  <id> - Load a session by ID\n\

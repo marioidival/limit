@@ -26,6 +26,8 @@ pub enum CommandResult {
     LoadSession(String),
     /// Share/export session
     Share(String),
+    /// Enable TLDR warm for project
+    TldrWarm,
 }
 
 /// Context provided to commands for execution
@@ -46,6 +48,8 @@ pub struct CommandContext {
     pub total_output_tokens: Arc<Mutex<u64>>,
     /// Clipboard manager (optional)
     pub clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
+    /// Current project path (working directory)
+    pub project_path: std::path::PathBuf,
 }
 
 impl CommandContext {
@@ -60,6 +64,7 @@ impl CommandContext {
         total_input_tokens: Arc<Mutex<u64>>,
         total_output_tokens: Arc<Mutex<u64>>,
         clipboard: Option<Arc<Mutex<crate::clipboard::ClipboardManager>>>,
+        project_path: std::path::PathBuf,
     ) -> Self {
         Self {
             chat_view,
@@ -70,6 +75,7 @@ impl CommandContext {
             total_input_tokens,
             total_output_tokens,
             clipboard,
+            project_path,
         }
     }
 
