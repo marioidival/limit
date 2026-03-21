@@ -5,13 +5,13 @@
 //! NOTE: `semantic` feature adds ~50MB to binary via ONNX runtime.
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::error::Result;
 use crate::layers::CallGraphLayer;
 use crate::types::{FileAnalysis, SearchResult};
 
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
-use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,28 +36,55 @@ enum EntryKind {
 /// Internal entry type shared between functions and structs
 type Entry = (String, PathBuf, usize, String, EntryKind);
 
+/// Mutable state protected by Mutex for concurrent access during background build
+struct SemanticInner {
+    embeddings: Option<Vec<Vec<f32>>>,
+    model: Option<SendEmbedding>,
+}
+
+/// Wrapper around TextEmbedding that is Send.
+///
+/// Safety: Access is always protected by Mutex (one thread at a time).
+/// The !Send marker comes from ONNX runtime internals, not actual unsafety.
+struct SendEmbedding(TextEmbedding);
+
+unsafe impl Send for SendEmbedding {}
+
+impl std::ops::Deref for SendEmbedding {
+    type Target = TextEmbedding;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SendEmbedding {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 pub struct SemanticIndex {
     entries: Vec<Entry>,
-    embeddings: Option<Vec<Vec<f32>>>,
-    model: Option<Mutex<TextEmbedding>>,
+    /// Pre-computed embedding texts (populated by populate_entries, used by build_embeddings)
+    embedding_texts: Vec<String>,
+    inner: Mutex<SemanticInner>,
 }
 
 impl SemanticIndex {
     pub fn new() -> Result<Self> {
         Ok(Self {
             entries: Vec::new(),
-            embeddings: None,
-            model: None,
+            embedding_texts: Vec::new(),
+            inner: Mutex::new(SemanticInner {
+                embeddings: None,
+                model: None,
+            }),
         })
     }
 
-    /// Build index from pre-computed file analyses
-    pub async fn build(
-        &mut self,
-        analyses: &[FileAnalysis],
-        call_graph: &CallGraphLayer,
-        cache_dir: &Path,
-    ) -> Result<()> {
+    /// Populate entries from file analyses (fast, ~0ms).
+    /// Enables text_search() immediately. Call build_embeddings() separately for semantic search.
+    pub fn populate_entries(&mut self, analyses: &[FileAnalysis], call_graph: &CallGraphLayer) {
         // Index functions
         let mut entries: Vec<Entry> = analyses
             .iter()
@@ -89,6 +116,47 @@ impl SemanticIndex {
         entries.extend(struct_entries);
         self.entries = entries;
 
+        // Pre-compute embedding texts for functions (using call graph context)
+        self.embedding_texts = self
+            .entries
+            .iter()
+            .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
+            .map(|(name, _, _, sig, _)| {
+                let mut text = format!("{} {}", name, sig);
+                if let Ok(callers) = call_graph.get_backward_calls(name) {
+                    let names: Vec<&str> = callers.iter().map(|c| c.function.as_str()).collect();
+                    if !names.is_empty() {
+                        text.push_str(&format!(" called_by: {}", names.join(", ")));
+                    }
+                }
+                if let Ok(callees) = call_graph.get_forward_calls(name) {
+                    if !callees.is_empty() {
+                        text.push_str(&format!(" calls: {}", callees.join(", ")));
+                    }
+                }
+                text
+            })
+            .collect();
+
+        // Clear stale embeddings if entry count changed (prevents index mismatch)
+        let inner = self.inner.get_mut().unwrap();
+        if let Some(ref embeddings) = inner.embeddings {
+            if embeddings.len() != self.embedding_texts.len() {
+                tracing::info!(
+                    "semantic: clearing stale embeddings ({} vs {} entries)",
+                    embeddings.len(),
+                    self.embedding_texts.len()
+                );
+                inner.embeddings = None;
+                inner.model = None;
+            }
+        }
+    }
+
+    /// Build embeddings from pre-computed texts (slow, ~90s for 1500+ functions).
+    /// Thread-safe via &self — writes to inner through Mutex.
+    /// Intended to be called from a background thread after populate_entries().
+    pub fn build_embeddings(&self, cache_dir: &Path) -> Result<()> {
         let model_cache = dirs::home_dir()
             .map(|h| h.join(".limit").join("fastembed"))
             .unwrap_or_else(|| cache_dir.join("fastembed"));
@@ -98,6 +166,7 @@ impl SemanticIndex {
             .iter()
             .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
             .count();
+
         tracing::info!(
             "semantic: loading embedding model ({} functions to index)",
             fn_count
@@ -108,37 +177,19 @@ impl SemanticIndex {
         ) {
             Ok(mut model) => {
                 tracing::info!("semantic: model loaded, generating embeddings...");
-                let texts: Vec<String> = self
-                    .entries
-                    .iter()
-                    .filter(|(_, _, _, _, kind)| matches!(kind, EntryKind::Function))
-                    .map(|(name, _, _, sig, _)| {
-                        let mut text = format!("{} {}", name, sig);
-                        if let Ok(callers) = call_graph.get_backward_calls(name) {
-                            let names: Vec<&str> =
-                                callers.iter().map(|c| c.function.as_str()).collect();
-                            if !names.is_empty() {
-                                text.push_str(&format!(" called_by: {}", names.join(", ")));
-                            }
-                        }
-                        if let Ok(callees) = call_graph.get_forward_calls(name) {
-                            if !callees.is_empty() {
-                                text.push_str(&format!(" calls: {}", callees.join(", ")));
-                            }
-                        }
-                        text
-                    })
-                    .collect();
-
-                tracing::info!("semantic: embedding {} texts...", texts.len());
-                match model.embed(texts, None) {
+                tracing::info!(
+                    "semantic: embedding {} texts...",
+                    self.embedding_texts.len()
+                );
+                match model.embed(self.embedding_texts.clone(), None) {
                     Ok(embeddings) => {
                         tracing::info!(
                             "semantic: embeddings generated ({} vectors)",
                             embeddings.len()
                         );
-                        self.embeddings = Some(embeddings);
-                        self.model = Some(Mutex::new(model));
+                        let mut inner = self.inner.lock().unwrap();
+                        inner.embeddings = Some(embeddings);
+                        inner.model = Some(SendEmbedding(model));
                     }
                     Err(e) => {
                         tracing::warn!("Semantic embedding generation failed: {}", e);
@@ -152,7 +203,35 @@ impl SemanticIndex {
         Ok(())
     }
 
-    /// Backward-compatible warm using ASTLayer (delegates to build)
+    /// Load the embedding model only (~200ms from disk cache).
+    /// Used when embeddings are loaded from cache but model isn't serialized.
+    pub fn load_model(&self, cache_dir: &Path) {
+        let model_cache = dirs::home_dir()
+            .map(|h| h.join(".limit").join("fastembed"))
+            .unwrap_or_else(|| cache_dir.join("fastembed"));
+
+        tracing::info!("semantic: loading embedding model for cached embeddings");
+        match TextEmbedding::try_new(
+            InitOptions::new(EmbeddingModel::BGESmallENV15).with_cache_dir(model_cache),
+        ) {
+            Ok(model) => {
+                tracing::info!("semantic: model loaded");
+                let mut inner = self.inner.lock().unwrap();
+                inner.model = Some(SendEmbedding(model));
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load embedding model: {}", e);
+            }
+        }
+    }
+
+    /// Whether embeddings are available (non-blocking)
+    pub fn is_ready(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        inner.embeddings.is_some() && inner.model.is_some()
+    }
+
+    /// Backward-compatible warm using ASTLayer
     pub async fn warm(
         &mut self,
         ast: &crate::layers::ASTLayer,
@@ -160,17 +239,29 @@ impl SemanticIndex {
         cache_dir: &Path,
     ) -> Result<()> {
         let analyses: Vec<FileAnalysis> = ast.file_analyses().into_iter().cloned().collect();
-        self.build(&analyses, call_graph, cache_dir).await
+        self.populate_entries(&analyses, call_graph);
+        self.build_embeddings(cache_dir)
+    }
+
+    /// Backward-compatible build (synchronous, blocking)
+    pub async fn build(
+        &mut self,
+        analyses: &[FileAnalysis],
+        call_graph: &CallGraphLayer,
+        cache_dir: &Path,
+    ) -> Result<()> {
+        self.populate_entries(analyses, call_graph);
+        self.build_embeddings(cache_dir)
     }
 
     /// Whether embeddings were generated (only save if true)
     pub fn should_save(&self) -> bool {
-        self.embeddings.is_some()
+        self.inner.lock().unwrap().embeddings.is_some()
     }
 
     /// Check if loaded entries match current analyses (to skip embedding rebuild)
     pub fn needs_rebuild(&self, analyses: &[FileAnalysis]) -> bool {
-        if self.entries.is_empty() || self.embeddings.is_none() {
+        if self.entries.is_empty() || self.inner.lock().unwrap().embeddings.is_none() {
             return true;
         }
         let current: Vec<_> = analyses
@@ -231,10 +322,11 @@ impl SemanticIndex {
             })
             .collect();
 
+        let inner = self.inner.lock().unwrap();
         let cache = SemanticCache {
             version: CACHE_VERSION.to_string(),
             entries,
-            embeddings: self.embeddings.clone(),
+            embeddings: inner.embeddings.clone(),
         };
 
         let path = cache_dir.join("semantic_index.json");
@@ -278,49 +370,57 @@ impl SemanticIndex {
             })
             .collect();
 
-        self.embeddings = cache.embeddings;
+        // Store embeddings in inner; model is NOT serialized (load separately via load_model)
+        let inner = self.inner.get_mut().unwrap();
+        inner.embeddings = cache.embeddings;
+        inner.model = None;
 
         true
     }
 
     pub async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
-        if let (Some(model), Some(embeddings)) = (&self.model, &self.embeddings) {
-            let mut model = model
-                .lock()
-                .map_err(|e| crate::error::Error::Semantic(e.to_string()))?;
-            match model.embed(vec![query.to_string()], None) {
-                Ok(query_emb) => {
-                    let q = &query_emb[0];
-                    let mut scored: Vec<(usize, f32)> = embeddings
-                        .iter()
-                        .enumerate()
-                        .map(|(i, emb)| (i, cosine_similarity(q, emb)))
-                        .collect();
-                    scored
-                        .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        // Try semantic search (non-blocking via try_lock)
+        if let Ok(mut inner) = self.inner.try_lock() {
+            if inner.model.is_some() && inner.embeddings.is_some() {
+                let embeddings = inner.embeddings.as_ref().unwrap().clone();
+                let model = inner.model.as_mut().unwrap();
+                match model.embed(vec![query.to_string()], None) {
+                    Ok(query_emb) => {
+                        let q = &query_emb[0];
+                        let mut scored: Vec<(usize, f32)> = embeddings
+                            .iter()
+                            .enumerate()
+                            .map(|(i, emb)| (i, cosine_similarity(q, emb)))
+                            .collect();
+                        scored.sort_by(|a, b| {
+                            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+                        });
 
-                    return Ok(scored
-                        .into_iter()
-                        .take(limit)
-                        .map(|(idx, score)| {
-                            let (name, file, line, sig, _) = &self.entries[idx];
-                            SearchResult {
-                                function: name.clone(),
-                                file: file.clone(),
-                                line: *line,
-                                score,
-                                signature: sig.clone(),
-                            }
-                        })
-                        .collect());
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Semantic query embedding failed: {}, falling back to text search",
-                        e
-                    );
+                        return Ok(scored
+                            .into_iter()
+                            .take(limit)
+                            .filter(|(idx, _)| *idx < self.entries.len())
+                            .map(|(idx, score)| {
+                                let (name, file, line, sig, _) = &self.entries[idx];
+                                SearchResult {
+                                    function: name.clone(),
+                                    file: file.clone(),
+                                    line: *line,
+                                    score,
+                                    signature: sig.clone(),
+                                }
+                            })
+                            .collect());
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Semantic query embedding failed: {}, falling back to text search",
+                            e
+                        );
+                    }
                 }
             }
+            // Model or embeddings not ready, or background build holding lock — fall through
         }
 
         self.text_search(query, limit).await
@@ -522,7 +622,10 @@ mod tests {
                 EntryKind::Struct,
             ),
         ];
-        index.embeddings = Some(vec![vec![0.1; 384]]);
+        *index.inner.get_mut().unwrap() = SemanticInner {
+            embeddings: Some(vec![vec![0.1f32; 384]]),
+            model: None,
+        };
 
         assert!(index.should_save());
         index.save(dir.path()).unwrap();
@@ -533,7 +636,7 @@ mod tests {
         assert_eq!(loaded.entries[0].0, "handler");
         assert_eq!(loaded.entries[1].0, "struct Config");
 
-        // Embeddings and save flag preserved through roundtrip
+        // Embeddings preserved through roundtrip
         assert!(loaded.should_save());
     }
 
@@ -543,5 +646,29 @@ mod tests {
         let mut index = SemanticIndex::new().unwrap();
         assert!(!index.load(dir.path()));
         assert!(index.entries.is_empty());
+    }
+
+    #[test]
+    fn is_ready_returns_false_when_empty() {
+        let index = SemanticIndex::new().unwrap();
+        assert!(!index.is_ready());
+    }
+
+    #[test]
+    fn is_ready_returns_true_with_embeddings_and_model() {
+        let mut index = SemanticIndex::new().unwrap();
+        index.entries = vec![(
+            "test".to_string(),
+            PathBuf::from("src/test.rs"),
+            1,
+            "fn test()".to_string(),
+            EntryKind::Function,
+        )];
+        *index.inner.get_mut().unwrap() = SemanticInner {
+            embeddings: Some(vec![vec![0.1f32; 384]]),
+            model: None,
+        };
+        // model is None, so not ready
+        assert!(!index.is_ready());
     }
 }
