@@ -1,6 +1,6 @@
 [package]
 name = "limit-cli"
-version = "0.0.30"
+version = "0.0.31"
 edition = "2021"
 description = "AI-powered terminal coding assistant with REPL and TUI. Multi-provider LLM support, session persistence, and built-in tools."
 authors = ["Mário Idival <marioidival@gmail.com>"]
@@ -21,7 +21,7 @@ path = "src/main.rs"
 [dependencies]
 thiserror = "1.0"
 futures = "0.3"
-limit-agent = { path = "../limit-agent", version = "0.0.30" }
+limit-agent = { path = "../limit-agent", version = "0.0.31" }
 rustyline = "14.0"
 crossterm = { version = "0.29", features = ["bracketed-paste"] }
 ratatui = "0.29"
@@ -47,8 +47,8 @@ bincode = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
-limit-llm = { path = "../limit-llm", version = "0.0.30" }
-limit-tui = { path = "../limit-tui", version = "0.0.30" }
+limit-llm = { path = "../limit-llm", version = "0.0.31" }
+limit-tui = { path = "../limit-tui", version = "0.0.31" }
 tracing = { version = "0.1", features = ["max_level_trace", "release_max_level_warn"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
@@ -57,5 +57,5 @@ arboard = "3.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 frizbee = "0.8"
 ignore = "0.4"
-limit-tldr = { path = "../limit-tldr", version = "0.0.30" }
+limit-tldr = { path = "../limit-tldr", version = "0.0.31" }
 walkdir = "2.5"

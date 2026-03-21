@@ -2252,7 +2252,7 @@ dependencies = [
 
 [[package]]
 name = "limit-agent"
-version = "0.0.30"
+version = "0.0.31"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2272,7 +2272,7 @@ dependencies = [
 
 [[package]]
 name = "limit-cli"
-version = "0.0.30"
+version = "0.0.31"
 dependencies = [
  "arboard",
  "async-trait",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "limit-llm"
-version = "0.0.30"
+version = "0.0.31"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2335,7 +2335,7 @@ dependencies = [
 
 [[package]]
 name = "limit-tldr"
-version = "0.0.30"
+version = "0.0.31"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2366,7 +2366,7 @@ dependencies = [
 
 [[package]]
 name = "limit-tui"
-version = "0.0.30"
+version = "0.0.31"
 dependencies = [
  "chrono",
  "crossterm 0.29.0",

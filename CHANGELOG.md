@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.31] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Install libssl-dev for cross-compilation in release workflow
+
+## [0.0.31] - 2026-03-20
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.30] - 2026-03-21
 
 ### 🐛 Bug Fixes
