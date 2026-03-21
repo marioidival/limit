@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.38] - 2026-03-21
+
+### 🐛 Bug Fixes
+
+- Use Ubuntu 22.04 base for aarch64 glibc compatibility
+
+## [0.0.38] - 2026-03-21
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.37] - 2026-03-21
 
 ### 🐛 Bug Fixes
