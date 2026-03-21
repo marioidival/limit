@@ -2,6 +2,90 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.40] - 2026-03-21
+
+### 🚀 Features
+
+- Add constant lookup methods to ASTLayer
+
+- Add constant indexing to semantic search
+
+- Add constant lookup methods to TLDR public API
+
+- Add constant/variable search support
+
+- Add rustc-hash dependency for FxHashMap
+
+- Implement hash-based incremental embedding updates
+
+- Add /tldr command to enable per-project code analysis
+
+- Add permissive mode for code analysis
+
+- Start background TLDR warm when /tldr command is executed
+
+
+### 🐛 Bug Fixes
+
+- Suppress noisy h2 HTTP/2 frame logs
+
+- Suppress noisy ignore/globset crate logs
+
+- Reduce log noise from rustls, process_message span, and clipboard
+
+- Improve tldr_analyze usage instructions in system prompt
+
+- Add panic hook and catch panics in LLM thread
+
+- Use unicode-width for text wrapping
+
+
+### 🚜 Refactor
+
+- Convert verbose debug logs to trace level in clipboard handling
+
+- Convert verbose debug logs to trace level
+
+- Clean up and restructure system prompt
+
+- Convert empty content skip log to trace level
+
+- Remove /warm alias, keep only /tldr
+
+
+### 📚 Documentation
+
+- Add limit-tldr section and tldr_analyze tool to README
+
+- Add Optional Dependencies section to README
+
+- Rewrite README.md to be cleaner and more concise
+
+- Update DEVELOPMENT_GUIDE.md with limit-tldr documentation
+
+- Document incremental embedding system
+
+- Add TLDR permissive mode documentation
+
+
+### 🎨 Styling
+
+- Format tracing macros for readability
+
+
+### 🧪 Testing
+
+- Remove debug println! statements from test files
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Enable debug symbols in release profile
+
+## [0.0.40] - 2026-03-21
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.39] - 2026-03-21
 
 ### 🐛 Bug Fixes
