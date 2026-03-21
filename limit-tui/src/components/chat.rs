@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 
 use crate::syntax::SyntaxHighlighter;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use ratatui::{
     buffer::Buffer,
@@ -288,7 +288,7 @@ impl Default for ChatView {
 
 impl ChatView {
     pub fn new() -> Self {
-        debug!(component = %"ChatView", "Component created");
+        trace!(component = %"ChatView", "Component created");
         Self {
             messages: Vec::new(),
             scroll_offset: 0,
@@ -459,23 +459,24 @@ impl ChatView {
     /// Map screen coordinates to text position for mouse selection
     /// Returns (message_idx, char_offset) if a valid position is found
     pub fn screen_to_text_pos(&self, col: u16, row: u16) -> Option<(usize, usize)> {
-        debug!(
+        trace!(
             "screen_to_text_pos: col={}, row={}, positions={}",
             col,
             row,
             self.render_positions.borrow().len()
         );
         for pos in self.render_positions.borrow().iter() {
-            debug!(
+            trace!(
                 "  checking pos.screen_row={} vs row={}",
-                pos.screen_row, row
+                pos.screen_row,
+                row
             );
             if pos.screen_row == row {
                 // Calculate character offset within the line based on column
                 // (assumes monospace font - accurate for terminal)
                 let line_len = pos.char_end.saturating_sub(pos.char_start);
                 let char_in_line = (col as usize).min(line_len);
-                debug!(
+                trace!(
                     "    matched! msg_idx={}, char_offset={}",
                     pos.message_idx,
                     pos.char_start + char_in_line
@@ -483,7 +484,7 @@ impl ChatView {
                 return Some((pos.message_idx, pos.char_start + char_in_line));
             }
         }
-        debug!("  no match found");
+        trace!("  no match found");
         None
     }
 

@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::pin::Pin;
 use std::time::Duration;
-use tracing::{debug, error, info, instrument, trace};
+use tracing::{error, info, instrument, trace};
 
 #[derive(Clone)]
 pub struct OpenAiProvider {
@@ -63,9 +63,11 @@ impl LlmProvider for OpenAiProvider {
         let max_tokens = self.max_tokens;
         let client_clone = self.client.clone();
 
+        info!(
+            "OpenAI API request: model={}, max_tokens={}",
+            self.model, self.max_tokens
+        );
         Ok(Box::pin(stream! {
-            info!("OpenAI API request: model={}, max_tokens={}", self.model, self.max_tokens);
-
             let request_body = match build_request_body(&messages, &tools, &model, max_tokens, None) {
                 Ok(body) => body,
                 Err(e) => {
@@ -123,7 +125,7 @@ async fn do_request(
         .map_err(|e| LlmError::NetworkError(e.to_string()))?;
 
     let status = response.status();
-    debug!("OpenAI API response received: status={}", status.as_u16());
+    trace!("OpenAI API response received: status={}", status.as_u16());
 
     if status.is_client_error() || status.is_server_error() {
         let error_text = response
@@ -282,7 +284,7 @@ fn parse_openai_sse_stream(
 
                             // Handle finish reason and usage
                             if let Some(finish_reason) = first_choice.get("finish_reason").and_then(|v| v.as_str()) {
-                                debug!("OpenAI finish_reason: {}", finish_reason);
+                                trace!("OpenAI finish_reason: {}", finish_reason);
                                 if finish_reason == "stop" || finish_reason == "tool_calls" {
                                     if let Some(usage) = parsed.get("usage") {
                                         // OpenAI uses prompt_tokens and completion_tokens,

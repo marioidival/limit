@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{Notify, OnceCell};
-use tracing::{debug, info, warn};
+use tracing::{info, trace, warn};
 
 /// Analysis type to perform
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,7 +160,7 @@ impl TldrTool {
                 Ok(mut tldr) => match tldr.warm().await {
                     Ok(()) => {
                         let _ = cache.set((project_path, Arc::new(tldr))).map_err(|_| {
-                            debug!("pre_warm: OnceCell already set (race with get_tldr)");
+                            trace!("pre_warm: OnceCell already set (race with get_tldr)");
                         });
                         info!("pre_warm: warm from cache complete");
                     }
@@ -185,7 +185,7 @@ impl TldrTool {
                     guard.save(&project_path);
                     info!("pre_warm: warm complete");
                     let _ = cache.set((project_path, Arc::new(tldr))).map_err(|_| {
-                        debug!("pre_warm: OnceCell already set (race with get_tldr)");
+                        trace!("pre_warm: OnceCell already set (race with get_tldr)");
                     });
                     notify.notify_waiters();
                 }
@@ -210,7 +210,7 @@ impl TldrTool {
         // If cache already populated, return immediately
         if let Some((cached_path, tldr)) = self.cache.get() {
             if *cached_path == project_path_for_check {
-                debug!("TLDR cache hit for project: {:?}", project_path_for_check);
+                trace!("TLDR cache hit for project: {:?}", project_path_for_check);
                 return Ok(Arc::clone(tldr));
             }
             warn!(
@@ -227,7 +227,7 @@ impl TldrTool {
                 // pre_warm finished — check if it succeeded
                 if let Some((cached_path, tldr)) = self.cache.get() {
                     if *cached_path == project_path_for_check {
-                        debug!("TLDR cache hit after pre_warm for: {:?}", project_path_for_check);
+                        trace!("TLDR cache hit after pre_warm for: {:?}", project_path_for_check);
                         return Ok(Arc::clone(tldr));
                     }
                     warn!(
@@ -285,7 +285,7 @@ impl TldrTool {
             .await;
 
         let (_cached_path, tldr) = result?;
-        debug!(
+        trace!(
             "TLDR cache hit (lazy) for project: {:?}",
             project_path_for_check
         );
@@ -680,7 +680,7 @@ impl TldrTool {
             }
         };
 
-        debug!("Analysis complete for: {:?}", params.analysis_type);
+        trace!("Analysis complete for: {:?}", params.analysis_type);
         result
     }
 }
@@ -704,10 +704,10 @@ impl Tool for TldrTool {
 
         info!("tldr_analyze invoked: type={:?}", params.analysis_type);
         if let Some(ref f) = &params.function {
-            debug!("  function: {}", f);
+            trace!("  function: {}", f);
         }
         if let Some(ref q) = &params.query {
-            debug!("  query: {}", q);
+            trace!("  query: {}", q);
         }
 
         let result = match self.analyze(params).await {

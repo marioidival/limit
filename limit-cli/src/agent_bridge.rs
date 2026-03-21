@@ -18,7 +18,7 @@ use limit_llm::TrackingDb;
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, trace};
 
 /// Event types for streaming from agent to REPL
 #[derive(Debug, Clone)]
@@ -360,7 +360,7 @@ impl AgentBridge {
                 match chunk_result {
                     Ok(ProviderResponseChunk::ContentDelta(text)) => {
                         current_content.push_str(&text);
-                        debug!(
+                        trace!(
                             "ContentDelta: {} chars (total: {})",
                             text.len(),
                             current_content.len()
@@ -378,7 +378,7 @@ impl AgentBridge {
                         name,
                         arguments,
                     }) => {
-                        debug!(
+                        trace!(
                             "ToolCallDelta: id={}, name={}, args_len={}",
                             id,
                             name,
@@ -437,7 +437,7 @@ impl AgentBridge {
             // If there are NO tool calls, this is the final response
             full_response = current_content.clone();
 
-            debug!(
+            trace!(
                 "After iter {}: content.len()={}, tool_calls={}, response.len()={}",
                 iteration,
                 current_content.len(),
@@ -451,7 +451,7 @@ impl AgentBridge {
                 break;
             }
 
-            debug!(
+            trace!(
                 "Tool calls found (count={}), continuing to iteration {}",
                 tool_calls.len(),
                 iteration + 1

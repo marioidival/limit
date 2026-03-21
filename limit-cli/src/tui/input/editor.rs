@@ -370,7 +370,7 @@ impl InputEditor {
     /// Insert paste with size limit
     /// Returns true if truncated
     pub fn insert_paste(&mut self, text: &str) -> bool {
-        tracing::debug!(
+        tracing::trace!(
             "insert_paste: input len={}, existing text len={}, has_pasted_content={}",
             text.len(),
             self.text.len(),
@@ -390,7 +390,7 @@ impl InputEditor {
             text.to_string()
         };
 
-        tracing::debug!(
+        tracing::trace!(
             "insert_paste: normalized len={}, will_create_placeholder={}",
             normalized.len(),
             normalized.len() > MAX_DISPLAY_LENGTH
@@ -398,7 +398,7 @@ impl InputEditor {
 
         // If we already have pasted content, append to it
         if let Some(ref mut pasted) = self.pasted_content {
-            tracing::debug!("insert_paste: appending to existing pasted content");
+            tracing::trace!("insert_paste: appending to existing pasted content");
             pasted.full_text.push_str(&normalized);
             pasted.display_text = format_paste_placeholder(&pasted.full_text);
             return truncated;
@@ -407,7 +407,7 @@ impl InputEditor {
         // If we have existing typed text, handle paste separately
         // to keep existing text visible
         if !self.text.is_empty() {
-            tracing::debug!(
+            tracing::trace!(
                 "insert_paste: existing text '{}' (len={}), paste len={}",
                 &self.text,
                 self.text.len(),
@@ -417,7 +417,7 @@ impl InputEditor {
             // If paste is large, create placeholder for paste only
             // Keep existing text in self.text for visibility
             if normalized.len() > MAX_DISPLAY_LENGTH {
-                tracing::debug!(
+                tracing::trace!(
                     "insert_paste: paste is large, creating placeholder for paste only"
                 );
                 // Use with_prefix to track the text that came before the paste
@@ -432,14 +432,14 @@ impl InputEditor {
 
             // Small paste - append normally
             self.text.push_str(&normalized);
-            tracing::debug!(
+            tracing::trace!(
                 "insert_paste: small paste appended, total len={}",
                 self.text.len()
             );
 
             // If combined text is now large, convert to placeholder
             if self.text.len() > MAX_DISPLAY_LENGTH {
-                tracing::debug!(
+                tracing::trace!(
                     "insert_paste: combined text len={} > {}, converting to pasted content",
                     self.text.len(),
                     MAX_DISPLAY_LENGTH
@@ -454,14 +454,14 @@ impl InputEditor {
 
         // No existing content - if paste is large, use placeholder display
         if normalized.len() > MAX_DISPLAY_LENGTH {
-            tracing::debug!("insert_paste: no existing content, creating placeholder");
+            tracing::trace!("insert_paste: no existing content, creating placeholder");
             self.pasted_content = Some(PastedContent::new(normalized));
             self.display_cursor = self.display_zones().3;
             return truncated;
         }
 
         // Small paste with no existing content - insert normally
-        tracing::debug!("insert_paste: small paste, inserting normally");
+        tracing::trace!("insert_paste: small paste, inserting normally");
         self.text = normalized;
         self.cursor = self.text.len();
         truncated
@@ -477,7 +477,7 @@ impl InputEditor {
                 compute_display_zones(text_before_len, pasted.display_text.len(), self.text.len());
             let text_after_start = placeholder_end + 1; // +1 for space
 
-            tracing::debug!(
+            tracing::trace!(
                 "delete_char_before: display_cursor={}, zones=({},{},{},{}), text_after_len={}",
                 self.display_cursor,
                 text_before_end,
@@ -647,7 +647,7 @@ impl InputEditor {
                 compute_display_zones(text_before_len, pasted.display_text.len(), self.text.len());
             let text_after_start = placeholder_end + 1;
 
-            tracing::debug!(
+            tracing::trace!(
                 "delete_char_at: display_cursor={}, zones=({},{},{},{}), text_after_len={}",
                 self.display_cursor,
                 text_before_end,
@@ -779,7 +779,7 @@ impl InputEditor {
             let (text_before_end, placeholder_start, placeholder_end, total_len) =
                 self.display_zones();
 
-            tracing::debug!(
+            tracing::trace!(
                 "move_left: display_cursor={}, zones=({},{},{},{}), text_before_len={}",
                 self.display_cursor,
                 text_before_end,
@@ -863,7 +863,7 @@ impl InputEditor {
             let (text_before_end, placeholder_start, placeholder_end, total_len) =
                 self.display_zones();
 
-            tracing::debug!(
+            tracing::trace!(
                 "move_right: display_cursor={}, zones=({},{},{},{}), text_before_len={}",
                 self.display_cursor,
                 text_before_end,

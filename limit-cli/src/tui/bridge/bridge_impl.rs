@@ -9,7 +9,7 @@ use crate::tui::{activity::format_activity_message, TuiState};
 use limit_tui::components::{ActivityFeed, ChatView, Message, Spinner};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-use tracing::debug;
+use tracing::trace;
 
 /// Bridge connecting limit-cli REPL to limit-tui components
 pub struct TuiBridge {
@@ -202,7 +202,7 @@ impl TuiBridge {
                 AgentEvent::TokenUsage { operation_id, .. } => *operation_id,
             };
 
-            debug!(
+            trace!(
                 "process_events: event_op_id={}, current_op_id={}, event={:?}",
                 event_op_id,
                 current_op_id,
@@ -211,25 +211,26 @@ impl TuiBridge {
 
             // Ignore events from old operations
             if event_op_id != current_op_id {
-                debug!(
+                trace!(
                     "process_events: Ignoring event from old operation {} (current: {})",
-                    event_op_id, current_op_id
+                    event_op_id,
+                    current_op_id
                 );
                 continue;
             }
 
             match event {
                 AgentEvent::Thinking { operation_id: _ } => {
-                    debug!("process_events: Thinking event received - setting state to Thinking",);
+                    trace!("process_events: Thinking event received - setting state to Thinking",);
                     *self.state.lock().unwrap() = TuiState::Thinking;
-                    debug!("process_events: state is now {:?}", self.state());
+                    trace!("process_events: state is now {:?}", self.state());
                 }
                 AgentEvent::ToolStart {
                     operation_id: _,
                     name,
                     args,
                 } => {
-                    debug!("process_events: ToolStart event - {}", name);
+                    trace!("process_events: ToolStart event - {}", name);
                     let activity_msg = format_activity_message(&name, &args);
                     // Add to activity feed instead of changing state
                     self.activity_feed.lock().unwrap().add(activity_msg, true);
@@ -239,7 +240,7 @@ impl TuiBridge {
                     name: _,
                     result: _,
                 } => {
-                    debug!("process_events: ToolComplete event");
+                    trace!("process_events: ToolComplete event");
                     // Mark current activity as complete
                     self.activity_feed.lock().unwrap().complete_current();
                 }
@@ -247,20 +248,20 @@ impl TuiBridge {
                     operation_id: _,
                     chunk,
                 } => {
-                    debug!("process_events: ContentChunk event ({} chars)", chunk.len());
+                    trace!("process_events: ContentChunk event ({} chars)", chunk.len());
                     self.chat_view
                         .lock()
                         .unwrap()
                         .append_to_last_assistant(&chunk);
                 }
                 AgentEvent::Done { operation_id: _ } => {
-                    debug!("process_events: Done event received");
+                    trace!("process_events: Done event received");
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Mark all activities as complete when LLM finishes
                     self.activity_feed.lock().unwrap().complete_all();
                 }
                 AgentEvent::Cancelled { operation_id: _ } => {
-                    debug!("process_events: Cancelled event received");
+                    trace!("process_events: Cancelled event received");
                     *self.state.lock().unwrap() = TuiState::Idle;
                     // Mark all activities as complete
                     self.activity_feed.lock().unwrap().complete_all();
@@ -269,7 +270,7 @@ impl TuiBridge {
                     operation_id: _,
                     message,
                 } => {
-                    debug!("process_events: Error event - {}", message);
+                    trace!("process_events: Error event - {}", message);
                     // Reset state to Idle so user can continue
                     *self.state.lock().unwrap() = TuiState::Idle;
                     let chat_msg = Message::system(format!("Error: {}", message));
@@ -280,9 +281,10 @@ impl TuiBridge {
                     input_tokens,
                     output_tokens,
                 } => {
-                    debug!(
+                    trace!(
                         "process_events: TokenUsage event - in={}, out={}",
-                        input_tokens, output_tokens
+                        input_tokens,
+                        output_tokens
                     );
                     // Accumulate token counts for display
                     *self.total_input_tokens.lock().unwrap() += input_tokens;
@@ -291,7 +293,7 @@ impl TuiBridge {
             }
         }
         if event_count > 0 {
-            debug!("process_events: processed {} events", event_count);
+            trace!("process_events: processed {} events", event_count);
         }
         Ok(())
     }
