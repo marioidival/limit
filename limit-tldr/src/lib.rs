@@ -160,7 +160,8 @@ impl TLDR {
         // Build call graph from pre-computed analyses
         self.call_graph.build(&analyses);
 
-        // Semantic index: exclusive access during init, then background build
+        // Semantic index: exclusive access during init, then all work in background
+        let needs_rebuild;
         {
             let semantic = Arc::get_mut(&mut self.semantic)
                 .expect("warm() called with outstanding Arc references");
@@ -172,43 +173,43 @@ impl TLDR {
 
             semantic.populate_entries(&analyses, &self.call_graph);
 
-            if cache_loaded && !semantic.needs_rebuild(&analyses) {
+            needs_rebuild = !cache_loaded || semantic.needs_rebuild(&analyses);
+
+            if !needs_rebuild {
                 tracing::info!("semantic: cache is valid, skipping embedding build");
-                semantic.load_model(self.cache.cache_dir());
-                return Ok(());
-            }
-
-            tracing::info!(
-                "semantic: {}",
-                if cache_loaded {
-                    "cache stale, will build embeddings in background"
-                } else {
-                    "no cache, will build embeddings in background"
-                },
-            );
-
-            if cache_loaded {
-                // Load model for cached embeddings while new ones build
-                semantic.load_model(self.cache.cache_dir());
+            } else {
+                tracing::info!(
+                    "semantic: {}",
+                    if cache_loaded {
+                        "cache stale, will build embeddings in background"
+                    } else {
+                        "no cache, will build embeddings in background"
+                    },
+                );
             }
         }
 
-        // Spawn background embedding build (non-blocking)
+        // All semantic work (model load + optional embedding build) runs in background
         let semantic = Arc::clone(&self.semantic);
         let cache_dir = self.cache.cache_dir().to_path_buf();
         std::thread::spawn(move || {
-            tracing::info!("semantic: background embedding build started");
-            match semantic.build_embeddings(&cache_dir) {
-                Ok(()) => {
-                    tracing::info!("semantic: background embeddings complete");
-                    if semantic.should_save() {
-                        if let Err(e) = semantic.save(&cache_dir) {
-                            tracing::warn!("semantic: failed to save cache: {}", e);
+            tracing::info!("semantic: background model load started");
+            semantic.load_model(&cache_dir);
+
+            if needs_rebuild {
+                tracing::info!("semantic: background embedding build started");
+                match semantic.build_embeddings(&cache_dir) {
+                    Ok(()) => {
+                        tracing::info!("semantic: background embeddings complete");
+                        if semantic.should_save() {
+                            if let Err(e) = semantic.save(&cache_dir) {
+                                tracing::warn!("semantic: failed to save cache: {}", e);
+                            }
                         }
                     }
-                }
-                Err(e) => {
-                    tracing::warn!("semantic: background build failed: {}", e);
+                    Err(e) => {
+                        tracing::warn!("semantic: background build failed: {}", e);
+                    }
                 }
             }
         });
