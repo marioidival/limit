@@ -19,9 +19,9 @@ pub fn init_logging() {
     match file {
         Ok(f) => {
             let default_level = if cfg!(debug_assertions) {
-                "debug,limit_llm=debug,limit_agent=debug,limit_cli=debug,reqwest=warn,hyper=warn,h2=warn"
+                "debug,limit_llm=debug,limit_agent=debug,limit_cli=debug,reqwest=warn,hyper=warn,h2=warn,ignore=warn,globset=warn"
             } else {
-                "warn,limit_llm=warn,limit_agent=warn,limit_cli=warn,reqwest=warn,hyper=warn,h2=warn"
+                "warn,limit_llm=warn,limit_agent=warn,limit_cli=warn,reqwest=warn,hyper=warn,h2=warn,ignore=warn,globset=warn"
             };
             let filter =
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
