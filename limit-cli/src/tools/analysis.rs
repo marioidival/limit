@@ -685,10 +685,7 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("cannot be empty"));
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
     }
 
     #[tokio::test]
