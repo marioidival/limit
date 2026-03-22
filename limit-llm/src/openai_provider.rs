@@ -17,6 +17,7 @@ pub struct OpenAiProvider {
     base_url: String,
     model: String,
     max_tokens: u32,
+    extra_body: Option<serde_json::Map<String, Value>>,
 }
 
 impl OpenAiProvider {
@@ -26,6 +27,17 @@ impl OpenAiProvider {
         model: &str,
         max_tokens: u32,
         timeout: u64,
+    ) -> Self {
+        Self::with_extra_body(api_key, base_url, model, max_tokens, timeout, None)
+    }
+
+    pub fn with_extra_body(
+        api_key: String,
+        base_url: Option<&str>,
+        model: &str,
+        max_tokens: u32,
+        timeout: u64,
+        extra_body: Option<serde_json::Map<String, Value>>,
     ) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout))
@@ -41,6 +53,7 @@ impl OpenAiProvider {
                 .to_string(),
             model: model.to_string(),
             max_tokens,
+            extra_body,
         }
     }
 }
@@ -62,13 +75,14 @@ impl LlmProvider for OpenAiProvider {
         let model = self.model.clone();
         let max_tokens = self.max_tokens;
         let client_clone = self.client.clone();
+        let extra_body = self.extra_body.clone();
 
         info!(
             "OpenAI API request: model={}, max_tokens={}",
             self.model, self.max_tokens
         );
         Ok(Box::pin(stream! {
-            let request_body = match build_request_body(&messages, &tools, &model, max_tokens, None) {
+            let request_body = match build_request_body(&messages, &tools, &model, max_tokens, extra_body) {
                 Ok(body) => body,
                 Err(e) => {
                     error!("OpenAI API error: {}", e);
@@ -395,6 +409,7 @@ mod tests {
             base_url,
             model: "gpt-4".to_string(),
             max_tokens: 4096,
+            extra_body: None,
         };
 
         let stream = client_with_url.send(messages, vec![]).await.unwrap();
@@ -444,6 +459,7 @@ mod tests {
             base_url,
             model: "gpt-4".to_string(),
             max_tokens: 4096,
+            extra_body: None,
         };
 
         let stream = client_with_url.send(messages, tools).await.unwrap();

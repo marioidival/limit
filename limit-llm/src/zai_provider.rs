@@ -37,13 +37,34 @@ impl ZaiProvider {
         thinking_config: ThinkingConfig,
     ) -> Self {
         let default_url = "https://api.z.ai/api/coding/paas/v4/chat/completions";
+
+        // Build extra_body with thinking config
+        let extra_body = if thinking_config.thinking_enabled {
+            let mut body = serde_json::Map::new();
+            let thinking = serde_json::json!({
+                "type": "enabled",
+                "clear_thinking": thinking_config.clear_thinking
+            });
+            body.insert("thinking".to_string(), thinking);
+            Some(body)
+        } else {
+            // Disabled thinking - explicitly disable to avoid default interleaved thinking
+            let mut body = serde_json::Map::new();
+            let thinking = serde_json::json!({
+                "type": "disabled"
+            });
+            body.insert("thinking".to_string(), thinking);
+            Some(body)
+        };
+
         Self {
-            openai: OpenAiProvider::new(
+            openai: OpenAiProvider::with_extra_body(
                 api_key,
                 base_url.or(Some(default_url)),
                 model,
                 max_tokens,
                 timeout,
+                extra_body,
             ),
             thinking_config,
         }
