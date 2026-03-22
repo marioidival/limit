@@ -73,12 +73,44 @@ fn format_grep(args: &serde_json::Value) -> String {
         .unwrap_or_else(|| "Searching...".to_string())
 }
 
-/// Format AST grep search
+/// Format AST grep operation
 fn format_ast_grep(args: &serde_json::Value) -> String {
-    args.get("pattern")
-        .and_then(|p| p.as_str())
-        .map(|p| format!("AST searching '{}'...", truncate_command(p, 150)))
-        .unwrap_or_else(|| "AST searching...".to_string())
+    let command = args
+        .get("command")
+        .and_then(|c| c.as_str())
+        .unwrap_or("search");
+
+    match command {
+        "replace" => {
+            let pattern = args.get("pattern").and_then(|p| p.as_str()).unwrap_or("?");
+            let rewrite = args.get("rewrite").and_then(|r| r.as_str()).unwrap_or("?");
+            format!(
+                "AST replacing '{}' → '{}'...",
+                truncate_command(pattern, 80),
+                truncate_command(rewrite, 80)
+            )
+        }
+        "scan" => {
+            let rule = args
+                .get("rule")
+                .and_then(|r| r.as_str())
+                .map(|r| truncate_command(r, 100));
+            let inline = args
+                .get("inline_rules")
+                .and_then(|r| r.as_str())
+                .map(|r| truncate_command(r, 100));
+            match (rule, inline) {
+                (Some(r), _) => format!("AST scanning with rule '{}'...", r),
+                (_, Some(i)) => format!("AST scanning with inline rule '{}'...", i),
+                _ => "AST scanning...".to_string(),
+            }
+        }
+        _ => args
+            .get("pattern")
+            .and_then(|p| p.as_str())
+            .map(|p| format!("AST searching '{}'...", truncate_command(p, 150)))
+            .unwrap_or_else(|| "AST searching...".to_string()),
+    }
 }
 
 /// Format LSP operation

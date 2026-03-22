@@ -876,21 +876,59 @@ impl AgentBridge {
                 }),
             ),
             "ast_grep" => (
-                "Search code using AST patterns (structural code matching)".to_string(),
+                "AST-aware code search and transformation. Supports search, replace, and scan commands across 25+ languages. Use meta-variables: $VAR (single node), $$$VAR (multiple nodes). Search finds patterns, replace transforms code, scan runs lint rules.".to_string(),
                 json!({
                     "type": "object",
                     "properties": {
+                        "command": {
+                            "type": "string",
+                            "enum": ["search", "replace", "scan"],
+                            "description": "Command to execute. Default: search"
+                        },
                         "pattern": {
                             "type": "string",
-                            "description": "AST pattern to match"
+                            "description": "AST pattern to match (e.g., 'fn $NAME() {}'). Required for search and replace."
                         },
                         "language": {
                             "type": "string",
-                            "description": "Programming language (rust, typescript, python)"
+                            "description": "Programming language. Supported: bash, c, cpp, csharp, css, elixir, go, haskell, html, java, javascript, json, kotlin, lua, nix, php, python, ruby, rust, scala, solidity, swift, typescript, tsx, yaml. Required for search and replace."
                         },
                         "path": {
                             "type": "string",
                             "description": "Path to search in (default: current directory)"
+                        },
+                        "rewrite": {
+                            "type": "string",
+                            "description": "Replacement pattern for replace command (e.g., 'logger.info($MSG)'). Required for replace."
+                        },
+                        "dry_run": {
+                            "type": "boolean",
+                            "description": "Preview replacements without modifying files (default: false). Only for replace command."
+                        },
+                        "globs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Include/exclude file patterns (e.g., ['*.rs', '!*.test.rs']). Prefix with ! to exclude."
+                        },
+                        "context_after": {
+                            "type": "integer",
+                            "description": "Show N lines after each match (default: 0). Only for search."
+                        },
+                        "context_before": {
+                            "type": "integer",
+                            "description": "Show N lines before each match (default: 0). Only for search."
+                        },
+                        "rule": {
+                            "type": "string",
+                            "description": "Path to YAML rule file for scan command."
+                        },
+                        "inline_rules": {
+                            "type": "string",
+                            "description": "Inline YAML rule text for scan command."
+                        },
+                        "filter": {
+                            "type": "string",
+                            "description": "Regex to filter rules by ID for scan command."
                         }
                     },
                     "required": ["pattern", "language"]
