@@ -122,30 +122,39 @@ impl AstGrepTool {
 
     fn get_language_support(lang: &str) -> Result<&'static str, AgentError> {
         match lang.to_lowercase().as_str() {
-            "rust" | "rs" => Ok("rust"),
-            "typescript" | "ts" | "tsx" => Ok("typescript"),
+            "bash" => Ok("bash"),
+            "c" => Ok("c"),
+            "cpp" | "cc" | "cxx" | "c++" => Ok("cpp"),
+            "csharp" | "cs" | "c#" => Ok("csharp"),
+            "css" => Ok("css"),
+            "elixir" | "ex" => Ok("elixir"),
+            "go" | "golang" => Ok("go"),
+            "haskell" | "hs" => Ok("haskell"),
+            "html" | "htm" => Ok("html"),
+            "java" => Ok("java"),
+            "javascript" | "js" | "jsx" => Ok("javascript"),
+            "json" => Ok("json"),
+            "kotlin" | "kt" => Ok("kotlin"),
+            "lua" => Ok("lua"),
+            "nix" => Ok("nix"),
+            "php" => Ok("php"),
             "python" | "py" => Ok("python"),
+            "ruby" | "rb" => Ok("ruby"),
+            "rust" | "rs" => Ok("rust"),
+            "scala" => Ok("scala"),
+            "solidity" | "sol" => Ok("solidity"),
+            "swift" => Ok("swift"),
+            "typescript" | "ts" => Ok("typescript"),
+            "tsx" => Ok("tsx"),
+            "yaml" | "yml" => Ok("yaml"),
             _ => Err(AgentError::ToolError(format!(
-                "Unsupported language: {}. Supported: rust, typescript, python",
+                "Unsupported language: {}. Supported: bash, c, cpp, csharp, css, elixir, go, haskell, html, java, javascript, json, kotlin, lua, nix, php, python, ruby, rust, scala, solidity, swift, typescript, tsx, yaml",
                 lang
             ))),
         }
     }
-}
 
-impl Default for AstGrepTool {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl Tool for AstGrepTool {
-    fn name(&self) -> &str {
-        "ast_grep"
-    }
-
-    async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+    async fn execute_search(&self, args: Value) -> Result<Value, AgentError> {
         let pattern: String = serde_json::from_value(args["pattern"].clone())
             .map_err(|e| AgentError::ToolError(format!("Invalid pattern argument: {}", e)))?;
 
@@ -162,12 +171,10 @@ impl Tool for AstGrepTool {
 
         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        // Validate path exists
         if !Path::new(path).exists() {
             return Err(AgentError::ToolError(format!("Path not found: {}", path)));
         }
 
-        // Check if ast-grep CLI is available
         let check_result = Command::new("ast-grep").arg("--version").output();
 
         match check_result {
@@ -179,13 +186,27 @@ impl Tool for AstGrepTool {
             }
         }
 
-        // Use ast-grep CLI tool
         let mut cmd = Command::new("ast-grep");
         cmd.arg("run")
             .arg("--json")
-            .args(["--lang", lang])
-            .arg(&pattern)
-            .arg(path);
+            .args(["--lang", lang]);
+
+        if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
+            for glob in globs {
+                if let Some(glob_str) = glob.as_str() {
+                    cmd.arg("--globs").arg(glob_str);
+                }
+            }
+        }
+
+        if let Some(context_after) = args.get("context_after").and_then(|v| v.as_u64()) {
+            cmd.args(["-A", &context_after.to_string()]);
+        }
+        if let Some(context_before) = args.get("context_before").and_then(|v| v.as_u64()) {
+            cmd.args(["-B", &context_before.to_string()]);
+        }
+
+        cmd.arg(&pattern).arg(path);
 
         let output = cmd
             .output()
@@ -201,17 +222,16 @@ impl Tool for AstGrepTool {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        // Parse JSON output from ast-grep
         if stdout.trim().is_empty() {
             return Ok(serde_json::json!({
                 "matches": [],
                 "count": 0,
                 "pattern": pattern,
-                "language": language
+                "language": language,
+                "command": "search"
             }));
         }
 
-        // ast-grep returns JSON objects per line
         let mut matches = Vec::new();
         for line in stdout.lines() {
             if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
@@ -223,8 +243,229 @@ impl Tool for AstGrepTool {
             "matches": matches,
             "count": matches.len(),
             "pattern": pattern,
-            "language": language
+            "language": language,
+            "command": "search"
         }))
+    }
+
+    async fn execute_replace(&self, args: Value) -> Result<Value, AgentError> {
+        let pattern: String = serde_json::from_value(args["pattern"].clone())
+            .map_err(|e| AgentError::ToolError(format!("Invalid pattern argument: {}", e)))?;
+
+        if pattern.trim().is_empty() {
+            return Err(AgentError::ToolError(
+                "pattern argument cannot be empty".to_string(),
+            ));
+        }
+
+        let language: String = serde_json::from_value(args["language"].clone())
+            .map_err(|e| AgentError::ToolError(format!("Invalid language argument: {}", e)))?;
+
+        let rewrite: String = serde_json::from_value(args["rewrite"].clone())
+            .map_err(|e| AgentError::ToolError(format!("Invalid rewrite argument: {}", e)))?;
+
+        if rewrite.trim().is_empty() {
+            return Err(AgentError::ToolError(
+                "rewrite argument cannot be empty".to_string(),
+            ));
+        }
+
+        let lang = Self::get_language_support(&language)?;
+
+        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+
+        let dry_run = args
+            .get("dry_run")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if !Path::new(path).exists() {
+            return Err(AgentError::ToolError(format!("Path not found: {}", path)));
+        }
+
+        let check_result = Command::new("ast-grep").arg("--version").output();
+
+        match check_result {
+            Ok(output) if output.status.success() => {}
+            _ => {
+                return Err(AgentError::ToolError(
+                    "ast-grep not found in PATH. Please install ast-grep CLI tool.".to_string(),
+                ));
+            }
+        }
+
+        let mut cmd = Command::new("ast-grep");
+        cmd.arg("run")
+            .arg("--json")
+            .args(["--lang", lang])
+            .args(["--pattern", &pattern])
+            .args(["--rewrite", &rewrite]);
+
+        if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
+            for glob in globs {
+                if let Some(glob_str) = glob.as_str() {
+                    cmd.arg("--globs").arg(glob_str);
+                }
+            }
+        }
+
+        if !dry_run {
+            cmd.arg("--update-all");
+        }
+
+        cmd.arg(path);
+
+        let output = cmd
+            .output()
+            .map_err(|e| AgentError::ToolError(format!("Failed to execute ast-grep: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AgentError::ToolError(format!(
+                "ast-grep failed: {}",
+                stderr
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        if stdout.trim().is_empty() {
+            return Ok(serde_json::json!({
+                "matches": [],
+                "count": 0,
+                "pattern": pattern,
+                "language": language,
+                "rewrite": rewrite,
+                "dry_run": dry_run,
+                "command": "replace"
+            }));
+        }
+
+        let mut matches = Vec::new();
+        for line in stdout.lines() {
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
+                matches.push(json_value);
+            }
+        }
+
+        Ok(serde_json::json!({
+            "matches": matches,
+            "count": matches.len(),
+            "pattern": pattern,
+            "language": language,
+            "rewrite": rewrite,
+            "dry_run": dry_run,
+            "command": "replace"
+        }))
+    }
+
+    async fn execute_scan(&self, args: Value) -> Result<Value, AgentError> {
+        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+
+        if !Path::new(path).exists() {
+            return Err(AgentError::ToolError(format!("Path not found: {}", path)));
+        }
+
+        let check_result = Command::new("ast-grep").arg("--version").output();
+
+        match check_result {
+            Ok(output) if output.status.success() => {}
+            _ => {
+                return Err(AgentError::ToolError(
+                    "ast-grep not found in PATH. Please install ast-grep CLI tool.".to_string(),
+                ));
+            }
+        }
+
+        let mut cmd = Command::new("ast-grep");
+        cmd.arg("scan").arg("--json");
+
+        if let Some(rule) = args.get("rule").and_then(|v| v.as_str()) {
+            cmd.args(["--rule", rule]);
+        }
+
+        if let Some(inline_rules) = args.get("inline_rules").and_then(|v| v.as_str()) {
+            cmd.args(["--inline-rules", inline_rules]);
+        }
+
+        if let Some(filter) = args.get("filter").and_then(|v| v.as_str()) {
+            cmd.args(["--filter", filter]);
+        }
+
+        if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
+            for glob in globs {
+                if let Some(glob_str) = glob.as_str() {
+                    cmd.arg("--globs").arg(glob_str);
+                }
+            }
+        }
+
+        cmd.arg(path);
+
+        let output = cmd
+            .output()
+            .map_err(|e| AgentError::ToolError(format!("Failed to execute ast-grep: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AgentError::ToolError(format!(
+                "ast-grep failed: {}",
+                stderr
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        if stdout.trim().is_empty() {
+            return Ok(serde_json::json!({
+                "matches": [],
+                "count": 0,
+                "command": "scan"
+            }));
+        }
+
+        let mut matches = Vec::new();
+        for line in stdout.lines() {
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
+                matches.push(json_value);
+            }
+        }
+
+        Ok(serde_json::json!({
+            "matches": matches,
+            "count": matches.len(),
+            "command": "scan"
+        }))
+    }
+}
+
+impl Default for AstGrepTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Tool for AstGrepTool {
+    fn name(&self) -> &str {
+        "ast_grep"
+    }
+
+    async fn execute(&self, args: Value) -> Result<Value, AgentError> {
+        let command = args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("search");
+
+        match command {
+            "search" => self.execute_search(args).await,
+            "replace" => self.execute_replace(args).await,
+            "scan" => self.execute_scan(args).await,
+            _ => Err(AgentError::ToolError(format!(
+                "Unsupported command: {}. Supported: search, replace, scan",
+                command
+            ))),
+        }
     }
 }
 
@@ -421,7 +662,7 @@ mod tests {
         let tool = AstGrepTool::new();
         let args = serde_json::json!({
             "pattern": "test",
-            "language": "java"
+            "language": "brainfuck"
         });
 
         let result = tool.execute(args).await;
