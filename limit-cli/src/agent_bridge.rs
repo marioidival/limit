@@ -288,6 +288,7 @@ impl AgentBridge {
             .map(|p| p.max_iterations)
             .unwrap_or(100); // Allow enough iterations for complex tasks
         let mut iteration = 0;
+        let mut consecutive_no_exec = 0;
 
         while max_iterations == 0 || iteration < max_iterations {
             iteration += 1;
@@ -418,8 +419,8 @@ impl AgentBridge {
                 }
             }
 
-            // Convert accumulated calls to Vec<ToolCall>
-            tool_calls = accumulated_calls
+            // Convert accumulated calls to Vec<ToolCall> and filter invalid ones
+            let raw_tool_calls: Vec<LlmToolCall> = accumulated_calls
                 .into_iter()
                 .map(|(id, (name, args))| LlmToolCall {
                     id,
@@ -430,6 +431,31 @@ impl AgentBridge {
                     },
                 })
                 .collect();
+
+            // Filter out invalid tool calls (empty names or unregistered tools)
+            let raw_count = raw_tool_calls.len();
+            tool_calls = raw_tool_calls
+                .into_iter()
+                .filter(|tc| {
+                    let is_valid = !tc.function.name.is_empty()
+                        && self.tool_names.contains(&tc.function.name.as_str());
+                    if !is_valid {
+                        debug!(
+                            "Filtered invalid tool call: id={}, name='{}'",
+                            tc.id, tc.function.name
+                        );
+                    }
+                    is_valid
+                })
+                .collect();
+
+            if tool_calls.len() != raw_count {
+                debug!(
+                    "Filtered {}/{} tool calls (empty names or unregistered tools)",
+                    raw_count - tool_calls.len(),
+                    raw_count
+                );
+            }
 
             // BUG FIX: Don't accumulate content across iterations
             // Only store content from the current iteration
@@ -489,6 +515,7 @@ impl AgentBridge {
             }
             // Execute tools
             let results = self.executor.execute_tools(executor_calls).await;
+            let results_count = results.len();
 
             // Add tool results to messages (OpenAI format: role=tool, tool_call_id, content)
             for result in results {
@@ -516,6 +543,20 @@ impl AgentBridge {
                     };
                     _messages.push(tool_result_message);
                 }
+            }
+
+            // Safety valve: break if too many consecutive iterations without tool execution
+            if results_count == 0 && !tool_calls.is_empty() {
+                consecutive_no_exec += 1;
+                if consecutive_no_exec >= 3 {
+                    debug!(
+                        "Safety valve: {} consecutive iterations with tool calls but no executions",
+                        consecutive_no_exec
+                    );
+                    break;
+                }
+            } else {
+                consecutive_no_exec = 0;
             }
         }
 
