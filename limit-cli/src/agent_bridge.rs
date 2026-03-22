@@ -16,6 +16,9 @@ use limit_llm::ProviderFactory;
 use limit_llm::ProviderResponseChunk;
 use limit_llm::TrackingDb;
 use serde_json::json;
+use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, instrument, trace};
@@ -58,6 +61,9 @@ pub enum AgentEvent {
     },
 }
 
+/// Maximum number of recent tool calls to keep for deduplication
+const MAX_RECENT_TOOL_CALLS: usize = 20;
+
 /// Bridge connecting limit-cli REPL to limit-agent executor and limit-llm client
 pub struct AgentBridge {
     /// LLM client for communicating with LLM providers
@@ -76,6 +82,8 @@ pub struct AgentBridge {
     cancellation_token: Option<CancellationToken>,
     /// Current operation ID for event tracking
     operation_id: u64,
+    /// Recent tool calls for deduplication (tool_name, args_hash)
+    recent_tool_calls: RefCell<Vec<(String, u64)>>,
 }
 
 impl AgentBridge {
@@ -145,6 +153,7 @@ impl AgentBridge {
             tracking_db,
             cancellation_token: None,
             operation_id: 0,
+            recent_tool_calls: RefCell::new(Vec::new()),
         })
     }
 
@@ -163,6 +172,31 @@ impl AgentBridge {
     /// Clear the cancellation token
     pub fn clear_cancellation_token(&mut self) {
         self.cancellation_token = None;
+    }
+
+    fn hash_tool_call(tool_name: &str, args: &serde_json::Value) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        tool_name.hash(&mut hasher);
+        args.to_string().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn check_duplicate_tool_call(&self, tool_name: &str, args: &serde_json::Value) -> bool {
+        let hash = Self::hash_tool_call(tool_name, args);
+        self.recent_tool_calls
+            .borrow()
+            .iter()
+            .any(|(name, h)| *name == tool_name && *h == hash)
+    }
+
+    fn record_tool_call(&self, tool_name: &str, args: &serde_json::Value) {
+        let hash = Self::hash_tool_call(tool_name, args);
+        self.recent_tool_calls
+            .borrow_mut()
+            .push((tool_name.to_string(), hash));
+        if self.recent_tool_calls.borrow().len() > MAX_RECENT_TOOL_CALLS {
+            self.recent_tool_calls.borrow_mut().remove(0);
+        }
     }
 
     /// Register all CLI tools into the tool registry
@@ -228,7 +262,7 @@ impl AgentBridge {
             .register(WebFetchTool::new())
             .expect("Failed to register web_fetch");
 
-        // Browser tool with config
+        // Browser tool
         let browser_config = crate::tools::browser::BrowserConfig::from(&config.browser);
         registry
             .register(BrowserTool::with_config(browser_config))
@@ -493,8 +527,83 @@ impl AgentBridge {
             };
             _messages.push(assistant_message);
 
-            // Convert LLM tool calls to executor tool calls
-            let executor_calls: Vec<ToolCall> = tool_calls
+            // Check for duplicate tool calls and filter them out
+            let mut filtered_calls = Vec::new();
+            let mut duplicate_calls = Vec::new();
+            let mut calls_to_record = Vec::new();
+            for tc in &tool_calls {
+                let args: serde_json::Value =
+                    serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+                if self.check_duplicate_tool_call(&tc.function.name, &args) {
+                    duplicate_calls.push((tc.id.clone(), tc.function.name.clone(), args));
+                } else {
+                    calls_to_record.push((tc.function.name.clone(), args.clone()));
+                    filtered_calls.push(tc.clone());
+                }
+            }
+
+            // Record new tool calls
+            for (name, args) in calls_to_record {
+                self.record_tool_call(&name, &args);
+            }
+
+            // Report duplicate calls to the model
+            if !duplicate_calls.is_empty() {
+                for (id, name, args) in &duplicate_calls {
+                    debug!(
+                        "Duplicate tool call blocked: {} with args: {}",
+                        name,
+                        serde_json::to_string(&args).unwrap_or_default()
+                    );
+                    self.send_event(AgentEvent::ToolStart {
+                        operation_id: self.operation_id,
+                        name: name.clone(),
+                        args: args.clone(),
+                    });
+                    let duplicate_msg = json!({
+                        "error": "DUPLICATE_CALL_BLOCKED",
+                        "message": format!(
+                            "You already called {} with these exact arguments in a recent turn. \
+                            Check your conversation history for the previous result. \
+                            Do not repeat the same query - use the existing data instead.",
+                            name
+                        ),
+                        "tool": name,
+                        "args": args
+                    });
+                    let result_str = serde_json::to_string(&duplicate_msg).unwrap_or_default();
+                    self.send_event(AgentEvent::ToolComplete {
+                        operation_id: self.operation_id,
+                        name: name.clone(),
+                        result: result_str.clone(),
+                    });
+                    let tool_result_message = Message {
+                        role: Role::Tool,
+                        content: Some(result_str),
+                        tool_calls: None,
+                        tool_call_id: Some(id.clone()),
+                    };
+                    _messages.push(tool_result_message);
+                }
+            }
+
+            // Send ToolStart event for each non-duplicate tool BEFORE execution
+            for tc in &filtered_calls {
+                let args: serde_json::Value =
+                    serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+                debug!(
+                    "ToolStart: {} with args: {}",
+                    tc.function.name,
+                    serde_json::to_string(&args).unwrap_or_default()
+                );
+                self.send_event(AgentEvent::ToolStart {
+                    operation_id: self.operation_id,
+                    name: tc.function.name.clone(),
+                    args,
+                });
+            }
+            // Execute tools (only non-duplicates)
+            let filtered_executor_calls: Vec<ToolCall> = filtered_calls
                 .iter()
                 .map(|tc| {
                     let args: serde_json::Value =
@@ -502,24 +611,12 @@ impl AgentBridge {
                     ToolCall::new(&tc.id, &tc.function.name, args)
                 })
                 .collect();
-
-            // Send ToolStart event for each tool BEFORE execution
-            for tc in &tool_calls {
-                let args: serde_json::Value =
-                    serde_json::from_str(&tc.function.arguments).unwrap_or_default();
-                self.send_event(AgentEvent::ToolStart {
-                    operation_id: self.operation_id,
-                    name: tc.function.name.clone(),
-                    args,
-                });
-            }
-            // Execute tools
-            let results = self.executor.execute_tools(executor_calls).await;
+            let results = self.executor.execute_tools(filtered_executor_calls).await;
             let results_count = results.len();
 
             // Add tool results to messages (OpenAI format: role=tool, tool_call_id, content)
             for result in results {
-                let tool_call = tool_calls.iter().find(|tc| tc.id == result.call_id);
+                let tool_call = filtered_calls.iter().find(|tc| tc.id == result.call_id);
                 if let Some(tool_call) = tool_call {
                     let output_json = match &result.output {
                         Ok(value) => {
@@ -527,6 +624,14 @@ impl AgentBridge {
                         }
                         Err(e) => json!({ "error": e.to_string() }).to_string(),
                     };
+
+                    let preview: String = output_json.chars().take(300).collect();
+                    debug!(
+                        "ToolComplete: {} result ({} chars): {}",
+                        tool_call.function.name,
+                        output_json.len(),
+                        preview
+                    );
 
                     self.send_event(AgentEvent::ToolComplete {
                         operation_id: self.operation_id,

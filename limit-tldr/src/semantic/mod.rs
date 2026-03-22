@@ -603,27 +603,36 @@ impl SemanticIndex {
 
     async fn text_search(&self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
         let query_lower = query.to_lowercase();
+        tracing::debug!(
+            "text_search: query={:?}, entries_count={}",
+            query_lower,
+            self.entries.len()
+        );
+
         let mut results: Vec<SearchResult> = self
             .entries
             .iter()
-            .filter_map(|(name, file, line, signature, _)| {
+            .filter_map(|(name, file, line, signature, _kind)| {
                 let name_lower = name.to_lowercase();
+                let sig_lower = signature.to_lowercase();
                 let name_match = name_lower.contains(&query_lower);
                 let file_match = file.to_string_lossy().to_lowercase().contains(&query_lower);
+                let sig_match = sig_lower.contains(&query_lower);
 
-                if !name_match && !file_match {
+                if !name_match && !file_match && !sig_match {
                     return None;
                 }
 
-                // Score: name matches rank higher than file-path-only matches
                 let score = if name_lower == query_lower {
-                    1.0 // exact name match
+                    1.0
                 } else if name_lower.starts_with(&query_lower) {
-                    0.9 // name starts with query
+                    0.9
                 } else if name_match {
-                    0.7 // name contains query
+                    0.7
+                } else if sig_match {
+                    0.5
                 } else {
-                    0.3 // file path only
+                    0.3
                 };
 
                 Some(SearchResult {
@@ -636,7 +645,12 @@ impl SemanticIndex {
             })
             .collect();
 
-        // Sort by score descending, then alphabetically
+        tracing::debug!(
+            "text_search: query={:?} found {} results",
+            query_lower,
+            results.len()
+        );
+
         results.sort_by(|a, b| {
             b.score
                 .partial_cmp(&a.score)

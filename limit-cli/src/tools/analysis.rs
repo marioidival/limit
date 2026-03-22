@@ -8,8 +8,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use tracing::{debug, info};
 
 const GREP_MAX_RESULTS: usize = 1000;
 const GREP_CONTEXT_LINES: usize = 3;
@@ -53,7 +54,14 @@ impl Tool for GrepTool {
         Regex::new(&pattern)
             .map_err(|e| AgentError::ToolError(format!("Invalid regex pattern: {}", e)))?;
 
-        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let default_path = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .to_string_lossy()
+            .to_string();
+        let path = args
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&default_path);
 
         // Validate path exists
         if !Path::new(path).exists() {
@@ -144,12 +152,21 @@ impl AstGrepTool {
 
         let lang = Self::get_language_support(&language)?;
 
-        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let default_path = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .to_string_lossy()
+            .to_string();
+        let path = args
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&default_path);
 
         let path_obj = Path::new(path);
         if !path_obj.exists() {
             return Err(AgentError::ToolError(format!("Path not found: {}", path)));
         }
+
+        debug!("ast_grep: searching in path={}", path);
 
         let context_after = args
             .get("context_after")
@@ -223,8 +240,13 @@ impl AstGrepTool {
                 }
             }
 
+            let mut files_walked = 0usize;
+            let mut files_matched_lang = 0usize;
+            let mut files_read_errors = 0usize;
+
             for entry in builder.build().filter_map(|e| e.ok()) {
                 if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    files_walked += 1;
                     let file_path = entry.path();
 
                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
@@ -265,9 +287,14 @@ impl AstGrepTool {
                         }
                     }
 
+                    files_matched_lang += 1;
                     let content = match fs::read_to_string(file_path) {
                         Ok(c) => c,
-                        Err(_) => continue,
+                        Err(e) => {
+                            files_read_errors += 1;
+                            debug!("ast_grep: failed to read {}: {}", file_path.display(), e);
+                            continue;
+                        }
                     };
 
                     let grep = lang.ast_grep(&content);
@@ -301,6 +328,10 @@ impl AstGrepTool {
                     }
                 }
             }
+            debug!(
+                "ast_grep search stats: files_walked={}, files_matched_lang={}, files_read_errors={}, matches_found={}",
+                files_walked, files_matched_lang, files_read_errors, all_matches.len()
+            );
         }
 
         Ok(serde_json::json!({
@@ -336,7 +367,14 @@ impl AstGrepTool {
 
         let lang = Self::get_language_support(&language)?;
 
-        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+        let default_path = std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .to_string_lossy()
+            .to_string();
+        let path = args
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&default_path);
 
         let dry_run = args
             .get("dry_run")
@@ -538,7 +576,15 @@ impl Tool for AstGrepTool {
             .and_then(|v| v.as_str())
             .unwrap_or("search");
 
-        match command {
+        debug!(
+            "ast_grep invoked: command={}, pattern={:?}, language={:?}, path={:?}",
+            command,
+            args.get("pattern").and_then(|v| v.as_str()),
+            args.get("language").and_then(|v| v.as_str()),
+            args.get("path").and_then(|v| v.as_str())
+        );
+
+        let result = match command {
             "search" => self.execute_search(args).await,
             "replace" => self.execute_replace(args).await,
             "scan" => self.execute_scan(args).await,
@@ -546,7 +592,21 @@ impl Tool for AstGrepTool {
                 "Unsupported command: {}. Supported: search, replace, scan",
                 command
             ))),
+        };
+
+        match &result {
+            Ok(value) => {
+                if let Some(obj) = value.as_object() {
+                    let count = obj.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                    info!("ast_grep result: {} matches", count);
+                } else {
+                    info!("ast_grep result: {:?}", value);
+                }
+            }
+            Err(e) => debug!("ast_grep error: {}", e),
         }
+
+        result
     }
 }
 

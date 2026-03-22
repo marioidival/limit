@@ -733,13 +733,10 @@ impl Tool for TldrTool {
             }));
         }
 
-        info!("tldr_analyze invoked: type={:?}", params.analysis_type);
-        if let Some(ref f) = &params.function {
-            trace!("  function: {}", f);
-        }
-        if let Some(ref q) = &params.query {
-            trace!("  query: {}", q);
-        }
+        info!(
+            "tldr_analyze invoked: type={:?}, function={:?}, query={:?}",
+            params.analysis_type, params.function, params.query
+        );
 
         let result = match self.analyze(params).await {
             Ok(r) => r,
@@ -751,9 +748,10 @@ impl Tool for TldrTool {
         let result_str =
             serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
         info!(
-            "tldr_analyze result: {} chars, {} bytes",
+            "tldr_analyze result: {} chars, {} bytes, preview: {}",
             result_str.chars().count(),
-            result_str.len()
+            result_str.len(),
+            &result_str.chars().take(200).collect::<String>()
         );
         Ok(result)
     }
