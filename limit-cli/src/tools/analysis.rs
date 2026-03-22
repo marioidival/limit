@@ -1,9 +1,13 @@
+use ast_grep_core::Pattern;
+use ast_grep_language::{LanguageExt, SupportLang};
 use async_trait::async_trait;
+use ignore::WalkBuilder;
 use limit_agent::error::AgentError;
 use limit_agent::Tool;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -120,38 +124,9 @@ impl AstGrepTool {
         AstGrepTool
     }
 
-    fn get_language_support(lang: &str) -> Result<&'static str, AgentError> {
-        match lang.to_lowercase().as_str() {
-            "bash" => Ok("bash"),
-            "c" => Ok("c"),
-            "cpp" | "cc" | "cxx" | "c++" => Ok("cpp"),
-            "csharp" | "cs" | "c#" => Ok("csharp"),
-            "css" => Ok("css"),
-            "elixir" | "ex" => Ok("elixir"),
-            "go" | "golang" => Ok("go"),
-            "haskell" | "hs" => Ok("haskell"),
-            "html" | "htm" => Ok("html"),
-            "java" => Ok("java"),
-            "javascript" | "js" | "jsx" => Ok("javascript"),
-            "json" => Ok("json"),
-            "kotlin" | "kt" => Ok("kotlin"),
-            "lua" => Ok("lua"),
-            "nix" => Ok("nix"),
-            "php" => Ok("php"),
-            "python" | "py" => Ok("python"),
-            "ruby" | "rb" => Ok("ruby"),
-            "rust" | "rs" => Ok("rust"),
-            "scala" => Ok("scala"),
-            "solidity" | "sol" => Ok("solidity"),
-            "swift" => Ok("swift"),
-            "typescript" | "ts" => Ok("typescript"),
-            "tsx" => Ok("tsx"),
-            "yaml" | "yml" => Ok("yaml"),
-            _ => Err(AgentError::ToolError(format!(
-                "Unsupported language: {}. Supported: bash, c, cpp, csharp, css, elixir, go, haskell, html, java, javascript, json, kotlin, lua, nix, php, python, ruby, rust, scala, solidity, swift, typescript, tsx, yaml",
-                lang
-            ))),
-        }
+    fn get_language_support(lang: &str) -> Result<SupportLang, AgentError> {
+        lang.parse()
+            .map_err(|_| AgentError::ToolError(format!("Unsupported language: {}. Use a valid language name or alias (e.g., rs, py, js, rust, python, javascript).", lang)))
     }
 
     async fn execute_search(&self, args: Value) -> Result<Value, AgentError> {
@@ -171,75 +146,166 @@ impl AstGrepTool {
 
         let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
-        if !Path::new(path).exists() {
+        let path_obj = Path::new(path);
+        if !path_obj.exists() {
             return Err(AgentError::ToolError(format!("Path not found: {}", path)));
         }
 
-        let check_result = Command::new("ast-grep").arg("--version").output();
+        let context_after = args
+            .get("context_after")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let context_before = args
+            .get("context_before")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
 
-        match check_result {
-            Ok(output) if output.status.success() => {}
-            _ => {
-                return Err(AgentError::ToolError(
-                    "ast-grep not found in PATH. Please install ast-grep CLI tool.".to_string(),
-                ));
+        let globs: Option<Vec<String>> = args.get("globs").and_then(|v| {
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|val| val.as_str().map(String::from))
+                    .collect()
+            })
+        });
+
+        let mut all_matches = Vec::new();
+
+        let search_pattern = Pattern::try_new(&pattern, lang)
+            .map_err(|e| AgentError::ToolError(format!("Invalid pattern: {}", e)))?;
+
+        if path_obj.is_file() {
+            let content = fs::read_to_string(path_obj)
+                .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
+
+            let grep = lang.ast_grep(&content);
+
+            for match_ in grep.root().find_all(&search_pattern) {
+                let line = match_.start_pos().line();
+                let text = match_.text();
+
+                let mut match_obj = serde_json::json!({
+                    "file": path,
+                    "line": line,
+                    "text": text,
+                    "language": language
+                });
+
+                if context_after > 0 || context_before > 0 {
+                    let lines: Vec<&str> = content.lines().collect();
+                    let start_line = line.saturating_sub(context_before as usize);
+                    let end_line = (line + context_after as usize + 1).min(lines.len());
+
+                    let context_lines: Vec<String> = lines[start_line..end_line]
+                        .iter()
+                        .map(|s: &&str| s.to_string())
+                        .collect();
+
+                    match_obj["context_lines"] = serde_json::json!(context_lines);
+                }
+
+                all_matches.push(match_obj);
             }
-        }
+        } else {
+            let mut builder = WalkBuilder::new(path);
 
-        let mut cmd = Command::new("ast-grep");
-        cmd.arg("run").arg("--json").args(["--lang", lang]);
+            if let Some(ref glob_patterns) = globs {
+                let mut override_builder = ignore::overrides::OverrideBuilder::new(path);
+                for glob in glob_patterns {
+                    if let Err(e) = override_builder.add(glob) {
+                        return Err(AgentError::ToolError(format!(
+                            "Invalid glob pattern '{}': {}",
+                            glob, e
+                        )));
+                    }
+                }
+                if let Ok(overrides) = override_builder.build() {
+                    builder.overrides(overrides);
+                }
+            }
 
-        if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
-            for glob in globs {
-                if let Some(glob_str) = glob.as_str() {
-                    cmd.arg("--globs").arg(glob_str);
+            for entry in builder.build().filter_map(|e| e.ok()) {
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    let file_path = entry.path();
+
+                    if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        let lang_str = lang.to_string();
+
+                        let matches_lang = match lang_str.as_str() {
+                            "rust" => ext_lower == "rs",
+                            "python" => ext_lower == "py",
+                            "javascript" => ext_lower == "js",
+                            "typescript" => ext_lower == "ts",
+                            "tsx" => ext_lower == "tsx",
+                            "go" => ext_lower == "go",
+                            "java" => ext_lower == "java",
+                            "c" => ext_lower == "c",
+                            "cpp" => ext_lower == "cpp" || ext_lower == "cc" || ext_lower == "cxx",
+                            "csharp" => ext_lower == "cs",
+                            "ruby" => ext_lower == "rb",
+                            "php" => ext_lower == "php",
+                            "swift" => ext_lower == "swift",
+                            "kotlin" => ext_lower == "kt",
+                            "scala" => ext_lower == "scala",
+                            "haskell" => ext_lower == "hs",
+                            "lua" => ext_lower == "lua",
+                            "elixir" => ext_lower == "ex",
+                            "nix" => ext_lower == "nix",
+                            "solidity" => ext_lower == "sol",
+                            "bash" => ext_lower == "sh" || ext_lower == "bash",
+                            "yaml" => ext_lower == "yaml" || ext_lower == "yml",
+                            "json" => ext_lower == "json",
+                            "html" => ext_lower == "html" || ext_lower == "htm",
+                            "css" => ext_lower == "css",
+                            _ => false,
+                        };
+
+                        if !matches_lang {
+                            continue;
+                        }
+                    }
+
+                    let content = match fs::read_to_string(file_path) {
+                        Ok(c) => c,
+                        Err(_) => continue,
+                    };
+
+                    let grep = lang.ast_grep(&content);
+
+                    for match_ in grep.root().find_all(&search_pattern) {
+                        let line = match_.start_pos().line();
+                        let text = match_.text();
+                        let display_path = file_path.display().to_string();
+
+                        let mut match_obj = serde_json::json!({
+                            "file": display_path,
+                            "line": line,
+                            "text": text,
+                            "language": language
+                        });
+
+                        if context_after > 0 || context_before > 0 {
+                            let lines: Vec<&str> = content.lines().collect();
+                            let start_line = line.saturating_sub(context_before as usize);
+                            let end_line = (line + context_after as usize + 1).min(lines.len());
+
+                            let context_lines: Vec<String> = lines[start_line..end_line]
+                                .iter()
+                                .map(|s: &&str| s.to_string())
+                                .collect();
+
+                            match_obj["context_lines"] = serde_json::json!(context_lines);
+                        }
+
+                        all_matches.push(match_obj);
+                    }
                 }
             }
         }
 
-        if let Some(context_after) = args.get("context_after").and_then(|v| v.as_u64()) {
-            cmd.args(["-A", &context_after.to_string()]);
-        }
-        if let Some(context_before) = args.get("context_before").and_then(|v| v.as_u64()) {
-            cmd.args(["-B", &context_before.to_string()]);
-        }
-
-        cmd.arg(&pattern).arg(path);
-
-        let output = cmd
-            .output()
-            .map_err(|e| AgentError::ToolError(format!("Failed to execute ast-grep: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AgentError::ToolError(format!(
-                "ast-grep failed: {}",
-                stderr
-            )));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        if stdout.trim().is_empty() {
-            return Ok(serde_json::json!({
-                "matches": [],
-                "count": 0,
-                "pattern": pattern,
-                "language": language,
-                "command": "search"
-            }));
-        }
-
-        let mut matches = Vec::new();
-        for line in stdout.lines() {
-            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
-                matches.push(json_value);
-            }
-        }
-
         Ok(serde_json::json!({
-            "matches": matches,
-            "count": matches.len(),
+            "matches": all_matches,
+            "count": all_matches.len(),
             "pattern": pattern,
             "language": language,
             "command": "search"
@@ -277,78 +343,166 @@ impl AstGrepTool {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        if !Path::new(path).exists() {
+        let path_obj = Path::new(path);
+        if !path_obj.exists() {
             return Err(AgentError::ToolError(format!("Path not found: {}", path)));
         }
 
-        let check_result = Command::new("ast-grep").arg("--version").output();
+        let globs: Option<Vec<String>> = args.get("globs").and_then(|v| {
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|val| val.as_str().map(String::from))
+                    .collect()
+            })
+        });
 
-        match check_result {
-            Ok(output) if output.status.success() => {}
-            _ => {
-                return Err(AgentError::ToolError(
-                    "ast-grep not found in PATH. Please install ast-grep CLI tool.".to_string(),
-                ));
+        let mut all_matches = Vec::new();
+
+        if path_obj.is_file() {
+            let content = fs::read_to_string(path_obj)
+                .map_err(|e| AgentError::ToolError(format!("Failed to read file: {}", e)))?;
+
+            let search_pattern = Pattern::try_new(&pattern, lang)
+                .map_err(|e| AgentError::ToolError(format!("Invalid pattern: {}", e)))?;
+
+            let grep = lang.ast_grep(&content);
+
+            for match_ in grep.root().find_all(&search_pattern) {
+                let text = match_.text();
+                all_matches.push(serde_json::json!({
+                    "file": path,
+                    "text": text
+                }));
             }
-        }
 
-        let mut cmd = Command::new("ast-grep");
-        cmd.arg("run")
-            .arg("--json")
-            .args(["--lang", lang])
-            .args(["--pattern", &pattern])
-            .args(["--rewrite", &rewrite]);
+            if !all_matches.is_empty() && !dry_run {
+                let mut content = content;
+                loop {
+                    let mut grep = lang.ast_grep(&content);
+                    let replaced = grep.replace(pattern.as_str(), rewrite.as_str()).map_err(|e| {
+                        AgentError::ToolError(format!("Failed to apply pattern: {}", e))
+                    })?;
+                    if !replaced {
+                        break;
+                    }
+                    content = grep.generate();
+                }
+                fs::write(path_obj, content)
+                    .map_err(|e| AgentError::ToolError(format!("Failed to write file: {}", e)))?;
+            }
+        } else {
+            let mut builder = WalkBuilder::new(path);
 
-        if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
-            for glob in globs {
-                if let Some(glob_str) = glob.as_str() {
-                    cmd.arg("--globs").arg(glob_str);
+            if let Some(ref glob_patterns) = globs {
+                let mut override_builder = ignore::overrides::OverrideBuilder::new(path);
+                for glob in glob_patterns {
+                    if let Err(e) = override_builder.add(glob) {
+                        return Err(AgentError::ToolError(format!(
+                            "Invalid glob pattern '{}': {}",
+                            glob, e
+                        )));
+                    }
+                }
+                if let Ok(overrides) = override_builder.build() {
+                    builder.overrides(overrides);
+                }
+            }
+
+            for entry in builder.build().filter_map(|e| e.ok()) {
+                if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    let file_path = entry.path();
+
+                    if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
+                        let ext_lower = ext.to_lowercase();
+                        let lang_str = lang.to_string();
+
+                        let matches_lang = match lang_str.as_str() {
+                            "rust" => ext_lower == "rs",
+                            "python" => ext_lower == "py",
+                            "javascript" => ext_lower == "js",
+                            "typescript" => ext_lower == "ts",
+                            "tsx" => ext_lower == "tsx",
+                            "go" => ext_lower == "go",
+                            "java" => ext_lower == "java",
+                            "c" => ext_lower == "c",
+                            "cpp" => ext_lower == "cpp" || ext_lower == "cc" || ext_lower == "cxx",
+                            "csharp" => ext_lower == "cs",
+                            "ruby" => ext_lower == "rb",
+                            "php" => ext_lower == "php",
+                            "swift" => ext_lower == "swift",
+                            "kotlin" => ext_lower == "kt",
+                            "scala" => ext_lower == "scala",
+                            "haskell" => ext_lower == "hs",
+                            "lua" => ext_lower == "lua",
+                            "elixir" => ext_lower == "ex",
+                            "nix" => ext_lower == "nix",
+                            "solidity" => ext_lower == "sol",
+                            "bash" => ext_lower == "sh" || ext_lower == "bash",
+                            "yaml" => ext_lower == "yaml" || ext_lower == "yml",
+                            "json" => ext_lower == "json",
+                            "html" => ext_lower == "html" || ext_lower == "htm",
+                            "css" => ext_lower == "css",
+                            _ => false,
+                        };
+
+                        if !matches_lang {
+                            continue;
+                        }
+                    }
+
+                    let display_path = file_path.display().to_string();
+                    let content = match fs::read_to_string(file_path) {
+                        Ok(c) => c,
+                        Err(_) => continue,
+                    };
+
+                    let search_pattern = Pattern::try_new(&pattern, lang)
+                        .map_err(|e| AgentError::ToolError(format!("Invalid pattern: {}", e)))?;
+
+                    let grep = lang.ast_grep(&content);
+
+                    let file_matches: Vec<serde_json::Value> = grep
+                        .root()
+                        .find_all(&search_pattern)
+                        .map(|match_| {
+                            let text = match_.text();
+                            serde_json::json!({
+                                "file": display_path,
+                                "text": text
+                            })
+                        })
+                        .collect();
+
+                    if !file_matches.is_empty() && !dry_run {
+                        let mut file_content = content;
+                        loop {
+                            let mut grep = lang.ast_grep(&file_content);
+                            let replaced = grep
+                                .replace(pattern.as_str(), rewrite.as_str())
+                                .map_err(|e| {
+                                    AgentError::ToolError(format!("Failed to apply pattern: {}", e))
+                                })?;
+                            if !replaced {
+                                break;
+                            }
+                            file_content = grep.generate();
+                        }
+                        if let Err(e) = fs::write(file_path, file_content) {
+                            return Err(AgentError::ToolError(format!(
+                                "Failed to write file {}: {}",
+                                display_path, e
+                            )));
+                        }
+                    }
+
+                    all_matches.extend(file_matches);
                 }
             }
         }
 
-        if !dry_run {
-            cmd.arg("--update-all");
-        }
-
-        cmd.arg(path);
-
-        let output = cmd
-            .output()
-            .map_err(|e| AgentError::ToolError(format!("Failed to execute ast-grep: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AgentError::ToolError(format!(
-                "ast-grep failed: {}",
-                stderr
-            )));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        if stdout.trim().is_empty() {
-            return Ok(serde_json::json!({
-                "matches": [],
-                "count": 0,
-                "pattern": pattern,
-                "language": language,
-                "rewrite": rewrite,
-                "dry_run": dry_run,
-                "command": "replace"
-            }));
-        }
-
-        let mut matches = Vec::new();
-        for line in stdout.lines() {
-            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
-                matches.push(json_value);
-            }
-        }
-
         Ok(serde_json::json!({
-            "matches": matches,
-            "count": matches.len(),
+            "matches": all_matches,
+            "count": all_matches.len(),
             "pattern": pattern,
             "language": language,
             "rewrite": rewrite,
