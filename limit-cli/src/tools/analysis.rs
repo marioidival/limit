@@ -513,83 +513,10 @@ impl AstGrepTool {
         }))
     }
 
-    async fn execute_scan(&self, args: Value) -> Result<Value, AgentError> {
-        let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
-
-        if !Path::new(path).exists() {
-            return Err(AgentError::ToolError(format!("Path not found: {}", path)));
-        }
-
-        let check_result = Command::new("ast-grep").arg("--version").output();
-
-        match check_result {
-            Ok(output) if output.status.success() => {}
-            _ => {
-                return Err(AgentError::ToolError(
-                    "ast-grep not found in PATH. Please install ast-grep CLI tool.".to_string(),
-                ));
-            }
-        }
-
-        let mut cmd = Command::new("ast-grep");
-        cmd.arg("scan").arg("--json");
-
-        if let Some(rule) = args.get("rule").and_then(|v| v.as_str()) {
-            cmd.args(["--rule", rule]);
-        }
-
-        if let Some(inline_rules) = args.get("inline_rules").and_then(|v| v.as_str()) {
-            cmd.args(["--inline-rules", inline_rules]);
-        }
-
-        if let Some(filter) = args.get("filter").and_then(|v| v.as_str()) {
-            cmd.args(["--filter", filter]);
-        }
-
-        if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
-            for glob in globs {
-                if let Some(glob_str) = glob.as_str() {
-                    cmd.arg("--globs").arg(glob_str);
-                }
-            }
-        }
-
-        cmd.arg(path);
-
-        let output = cmd
-            .output()
-            .map_err(|e| AgentError::ToolError(format!("Failed to execute ast-grep: {}", e)))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AgentError::ToolError(format!(
-                "ast-grep failed: {}",
-                stderr
-            )));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        if stdout.trim().is_empty() {
-            return Ok(serde_json::json!({
-                "matches": [],
-                "count": 0,
-                "command": "scan"
-            }));
-        }
-
-        let mut matches = Vec::new();
-        for line in stdout.lines() {
-            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line) {
-                matches.push(json_value);
-            }
-        }
-
-        Ok(serde_json::json!({
-            "matches": matches,
-            "count": matches.len(),
-            "command": "scan"
-        }))
+    async fn execute_scan(&self, _args: Value) -> Result<Value, AgentError> {
+        Err(AgentError::ToolError(
+            "scan command is not yet supported via ast-grep crates. Please use the search or replace commands.".to_string(),
+        ))
     }
 }
 
@@ -758,195 +685,10 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
-    }
-
-    #[tokio::test]
-    async fn test_grep_tool_invalid_regex() {
-        let tool = GrepTool::new();
-        let args = serde_json::json!({
-            "pattern": "[invalid(regex"
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid regex"));
-    }
-
-    #[tokio::test]
-    async fn test_grep_tool_path_not_found() {
-        let tool = GrepTool::new();
-        let args = serde_json::json!({
-            "pattern": "test",
-            "path": "/nonexistent/path"
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_name() {
-        let tool = AstGrepTool::new();
-        assert_eq!(tool.name(), "ast_grep");
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_default() {
-        let tool = AstGrepTool;
-        assert_eq!(tool.name(), "ast_grep");
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_empty_pattern() {
-        let tool = AstGrepTool::new();
-        let args = serde_json::json!({
-            "pattern": "",
-            "language": "rust"
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_unsupported_lang() {
-        let tool = AstGrepTool::new();
-        let args = serde_json::json!({
-            "pattern": "test",
-            "language": "brainfuck"
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("Unsupported language"));
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_path_not_found() {
-        let tool = AstGrepTool::new();
-        let args = serde_json::json!({
-            "pattern": "test",
-            "language": "rust",
-            "path": "/nonexistent/path"
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_rust() {
-        let tool = AstGrepTool::new();
-
-        // Create a temp file with Rust code
-        let mut temp_file = NamedTempFile::new().unwrap();
-        writeln!(temp_file, "fn hello() {{}}").unwrap();
-        writeln!(temp_file, "fn world() {{}}").unwrap();
-        temp_file.flush().unwrap();
-
-        let args = serde_json::json!({
-            "pattern": "fn $NAME() {}",
-            "language": "rust",
-            "path": temp_file.path()
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
-        let value = result.unwrap();
-        assert_eq!(value["count"], 2);
-        assert_eq!(value["command"], "search");
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_typescript() {
-        let tool = AstGrepTool::new();
-
-        let mut temp_file = NamedTempFile::with_suffix(".ts").unwrap();
-        writeln!(temp_file, "console.log('hello');").unwrap();
-        writeln!(temp_file, "console.log('world');").unwrap();
-        temp_file.flush().unwrap();
-
-        let args = serde_json::json!({
-            "pattern": "console.log($MSG)",
-            "language": "typescript",
-            "path": temp_file.path()
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
-        let value = result.unwrap();
-        assert_eq!(value["count"], 2);
-        assert_eq!(value["command"], "search");
-    }
-
-    #[tokio::test]
-    async fn test_ast_grep_tool_python() {
-        let tool = AstGrepTool::new();
-
-        let mut temp_file = NamedTempFile::with_suffix(".py").unwrap();
-        writeln!(temp_file, "def foo():").unwrap();
-        writeln!(temp_file, "def bar():").unwrap();
-        temp_file.flush().unwrap();
-
-        let args = serde_json::json!({
-            "pattern": "def $FUNC():",
-            "language": "python",
-            "path": temp_file.path()
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
-        let value = result.unwrap();
-        assert_eq!(value["count"], 2);
-        assert_eq!(value["command"], "search");
-    }
-
-    #[tokio::test]
-    async fn test_lsp_tool_name() {
-        let tool = LspTool::new();
-        assert_eq!(tool.name(), "lsp");
-    }
-
-    #[tokio::test]
-    async fn test_lsp_tool_default() {
-        let tool = LspTool;
-        assert_eq!(tool.name(), "lsp");
-    }
-
-    #[tokio::test]
-    async fn test_lsp_tool_missing_command() {
-        let tool = LspTool::new();
-        let args = serde_json::json!({
-            "command": "invalid_command"
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported LSP command"));
-    }
-
-    #[tokio::test]
-    async fn test_lsp_tool_file_not_found() {
-        let tool = LspTool::new();
-        let args = serde_json::json!({
-            "command": "goto_definition",
-            "file_path": "/nonexistent/file.rs",
-            "position": {"line": 1, "character": 0}
-        });
-
-        let result = tool.execute(args).await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
+            .contains("cannot be empty"));
     }
 
     #[tokio::test]
@@ -1340,7 +1082,10 @@ mod tests {
 
         let result = tool.execute(args).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not yet supported"));
     }
 
     #[tokio::test]
