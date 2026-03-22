@@ -242,6 +242,8 @@ impl AstGrepTool {
 
             let mut files_walked = 0usize;
             let mut files_matched_lang = 0usize;
+            let mut files_rejected_lang = 0usize;
+            let mut files_no_extension = 0usize;
             let mut files_read_errors = 0usize;
 
             for entry in builder.build().filter_map(|e| e.ok()) {
@@ -251,7 +253,7 @@ impl AstGrepTool {
 
                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
                         let ext_lower = ext.to_lowercase();
-                        let lang_str = lang.to_string();
+                        let lang_str = lang.to_string().to_lowercase();
 
                         let matches_lang = match lang_str.as_str() {
                             "rust" => ext_lower == "rs",
@@ -282,9 +284,23 @@ impl AstGrepTool {
                             _ => false,
                         };
 
+                        if files_rejected_lang < 3 && ext_lower == "rs" {
+                            debug!(
+                                "ast_grep: file={}, ext={}, lang={}, matches_lang={}",
+                                file_path.display(),
+                                ext_lower,
+                                lang_str,
+                                matches_lang
+                            );
+                        }
+
                         if !matches_lang {
+                            files_rejected_lang += 1;
                             continue;
                         }
+                    } else {
+                        files_no_extension += 1;
+                        continue;
                     }
 
                     files_matched_lang += 1;
@@ -329,8 +345,8 @@ impl AstGrepTool {
                 }
             }
             debug!(
-                "ast_grep search stats: files_walked={}, files_matched_lang={}, files_read_errors={}, matches_found={}",
-                files_walked, files_matched_lang, files_read_errors, all_matches.len()
+                "ast_grep search stats: files_walked={}, files_matched_lang={}, files_rejected_lang={}, files_no_extension={}, files_read_errors={}, matches_found={}",
+                files_walked, files_matched_lang, files_rejected_lang, files_no_extension, files_read_errors, all_matches.len()
             );
         }
 
@@ -454,7 +470,7 @@ impl AstGrepTool {
 
                     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
                         let ext_lower = ext.to_lowercase();
-                        let lang_str = lang.to_string();
+                        let lang_str = lang.to_string().to_lowercase();
 
                         let matches_lang = match lang_str.as_str() {
                             "rust" => ext_lower == "rs",
@@ -1165,5 +1181,31 @@ mod tests {
         let value = result.unwrap();
         assert_eq!(value["command"], "search");
         assert_eq!(value["count"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_search_directory() {
+        // Regression test: SupportLang::Rust.to_string() returns "Rust" (capitalized),
+        // but extension matching compared against "rust" (lowercase).
+        // This test ensures directory searches work correctly.
+        let tool = AstGrepTool::new();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file1 = temp_dir.path().join("test1.rs");
+        let file2 = temp_dir.path().join("test2.rs");
+
+        fs::write(&file1, "fn foo() {}\nfn bar() {}").unwrap();
+        fs::write(&file2, "fn baz() {}").unwrap();
+
+        let args = serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "language": "rust",
+            "path": temp_dir.path()
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_ok(), "Expected Ok, got Err: {:?}", result.err());
+        let value = result.unwrap();
+        assert_eq!(value["count"], 3, "Should find 3 functions in directory");
     }
 }

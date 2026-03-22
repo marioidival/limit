@@ -411,8 +411,10 @@ impl TreeSitterParser {
 
     /// Truncate value to 200 characters maximum
     fn truncate_value(&self, value: &str) -> String {
-        if value.len() > 200 {
-            format!("{}...", &value[..197])
+        let char_count = value.chars().count();
+        if char_count > 200 {
+            let truncated: String = value.chars().take(197).collect();
+            format!("{truncated}...")
         } else {
             value.to_string()
         }

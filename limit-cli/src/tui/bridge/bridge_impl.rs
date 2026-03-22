@@ -276,20 +276,7 @@ impl TuiBridge {
                     let chat_msg = Message::system(format!("Error: {}", message));
                     self.chat_view.lock().unwrap().add_message(chat_msg);
                 }
-                AgentEvent::TokenUsage {
-                    operation_id: _,
-                    input_tokens,
-                    output_tokens,
-                } => {
-                    trace!(
-                        "process_events: TokenUsage event - in={}, out={}",
-                        input_tokens,
-                        output_tokens
-                    );
-                    // Accumulate token counts for display
-                    *self.total_input_tokens.lock().unwrap() += input_tokens;
-                    *self.total_output_tokens.lock().unwrap() += output_tokens;
-                }
+                AgentEvent::TokenUsage { .. } => {}
             }
         }
         if event_count > 0 {

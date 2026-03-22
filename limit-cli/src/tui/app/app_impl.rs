@@ -1005,12 +1005,14 @@ impl TuiApp {
                     bridge.set_cancellation_token(cancel_token.clone(), operation_id);
 
                     match bridge.process_message(&text, &mut messages_guard).await {
-                        Ok(_response) => {
-                            // Don't sync ChatView here - it causes race conditions with ContentChunk events
-                            // ChatView is already updated via ContentChunk events during streaming
-                            // The messages_guard is the authoritative source for session persistence
+                        Ok(result) => {
+                            {
+                                let mut input = total_input_tokens.lock().unwrap();
+                                let mut output = total_output_tokens.lock().unwrap();
+                                *input += result.input_tokens;
+                                *output += result.output_tokens;
+                            }
 
-                            // Auto-save session after successful response
                             let msgs = messages_guard.clone();
                             let input_tokens = *total_input_tokens.lock().unwrap();
                             let output_tokens = *total_output_tokens.lock().unwrap();

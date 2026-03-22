@@ -408,19 +408,24 @@ fn format_browser(args: &serde_json::Value) -> String {
 
 /// Truncate a path for display, showing the end
 fn truncate_path(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
         s.to_string()
     } else {
-        format!("...{}", &s[s.len().saturating_sub(max_len - 3)..])
+        let skip = char_count.saturating_sub(max_len - 3);
+        let truncated: String = s.chars().skip(skip).collect();
+        format!("...{truncated}")
     }
 }
 
 /// Truncate a command for display, showing the beginning
 fn truncate_command(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let char_count = s.chars().count();
+    if char_count <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
+        format!("{truncated}...")
     }
 }
 
@@ -460,9 +465,25 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_path_utf8() {
+        let multi_byte = "════════════════════════════════════════════════";
+        let result = truncate_path(multi_byte, 10);
+        assert!(result.starts_with("..."));
+        assert!(result.chars().count() <= 10);
+    }
+
+    #[test]
     fn test_truncate_command() {
         assert_eq!(truncate_command("short", 10), "short");
         assert_eq!(truncate_command("very_long_command_here", 10), "very_lo...");
+    }
+
+    #[test]
+    fn test_truncate_command_utf8() {
+        let multi_byte = "════════════════════════════════════════════════";
+        let result = truncate_command(multi_byte, 10);
+        assert!(result.ends_with("..."));
+        assert!(result.chars().count() <= 10);
     }
 
     #[test]

@@ -264,11 +264,14 @@ impl Widget for DiffView {
 
             // Truncate line content if too long
             let content_max_width = (area.width as usize).saturating_sub(line_num_width + 2);
-            let content = if line.content.len() > content_max_width {
-                format!(
-                    "{}...",
-                    &line.content[..content_max_width.saturating_sub(3)]
-                )
+            let char_count = line.content.chars().count();
+            let content = if char_count > content_max_width {
+                let truncated: String = line
+                    .content
+                    .chars()
+                    .take(content_max_width.saturating_sub(3))
+                    .collect();
+                format!("{truncated}...")
             } else {
                 line.content.clone()
             };

@@ -1,10 +1,10 @@
 use crate::error::CliError;
-use crate::system_prompt::SYSTEM_PROMPT;
-use crate::tools::tldr_tool_definition;
+use crate::system_prompt::get_system_prompt;
+// use crate::tools::tldr_tool_definition;
 use crate::tools::{
     AstGrepTool, BashTool, BrowserTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool,
     GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool,
-    GrepTool, LspTool, TldrTool, WebFetchTool, WebSearchTool,
+    /* GrepTool, LspTool, TldrTool, */ WebFetchTool, WebSearchTool,
 };
 use chrono::Datelike;
 use futures::StreamExt;
@@ -61,8 +61,22 @@ pub enum AgentEvent {
     },
 }
 
+/// Result from processing a message
+#[derive(Debug, Clone, Default)]
+pub struct ProcessResult {
+    pub response: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
 /// Maximum number of recent tool calls to keep for deduplication
 const MAX_RECENT_TOOL_CALLS: usize = 20;
+
+/// Maximum characters in tool result before truncation
+const MAX_TOOL_RESULT_CHARS: usize = 10000;
+
+/// Maximum messages to keep in context (excluding system message)
+const MAX_CONTEXT_MESSAGES: usize = 50;
 
 /// Bridge connecting limit-cli REPL to limit-agent executor and limit-llm client
 pub struct AgentBridge {
@@ -135,13 +149,13 @@ impl AgentBridge {
             "git_push",
             "git_pull",
             "git_clone",
-            "grep",
+            // "grep",           // TEMP: disabled for ast_grep testing
             "ast_grep",
-            "lsp",
+            // "lsp",            // TEMP: disabled for ast_grep testing
             "web_search",
             "web_fetch",
             "browser",
-            "tldr_analyze",
+            // "tldr_analyze",   // TEMP: disabled for ast_grep testing
         ];
 
         Ok(Self {
@@ -244,15 +258,16 @@ impl AgentBridge {
             .expect("Failed to register git_clone");
 
         // Analysis tools
-        registry
-            .register(GrepTool::new())
-            .expect("Failed to register grep");
+        // TEMP: disabled for ast_grep testing
+        // registry
+        //     .register(GrepTool::new())
+        //     .expect("Failed to register grep");
         registry
             .register(AstGrepTool::new())
             .expect("Failed to register ast_grep");
-        registry
-            .register(LspTool::new())
-            .expect("Failed to register lsp");
+        // registry
+        //     .register(LspTool::new())
+        //     .expect("Failed to register lsp");
 
         // Web tools
         registry
@@ -269,9 +284,10 @@ impl AgentBridge {
             .expect("Failed to register browser");
 
         // TLDR tool for code analysis
-        registry
-            .register(TldrTool::new())
-            .expect("Failed to register tldr_analyze");
+        // TEMP: disabled for ast_grep testing
+        // registry
+        //     .register(TldrTool::new())
+        //     .expect("Failed to register tldr_analyze");
     }
 
     /// Process a user message through the LLM and execute any tool calls
@@ -287,13 +303,13 @@ impl AgentBridge {
         &mut self,
         user_input: &str,
         _messages: &mut Vec<Message>,
-    ) -> Result<String, CliError> {
+    ) -> Result<ProcessResult, CliError> {
         // Add system message if this is the first message in the conversation
         // Note: Some providers (z.ai) don't support system role, but OpenAI-compatible APIs generally do
         if _messages.is_empty() {
             let system_message = Message {
                 role: Role::System,
-                content: Some(SYSTEM_PROMPT.to_string()),
+                content: Some(get_system_prompt()),
                 tool_calls: None,
                 tool_call_id: None,
             };
@@ -323,6 +339,8 @@ impl AgentBridge {
             .unwrap_or(100); // Allow enough iterations for complex tasks
         let mut iteration = 0;
         let mut consecutive_no_exec = 0;
+        let mut total_input_tokens: u64 = 0;
+        let mut total_output_tokens: u64 = 0;
 
         while max_iterations == 0 || iteration < max_iterations {
             iteration += 1;
@@ -340,7 +358,8 @@ impl AgentBridge {
             // Track timing for token usage
             let request_start = std::time::Instant::now();
 
-            // Call LLM
+            truncate_context(_messages);
+
             let mut stream = self
                 .llm_client
                 .send(_messages.clone(), tool_definitions.clone())
@@ -434,6 +453,8 @@ impl AgentBridge {
                             cost,
                             duration_ms,
                         );
+                        total_input_tokens += usage.input_tokens;
+                        total_output_tokens += usage.output_tokens;
                         // Emit token usage event for TUI display
                         self.send_event(AgentEvent::TokenUsage {
                             operation_id: self.operation_id,
@@ -642,7 +663,7 @@ impl AgentBridge {
                     // OpenAI tool result format
                     let tool_result_message = Message {
                         role: Role::Tool,
-                        content: Some(output_json),
+                        content: Some(truncate_tool_result(&output_json)),
                         tool_calls: None,
                         tool_call_id: Some(result.call_id),
                     };
@@ -801,7 +822,11 @@ impl AgentBridge {
         self.send_event(AgentEvent::Done {
             operation_id: self.operation_id,
         });
-        Ok(full_response)
+        Ok(ProcessResult {
+            response: full_response,
+            input_tokens: total_input_tokens,
+            output_tokens: total_output_tokens,
+        })
     }
 
     /// Get tool definitions formatted for the LLM
@@ -1335,13 +1360,14 @@ impl AgentBridge {
                     "required": ["action"]
                 }),
             ),
-            "tldr_analyze" => {
-                let tool_def = tldr_tool_definition();
-                (
-                    tool_def["description"].as_str().unwrap_or("").to_string(),
-                    tool_def["parameters"].clone()
-                )
-            },
+            // TEMP: disabled for ast_grep testing
+            // "tldr_analyze" => {
+            //     let tool_def = tldr_tool_definition();
+            //     (
+            //         tool_def["description"].as_str().unwrap_or("").to_string(),
+            //         tool_def["parameters"].clone()
+            //     )
+            // },
             _ => (
                 format!("Tool: {}", name),
                 json!({
@@ -1411,6 +1437,34 @@ fn calculate_cost(model: &str, input_tokens: u64, output_tokens: u64) -> f64 {
     };
     (input_tokens as f64 * input_price / 1_000_000.0)
         + (output_tokens as f64 * output_price / 1_000_000.0)
+}
+
+fn truncate_tool_result(result: &str) -> String {
+    if result.len() > MAX_TOOL_RESULT_CHARS {
+        let truncated = &result[..MAX_TOOL_RESULT_CHARS];
+        format!(
+            "{}\n\n... [TRUNCATED: {} chars total, showing first {}]",
+            truncated,
+            result.len(),
+            MAX_TOOL_RESULT_CHARS
+        )
+    } else {
+        result.to_string()
+    }
+}
+
+fn truncate_context(messages: &mut Vec<Message>) {
+    if messages.len() <= MAX_CONTEXT_MESSAGES + 1 {
+        return;
+    }
+    let system_msg = messages.first().filter(|m| m.role == Role::System).cloned();
+    messages.drain(1..);
+    if messages.len() > MAX_CONTEXT_MESSAGES {
+        messages.drain(..messages.len() - MAX_CONTEXT_MESSAGES);
+    }
+    if let Some(system) = system_msg {
+        messages.insert(0, system);
+    }
 }
 
 #[cfg(test)]
@@ -1496,7 +1550,7 @@ mod tests {
         let bridge = AgentBridge::new(config).unwrap();
         let definitions = bridge.get_tool_definitions();
 
-        assert_eq!(definitions.len(), 19);
+        assert_eq!(definitions.len(), 16); // TEMP: grep, lsp, tldr_analyze disabled for ast_grep testing
 
         // Check file_read tool definition
         let file_read = definitions

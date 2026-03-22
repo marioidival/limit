@@ -181,22 +181,17 @@ impl Repl {
                         AgentEvent::Error(err) => {
                             println!("\x1B[31mError: {}\x1B[0m", err);
                         }
-                        AgentEvent::TokenUsage {
-                            input_tokens,
-                            output_tokens,
-                        } => {
-                            self.total_input_tokens += input_tokens;
-                            self.total_output_tokens += output_tokens;
-                        }
+                        AgentEvent::TokenUsage { .. } => {}
                     }
                 }
 
                 match result {
-                    Ok(response) => {
-                        // Render the final response with markdown
-                        if !response.is_empty() {
+                    Ok(process_result) => {
+                        self.total_input_tokens += process_result.input_tokens;
+                        self.total_output_tokens += process_result.output_tokens;
+                        if !process_result.response.is_empty() {
                             let renderer = MarkdownRenderer::new();
-                            let rendered = renderer.render(&response);
+                            let rendered = renderer.render(&process_result.response);
                             println!("\n{}", rendered);
                         }
                     }
