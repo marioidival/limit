@@ -187,9 +187,7 @@ impl AstGrepTool {
         }
 
         let mut cmd = Command::new("ast-grep");
-        cmd.arg("run")
-            .arg("--json")
-            .args(["--lang", lang]);
+        cmd.arg("run").arg("--json").args(["--lang", lang]);
 
         if let Some(globs) = args.get("globs").and_then(|v| v.as_array()) {
             for glob in globs {
