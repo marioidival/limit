@@ -5,6 +5,7 @@ use crate::types::{Message, Tool};
 use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub struct ThinkingConfig {
@@ -38,6 +39,11 @@ impl ZaiProvider {
     ) -> Self {
         let default_url = "https://api.z.ai/api/coding/paas/v4/chat/completions";
 
+        debug!(
+            "ZAI provider config: thinking_enabled={}, clear_thinking={}",
+            thinking_config.thinking_enabled, thinking_config.clear_thinking
+        );
+
         // Build extra_body with thinking config
         let extra_body = if thinking_config.thinking_enabled {
             let mut body = serde_json::Map::new();
@@ -46,6 +52,7 @@ impl ZaiProvider {
                 "clear_thinking": thinking_config.clear_thinking
             });
             body.insert("thinking".to_string(), thinking);
+            debug!("ZAI provider: building extra_body with thinking ENABLED");
             Some(body)
         } else {
             // Disabled thinking - explicitly disable to avoid default interleaved thinking
@@ -54,6 +61,7 @@ impl ZaiProvider {
                 "type": "disabled"
             });
             body.insert("thinking".to_string(), thinking);
+            debug!("ZAI provider: building extra_body with thinking DISABLED");
             Some(body)
         };
 

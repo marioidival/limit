@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::pin::Pin;
 use std::time::Duration;
-use tracing::{error, info, instrument, trace};
+use tracing::{debug, error, info, instrument, trace};
 
 #[derive(Clone)]
 pub struct OpenAiProvider {
@@ -44,6 +44,16 @@ impl OpenAiProvider {
             .connect_timeout(Duration::from_secs(30))
             .build()
             .expect("Failed to build HTTP client");
+
+        // Debug: log extra_body configuration
+        if let Some(ref extra) = extra_body {
+            debug!(
+                "OpenAI provider created with extra_body: {}",
+                serde_json::to_string(extra).unwrap_or_default()
+            );
+        } else {
+            debug!("OpenAI provider created with no extra_body");
+        }
 
         Self {
             api_key,
@@ -184,9 +194,21 @@ fn build_request_body(
 
     // Add any extra body parameters
     if let Some(extra) = extra_body {
-        for (key, value) in extra {
-            request[key] = value;
+        for (key, value) in &extra {
+            request[key] = value.clone();
         }
+        debug!(
+            "Request includes extra_body params: {}",
+            serde_json::to_string(&extra).unwrap_or_default()
+        );
+    }
+
+    // Debug: log the thinking parameter if present
+    if let Some(thinking) = request.get("thinking") {
+        debug!(
+            "Request 'thinking' parameter: {}",
+            serde_json::to_string(thinking).unwrap_or_default()
+        );
     }
 
     Ok(request)
