@@ -887,4 +887,159 @@ mod tests {
         assert_eq!(pos.line, 10);
         assert_eq!(pos.character, 5);
     }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_new_language_go() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "pattern": "func $NAME($$$) { }",
+            "language": "go"
+        });
+
+        let result = tool.execute(args).await;
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("ast-grep not found") || error_msg.contains("failed"),
+                    "Unexpected error: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_language_alias_js() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "pattern": "console.log($X)",
+            "language": "js"
+        });
+
+        let result = tool.execute(args).await;
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("ast-grep not found") || error_msg.contains("failed"),
+                    "Unexpected error: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_language_alias_py() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "pattern": "def $FUNC():",
+            "language": "py"
+        });
+
+        let result = tool.execute(args).await;
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("ast-grep not found") || error_msg.contains("failed"),
+                    "Unexpected error: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_language_alias_rs() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "language": "rs"
+        });
+
+        let result = tool.execute(args).await;
+        match result {
+            Ok(_) => {}
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("ast-grep not found") || error_msg.contains("failed"),
+                    "Unexpected error: {}",
+                    error_msg
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_unsupported_command() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "command": "test",
+            "pattern": "fn main()",
+            "language": "rust"
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported command"));
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_replace_missing_rewrite() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "command": "replace",
+            "pattern": "console.log($X)",
+            "language": "javascript"
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_scan_path_not_found() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "command": "scan",
+            "path": "/nonexistent/path"
+        });
+
+        let result = tool.execute(args).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_ast_grep_tool_backward_compat_no_command() {
+        let tool = AstGrepTool::new();
+        let args = serde_json::json!({
+            "pattern": "fn $NAME() {}",
+            "language": "rust"
+        });
+
+        let result = tool.execute(args).await;
+        match result {
+            Ok(value) => {
+                assert_eq!(value["command"], "search");
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(
+                    error_msg.contains("ast-grep not found") || error_msg.contains("failed"),
+                    "Unexpected error: {}",
+                    error_msg
+                );
+            }
+        }
+    }
 }
