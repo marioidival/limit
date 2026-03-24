@@ -413,29 +413,46 @@ impl SessionManager {
     pub fn migrate_to_tree(&self, session_id: &str) -> Result<SessionTree, CliError> {
         use crate::session_tree::{generate_entry_id, SerializableMessage, SessionEntryType};
 
+        // Check if already migrated with correct data
         if self.has_tree_session(session_id)? {
             let tree = self.load_tree_session(session_id)?;
-            if !tree.entries().is_empty() {
+            let messages = self.load_session(session_id)?;
+
+            // Verify entry count matches message count
+            if tree.entries().len() == messages.len() && !messages.is_empty() {
                 return Ok(tree);
             }
+            // Otherwise, fall through to re-migrate (tree was partial)
         }
 
+        // Load old format
         let messages = self.load_session(session_id)?;
+
+        if messages.is_empty() {
+            let cwd = dirs::home_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "/".to_string());
+            return self.create_tree_session(session_id, cwd);
+        }
+
+        // Get cwd
         let cwd = dirs::home_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "/".to_string());
 
-        self.create_tree_session(session_id, cwd)?;
+        // Create tree
+        let _tree = self.create_tree_session(session_id, cwd)?;
 
+        // Add each message as entry
         let mut parent_id: Option<String> = None;
-        for msg in messages {
+        for msg in &messages {
             let entry_id = generate_entry_id();
             let entry = SessionEntry {
                 id: entry_id.clone(),
                 parent_id: parent_id.clone(),
                 timestamp: Utc::now().to_rfc3339(),
                 entry_type: SessionEntryType::Message {
-                    message: SerializableMessage::from(msg),
+                    message: SerializableMessage::from(msg.clone()),
                 },
             };
 
@@ -443,12 +460,16 @@ impl SessionManager {
             parent_id = Some(entry_id);
         }
 
+        // Load tree to verify and return
+        let tree = self.load_tree_session(session_id)?;
+
+        // Cleanup old binary file AFTER successful migration
         let bin_path = self.sessions_dir.join(format!("{}.bin", session_id));
         if bin_path.exists() {
-            fs::remove_file(&bin_path)?;
+            let _ = fs::remove_file(&bin_path);
         }
 
-        self.load_tree_session(session_id)
+        Ok(tree)
     }
 
     /// Get the file path for a tree session
