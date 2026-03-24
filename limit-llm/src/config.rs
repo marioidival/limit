@@ -72,6 +72,9 @@ pub struct CompactionSettings {
     /// Recent tokens to keep when compacting (default: 20000)
     #[serde(default = "default_keep_recent_tokens")]
     pub keep_recent_tokens: u32,
+    /// Use LLM summarization instead of truncation (default: true)
+    #[serde(default = "default_true")]
+    pub use_summarization: bool,
 }
 
 fn default_compaction_enabled() -> bool {
@@ -92,6 +95,7 @@ impl Default for CompactionSettings {
             enabled: true,
             reserve_tokens: 16384,
             keep_recent_tokens: 20000,
+            use_summarization: true,
         }
     }
 }
