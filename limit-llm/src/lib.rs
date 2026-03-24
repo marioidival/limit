@@ -172,6 +172,7 @@ pub mod openai_provider;
 pub mod persistence;
 pub mod provider_factory;
 pub mod providers;
+pub mod summarization;
 pub mod tracking;
 pub mod types;
 pub mod zai_provider;
@@ -186,6 +187,7 @@ pub use openai_provider::OpenAiProvider;
 pub use persistence::StatePersistence;
 pub use provider_factory::ProviderFactory;
 pub use providers::{LlmProvider, ProviderResponseChunk};
+pub use summarization::{extract_file_operations, FileOperations, Summarizer, SummaryOutput};
 pub use tracking::TrackingDb;
 pub use types::{
     CacheControl, FunctionCall, Message, Response, Role, Tool, ToolCall, ToolFunction, Usage,
