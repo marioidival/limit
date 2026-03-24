@@ -1,11 +1,12 @@
 use crate::error::CliError;
-use crate::session_tree::{SessionEntry, SessionTree};
+use crate::session_tree::{SessionEntry, SessionTree, SessionTreeError};
 use bincode::{deserialize, serialize};
 use chrono::{DateTime, Utc};
 use limit_llm::Message;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use tracing::instrument;
 use uuid::Uuid;
@@ -359,8 +360,7 @@ impl SessionManager {
     /// Load a tree-based session
     pub fn load_tree_session(&self, session_id: &str) -> Result<SessionTree, CliError> {
         let file_path = self.tree_session_path(session_id);
-        SessionTree::load_from_file(&file_path)
-            .map_err(|e| CliError::ConfigError(format!("Failed to load tree session: {}", e)))
+        SessionTree::load_from_file(&file_path).map_err(CliError::from)
     }
 
     /// Append entry to tree session (incremental save)
@@ -377,8 +377,17 @@ impl SessionManager {
             ));
         }
 
-        let tree = self.load_tree_session(session_id)?;
-        tree.append_to_file(&file_path, entry)?;
+        // Append directly without loading entire tree
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)?;
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(entry).map_err(SessionTreeError::from)?
+        )?;
+        file.flush()?;
         Ok(())
     }
 
