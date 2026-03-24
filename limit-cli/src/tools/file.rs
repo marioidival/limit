@@ -5,7 +5,8 @@ use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024; // 50MB
+const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
+const LARGE_FILE_THRESHOLD: usize = 5_000;
 
 pub struct FileReadTool;
 
@@ -70,10 +71,32 @@ impl Tool for FileReadTool {
             )));
         }
 
-        Ok(serde_json::json!({
+        let (content, was_truncated) = if content.len() > LARGE_FILE_THRESHOLD {
+            (
+                content
+                    .chars()
+                    .take(LARGE_FILE_THRESHOLD)
+                    .collect::<String>(),
+                true,
+            )
+        } else {
+            (content, false)
+        };
+
+        let mut result = serde_json::json!({
             "content": content,
             "size": metadata.len()
-        }))
+        });
+
+        if was_truncated {
+            result["warning"] = Value::String(format!(
+                "File truncated ({} chars shown of {} total). Use tldr_analyze for structure overview.",
+                LARGE_FILE_THRESHOLD,
+                metadata.len()
+            ));
+        }
+
+        Ok(result)
     }
 }
 

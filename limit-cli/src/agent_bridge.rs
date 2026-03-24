@@ -230,9 +230,18 @@ impl AgentBridge {
         }
 
         let context_window: usize = 200_000;
-        let target_tokens =
-            context_window.saturating_sub(self.config.compaction.reserve_tokens as usize);
+        let target_tokens = (context_window * 6) / 10;
+        let warn_tokens = context_window / 2;
         let current_tokens = self.handoff.count_total_tokens(messages);
+
+        if current_tokens > warn_tokens && current_tokens <= target_tokens {
+            let pct = (current_tokens * 100) / context_window;
+            tracing::warn!(
+                "Context at {}% ({} tokens). Compaction will trigger at 60%.",
+                pct,
+                current_tokens
+            );
+        }
 
         if current_tokens <= target_tokens {
             return;
