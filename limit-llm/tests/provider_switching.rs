@@ -1,5 +1,6 @@
 use limit_llm::{
-    BrowserConfigSection, CompactionSettings, Config, ProviderConfig, ProviderFactory,
+    BrowserConfigSection, CacheSettings, CompactionSettings, Config, ProviderConfig,
+    ProviderFactory,
 };
 use std::collections::HashMap;
 
@@ -24,8 +25,7 @@ fn test_anthropic_provider_creation() {
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let provider = ProviderFactory::create_provider(&config).unwrap();
@@ -53,8 +53,7 @@ fn test_openai_provider_creation() {
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let provider = ProviderFactory::create_provider(&config).unwrap();

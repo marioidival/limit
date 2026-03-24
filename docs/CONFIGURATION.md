@@ -70,6 +70,57 @@ max_iterations = 100  # Default
 
 ---
 
+## Context Compaction
+
+Limit automatically manages context window usage by compacting messages when approaching token limits.
+
+### How It Works
+
+When the conversation context exceeds the threshold (context window - reserve tokens), Limit:
+1. Keeps the system message
+2. Keeps recent messages up to the token budget
+3. Discards older messages to fit within the limit
+
+This prevents context overflow errors and reduces token costs.
+
+### Configuration
+
+```toml
+[compaction]
+enabled = true           # Enable/disable compaction (default: true)
+reserve_tokens = 16384   # Tokens reserved for LLM response (default: 16384)
+keep_recent_tokens = 20000  # Not used in current implementation (future: summary target)
+```
+
+### Defaults
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Enable token-aware compaction |
+| `reserve_tokens` | `16384` | Tokens reserved for response |
+| `keep_recent_tokens` | `20000` | Target for future summarization |
+
+### Example
+
+```toml
+# ~/.limit/config.toml
+
+provider = "anthropic"
+
+[providers.anthropic]
+model = "claude-3-5-sonnet-20241022"
+
+[compaction]
+enabled = true
+reserve_tokens = 8192   # More aggressive compaction
+```
+
+### Token Estimation
+
+Limit uses `tiktoken` with the `cl100k_base` tokenizer (same as GPT-4/Claude) for accurate token counting.
+
+---
+
 ## Verify Configuration
 
 ```bash

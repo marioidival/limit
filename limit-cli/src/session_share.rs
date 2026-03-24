@@ -237,12 +237,14 @@ mod tests {
                 content: Some("Hello".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Assistant,
                 content: Some("Hi there!".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
         ];
 
@@ -270,6 +272,7 @@ mod tests {
             content: Some("Test".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let export = SessionExport::new("test-id".to_string(), &messages, 10, 5, None);
@@ -287,24 +290,26 @@ mod tests {
                 content: Some("User message".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Tool,
                 content: Some("Tool result".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
             Message {
                 role: limit_llm::Role::System,
                 content: Some("System message".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
         ];
 
         let export = SessionExport::new("test-id".to_string(), &messages, 0, 0, None);
 
-        // Only User and Assistant messages should be exported
         assert_eq!(export.messages.len(), 1);
         assert_eq!(export.messages[0].role, "User");
     }

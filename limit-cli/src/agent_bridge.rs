@@ -354,7 +354,7 @@ impl AgentBridge {
             content: Some(user_input.to_string()),
             tool_calls: None,
             tool_call_id: None,
-                cache_control: None,
+            cache_control: None,
         };
         _messages.push(user_message);
 
@@ -409,7 +409,21 @@ impl AgentBridge {
             }
 
             // Apply cache control to messages for prompt caching
+            debug!(
+                "Applying cache control: enabled={}, retention={}",
+                self.config.cache.is_enabled(),
+                self.config.cache.retention
+            );
             let cached_messages = apply_cache_control(_messages, &self.config.cache);
+            let cache_count = cached_messages
+                .iter()
+                .filter(|m| m.cache_control.is_some())
+                .count();
+            debug!(
+                "Cache control applied to {} of {} messages",
+                cache_count,
+                cached_messages.len()
+            );
 
             let mut stream = self
                 .llm_client
@@ -493,14 +507,31 @@ impl AgentBridge {
                         accumulated_calls.insert(id.clone(), (name.clone(), arguments.clone()));
                     }
                     Ok(ProviderResponseChunk::Done(usage)) => {
-                        // Track token usage
                         let duration_ms = request_start.elapsed().as_millis() as u64;
                         let cost =
                             calculate_cost(self.model(), usage.input_tokens, usage.output_tokens);
+
+                        if usage.cache_read_tokens > 0 || usage.cache_write_tokens > 0 {
+                            debug!(
+                                "Cache tokens: read={}, write={}, input={}, output={}",
+                                usage.cache_read_tokens,
+                                usage.cache_write_tokens,
+                                usage.input_tokens,
+                                usage.output_tokens
+                            );
+                        } else {
+                            debug!(
+                                "No cache tokens in response: input={}, output={}",
+                                usage.input_tokens, usage.output_tokens
+                            );
+                        }
+
                         let _ = self.tracking_db.track_request(
                             self.model(),
                             usage.input_tokens,
                             usage.output_tokens,
+                            usage.cache_read_tokens,
+                            usage.cache_write_tokens,
                             cost,
                             duration_ms,
                         );
@@ -857,7 +888,7 @@ impl AgentBridge {
                         content: Some(full_response.clone()),
                         tool_calls: None,
                         tool_call_id: None,
-                cache_control: None,
+                        cache_control: None,
                     };
                     _messages.push(final_assistant_message);
                 }
@@ -869,7 +900,7 @@ impl AgentBridge {
                     content: Some(full_response.clone()),
                     tool_calls: None,
                     tool_call_id: None,
-                cache_control: None,
+                    cache_control: None,
                 };
                 _messages.push(final_assistant_message);
             }
@@ -1675,7 +1706,7 @@ mod tests {
             content: Some("System prompt".to_string()),
             tool_calls: None,
             tool_call_id: None,
-                cache_control: None,
+            cache_control: None,
         }];
 
         for i in 0..50 {
@@ -1711,7 +1742,7 @@ mod tests {
             content: Some("System".to_string()),
             tool_calls: None,
             tool_call_id: None,
-                cache_control: None,
+            cache_control: None,
         }];
 
         for i in 0..100 {
@@ -1762,6 +1793,7 @@ mod tests {
                 reserve_tokens: 8192,
                 keep_recent_tokens: 10000,
             },
+            cache: limit_llm::CacheSettings::default(),
         };
 
         let bridge = AgentBridge::new(config).unwrap();

@@ -1,5 +1,6 @@
 use limit_llm::{
-    BrowserConfigSection, CompactionSettings, Config, ProviderConfig, ProviderFactory,
+    BrowserConfigSection, CacheSettings, CompactionSettings, Config, ProviderConfig,
+    ProviderFactory,
 };
 use std::collections::HashMap;
 
@@ -20,18 +21,16 @@ fn test_unknown_provider_error() {
         },
     );
     let config = Config {
-        provider: "openai".to_string(), // Known but not configured
+        provider: "openai".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let result = ProviderFactory::create_provider(&config);
     assert!(result.is_err());
     if let Err(e) = result {
-        // OpenAI is a known provider but not configured
         assert!(e.to_string().contains("not found in config") || e.to_string().contains("Unknown"));
     }
 }
@@ -43,8 +42,7 @@ fn test_missing_provider_error() {
         providers: HashMap::new(),
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let result = ProviderFactory::create_provider(&config);
@@ -75,11 +73,9 @@ fn test_missing_api_key_error() {
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
-    // Ensure no env var is set
     std::env::remove_var("ANTHROPIC_API_KEY");
 
     let result = ProviderFactory::create_provider(&config);

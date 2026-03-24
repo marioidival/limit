@@ -184,14 +184,14 @@ mod tests {
                 content: Some("Hello".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
-            cache_control: None,
+                cache_control: None,
             },
             Message {
                 role: Role::Assistant,
                 content: Some("Hi there!".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
-            cache_control: None,
+                cache_control: None,
             },
         ];
         let total = handoff.count_total_tokens(&messages);
@@ -207,14 +207,14 @@ mod tests {
                 content: Some("You are a helpful assistant.".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
-            cache_control: None,
+                cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: Some("Hello".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
-            cache_control: None,
+                cache_control: None,
             },
         ];
         let compacted = handoff.compact_messages(&messages, 500);
@@ -246,7 +246,7 @@ mod tests {
                 content: Some(format!("Message {}", i)),
                 tool_calls: None,
                 tool_call_id: None,
-            cache_control: None,
+                cache_control: None,
             });
         }
 

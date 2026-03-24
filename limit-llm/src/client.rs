@@ -190,6 +190,25 @@ fn build_request_body(
     model: &str,
     max_tokens: u32,
 ) -> Result<Value, LlmError> {
+    let cache_count = messages
+        .iter()
+        .filter(|m| m.cache_control.is_some())
+        .count();
+    if cache_count > 0 {
+        debug!(
+            "Anthropic request has {} messages with cache_control",
+            cache_count
+        );
+        for m in messages.iter().filter(|m| m.cache_control.is_some()) {
+            if let Some(cc) = &m.cache_control {
+                debug!(
+                    "  - role={:?}, type={}, ttl={:?}",
+                    m.role, cc.cache_type, cc.ttl
+                );
+            }
+        }
+    }
+
     let mut request = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens,
@@ -327,6 +346,12 @@ fn parse_sse_stream(
                                         if stop_reason == "end_turn" || stop_reason == "tool_use" {
                                             if let Some(usage) = parsed.get("usage") {
                                                 if let Ok(usage_obj) = serde_json::from_value::<Usage>(usage.clone()) {
+                                                    if usage_obj.cache_read_tokens > 0 || usage_obj.cache_write_tokens > 0 {
+                                                        debug!(
+                                                            "Anthropic cache tokens: read={}, write={}",
+                                                            usage_obj.cache_read_tokens, usage_obj.cache_write_tokens
+                                                        );
+                                                    }
                                                     yield Ok(ProviderResponseChunk::Done(usage_obj));
                                                     return;
                                                 }

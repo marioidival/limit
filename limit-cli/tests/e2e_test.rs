@@ -1,15 +1,5 @@
-//! End-to-End Integration Tests
-//!
-//! These tests verify the complete flow of all 4 crates working together:
-//! - limit-llm: LLM API client
-//! - limit-agent: Agent runtime with tool execution
-//! - limit-cli: REPL interface and tools
-//! - limit-tui: Terminal UI components
-//!
-//! All tests use real components except for the LLM API which is mocked.
-
 use limit_cli::{AgentBridge, SessionManager, TuiBridge, TuiState};
-use limit_llm::{BrowserConfigSection, Config as LlmConfig};
+use limit_llm::{BrowserConfigSection, CacheSettings, Config as LlmConfig};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
@@ -35,6 +25,8 @@ fn create_test_config() -> LlmConfig {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: limit_llm::CompactionSettings::default(),
+        cache: CacheSettings::default(),
     }
 }
 

@@ -485,6 +485,8 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            compaction: limit_llm::CompactionSettings::default(),
+            cache: limit_llm::CacheSettings::default(),
         }
     }
 

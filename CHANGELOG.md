@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### 🚀 Features
+
+- Add token-aware context compaction with configurable settings
+  - New `[compaction]` config section with `enabled`, `reserve_tokens`, `keep_recent_tokens`
+  - Uses `tiktoken` cl100k_base tokenizer for accurate token counting
+  - Automatically compacts context when approaching 200K token limit
+  - Preserves system message and recent messages during compaction
+
 ## [0.0.40] - 2026-03-21
 
 ### 🚀 Features

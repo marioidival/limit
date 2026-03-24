@@ -10,6 +10,8 @@ pub struct UsageStats {
     pub total_tokens: u64,
     pub total_cost: f64,
     pub avg_duration_ms: f64,
+    pub total_cache_read_tokens: u64,
+    pub total_cache_write_tokens: u64,
 }
 
 /// SQLite database for tracking LLM usage
@@ -84,7 +86,9 @@ impl TrackingDb {
                 input_tokens INTEGER NOT NULL,
                 output_tokens INTEGER NOT NULL,
                 cost REAL NOT NULL,
-                duration_ms INTEGER NOT NULL
+                duration_ms INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+                cache_write_tokens INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )
@@ -97,6 +101,16 @@ impl TrackingDb {
         )
         .map_err(|e| LlmError::PersistenceError(format!("Failed to create index: {}", e)))?;
 
+        // Migration: Add cache columns to existing databases
+        let _ = conn.execute(
+            "ALTER TABLE requests ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE requests ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+
         Ok(())
     }
 
@@ -106,6 +120,8 @@ impl TrackingDb {
         model: &str,
         input_tokens: u64,
         output_tokens: u64,
+        cache_read_tokens: u64,
+        cache_write_tokens: u64,
         cost: f64,
         duration_ms: u64,
     ) -> Result<(), LlmError> {
@@ -120,9 +136,9 @@ impl TrackingDb {
             .map_err(|e| LlmError::PersistenceError(format!("Failed to acquire lock: {}", e)))?;
 
         conn.execute(
-            "INSERT INTO requests (timestamp, model, input_tokens, output_tokens, cost, duration_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![timestamp, model, input_tokens as i64, output_tokens as i64, cost, duration_ms as i64],
+            "INSERT INTO requests (timestamp, model, input_tokens, output_tokens, cost, duration_ms, cache_read_tokens, cache_write_tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![timestamp, model, input_tokens as i64, output_tokens as i64, cost, duration_ms as i64, cache_read_tokens as i64, cache_write_tokens as i64],
         )
         .map_err(|e| LlmError::PersistenceError(format!("Failed to insert request: {}", e)))?;
 
@@ -148,7 +164,9 @@ impl TrackingDb {
                 COUNT(*) as count,
                 SUM(input_tokens + output_tokens) as total_tokens,
                 SUM(cost) as total_cost,
-                AVG(duration_ms) as avg_duration
+                AVG(duration_ms) as avg_duration,
+                COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+                COALESCE(SUM(cache_write_tokens), 0) as total_cache_write
              FROM requests
              WHERE timestamp >= ?1",
             )
@@ -166,12 +184,16 @@ impl TrackingDb {
             let total_tokens: i64 = row.get(1).unwrap_or(0);
             let total_cost: f64 = row.get(2).unwrap_or(0.0);
             let avg_duration_ms: f64 = row.get(3).unwrap_or(0.0);
+            let total_cache_read_tokens: i64 = row.get(4).unwrap_or(0);
+            let total_cache_write_tokens: i64 = row.get(5).unwrap_or(0);
 
             Ok(UsageStats {
                 total_requests: total_requests.max(0) as u64,
                 total_tokens: total_tokens.max(0) as u64,
                 total_cost,
                 avg_duration_ms,
+                total_cache_read_tokens: total_cache_read_tokens.max(0) as u64,
+                total_cache_write_tokens: total_cache_write_tokens.max(0) as u64,
             })
         } else {
             Ok(UsageStats::default())
@@ -228,9 +250,9 @@ mod tests {
     fn test_track_request() {
         let db = create_test_db().unwrap();
 
-        db.track_request("claude-3-5-sonnet", 100, 50, 0.001, 1500)
+        db.track_request("claude-3-5-sonnet", 100, 50, 500, 100, 0.001, 1500)
             .unwrap();
-        db.track_request("claude-3-opus", 200, 100, 0.005, 3000)
+        db.track_request("claude-3-opus", 200, 100, 0, 0, 0.005, 3000)
             .unwrap();
 
         let count: i64 = db
@@ -246,16 +268,21 @@ mod tests {
     fn test_get_usage_stats() {
         let db = create_test_db().unwrap();
 
-        db.track_request("model-1", 100, 50, 0.001, 1500).unwrap();
-        db.track_request("model-2", 200, 100, 0.005, 3000).unwrap();
-        db.track_request("model-3", 150, 75, 0.002, 2000).unwrap();
+        db.track_request("model-1", 100, 50, 500, 100, 0.001, 1500)
+            .unwrap();
+        db.track_request("model-2", 200, 100, 0, 0, 0.005, 3000)
+            .unwrap();
+        db.track_request("model-3", 150, 75, 200, 50, 0.002, 2000)
+            .unwrap();
 
         let stats = db.get_usage_stats(7).unwrap();
 
         assert_eq!(stats.total_requests, 3);
-        assert_eq!(stats.total_tokens, 675); // (100+50) + (200+100) + (150+75)
+        assert_eq!(stats.total_tokens, 675);
         assert!((stats.total_cost - 0.008).abs() < 0.0001);
         assert!((stats.avg_duration_ms - 2166.6666666666665).abs() < 0.0001);
+        assert_eq!(stats.total_cache_read_tokens, 700);
+        assert_eq!(stats.total_cache_write_tokens, 150);
     }
 
     #[test]
@@ -268,6 +295,8 @@ mod tests {
         assert_eq!(stats.total_tokens, 0);
         assert_eq!(stats.total_cost, 0.0);
         assert_eq!(stats.avg_duration_ms, 0.0);
+        assert_eq!(stats.total_cache_read_tokens, 0);
+        assert_eq!(stats.total_cache_write_tokens, 0);
     }
 
     #[test]
@@ -288,6 +317,8 @@ mod tests {
                         &format!("model-{}", i),
                         100 + i,
                         50 + i,
+                        0,
+                        0,
                         0.001,
                         1000 + i * 100,
                     )
@@ -302,6 +333,8 @@ mod tests {
                         &format!("model-{}", i + 10),
                         100 + i,
                         50 + i,
+                        0,
+                        0,
                         0.001,
                         1000 + i * 100,
                     )

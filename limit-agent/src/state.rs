@@ -116,6 +116,7 @@ mod tests {
             content: Some("test message".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }
     }
 

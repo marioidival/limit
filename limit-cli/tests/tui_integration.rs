@@ -1,9 +1,7 @@
-// Integration test for TUI conversation flow
-//
-// This test verifies the complete interaction between limit-cli, limit-tui, and the agent.
-
 use limit_cli::{AgentBridge, TuiBridge, TuiState};
-use limit_llm::{BrowserConfigSection, Config as LlmConfig, ProviderConfig};
+use limit_llm::{
+    BrowserConfigSection, CacheSettings, CompactionSettings, Config as LlmConfig, ProviderConfig,
+};
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
@@ -11,7 +9,6 @@ use tokio::sync::mpsc;
 
 #[test]
 fn test_tui_integration_full_conversation() {
-    // Create a config with an API key (even if invalid, we just test the flow)
     let mut providers = HashMap::new();
     providers.insert(
         "anthropic".to_string(),
@@ -30,13 +27,13 @@ fn test_tui_integration_full_conversation() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
-    // Create agent bridge
     let agent_bridge = AgentBridge::new(config).unwrap();
     assert!(agent_bridge.is_ready());
 
-    // Verify tool definitions are available
     let tools = agent_bridge.get_tool_definitions();
     assert!(!tools.is_empty());
     assert!(tools.iter().any(|t| t.function.name == "file_read"));
@@ -62,6 +59,8 @@ fn test_tui_bridge_event_ordering() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -122,6 +121,8 @@ fn test_tui_bridge_tool_execution_display() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -196,6 +197,8 @@ fn test_tui_bridge_error_handling() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -237,6 +240,8 @@ fn test_tui_bridge_spinner_animation() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -295,6 +300,8 @@ fn test_tui_bridge_content_streaming() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -350,6 +357,8 @@ fn test_tui_bridge_is_ready() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -381,6 +390,8 @@ fn test_tui_bridge_get_tool_definitions() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -413,6 +424,8 @@ fn test_tui_bridge_tool_schema() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -452,6 +465,8 @@ fn test_tui_bridge_with_good_config() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();
@@ -492,6 +507,8 @@ fn test_tui_bridge_from_string_config() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let agent_bridge = AgentBridge::new(config).unwrap();

@@ -180,9 +180,23 @@ fn build_request_body(
     max_tokens: u32,
     extra_body: Option<serde_json::Map<String, serde_json::Value>>,
 ) -> Result<Value, LlmError> {
+    let messages_with_cache: Vec<Value> = messages
+        .iter()
+        .map(|m| {
+            let msg = serde_json::to_value(m).unwrap_or_default();
+            if let Some(cc) = &m.cache_control {
+                debug!(
+                    "Message with cache_control: role={:?}, type={}",
+                    m.role, cc.cache_type
+                );
+            }
+            msg
+        })
+        .collect();
+
     let mut request = serde_json::json!({
         "model": model,
-        "messages": messages,
+        "messages": messages_with_cache,
         "stream": true,
         "max_tokens": max_tokens
     });
@@ -192,7 +206,6 @@ fn build_request_body(
             .map_err(|e| LlmError::ApiError(format!("Failed to serialize tools: {}", e)))?;
     }
 
-    // Add any extra body parameters
     if let Some(extra) = extra_body {
         for (key, value) in &extra {
             request[key] = value.clone();
@@ -203,12 +216,19 @@ fn build_request_body(
         );
     }
 
-    // Debug: log the thinking parameter if present
     if let Some(thinking) = request.get("thinking") {
         debug!(
             "Request 'thinking' parameter: {}",
             serde_json::to_string(thinking).unwrap_or_default()
         );
+    }
+
+    let cache_count = messages
+        .iter()
+        .filter(|m| m.cache_control.is_some())
+        .count();
+    if cache_count > 0 {
+        debug!("Request has {} messages with cache_control", cache_count);
     }
 
     Ok(request)
@@ -334,6 +354,10 @@ fn parse_openai_sse_stream(
                                             .and_then(|d| d.get("cached_tokens"))
                                             .and_then(|v| v.as_u64())
                                             .unwrap_or(0);
+
+                                        if cache_read_tokens > 0 {
+                                            debug!("OpenAI cache tokens parsed: {}", cache_read_tokens);
+                                        }
 
                                         yield Ok(ProviderResponseChunk::Done(Usage {
                                             input_tokens,

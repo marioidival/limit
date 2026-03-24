@@ -1,4 +1,4 @@
-use limit_llm::{BrowserConfigSection, CompactionSettings, Config, ProviderConfig};
+use limit_llm::{BrowserConfigSection, CacheSettings, CompactionSettings, Config, ProviderConfig};
 use serial_test::serial;
 use std::collections::HashMap;
 #[test]
@@ -30,8 +30,7 @@ fn test_anthropic_env_fallback() {
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let provider_config = config.providers.get("anthropic").unwrap();
@@ -72,8 +71,7 @@ fn test_openai_env_fallback() {
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let provider_config = config.providers.get("openai").unwrap();
@@ -114,8 +112,7 @@ fn test_openai_zai_api_key_fallback() {
         providers,
         browser: BrowserConfigSection::default(),
         compaction: CompactionSettings::default(),
-            cache: CacheSettings::default(),
-            cache: CacheSettings::default(),
+        cache: CacheSettings::default(),
     };
 
     let provider_config = config.providers.get("openai").unwrap();
