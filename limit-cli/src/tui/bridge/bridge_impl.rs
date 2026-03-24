@@ -151,6 +151,41 @@ impl TuiBridge {
         })
     }
 
+    /// Trigger TLDR warm if enabled for the project
+    pub fn trigger_tldr_warm_if_enabled(&self) {
+        use crate::project_settings::ProjectSettings;
+        use std::path::PathBuf;
+
+        let project_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let settings = match ProjectSettings::new() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::debug!("Failed to get project settings: {}", e);
+                return;
+            }
+        };
+
+        if settings.is_warm_enabled(&project_path) {
+            tracing::info!("TLDR warm enabled, triggering background warm");
+            let agent_bridge = Arc::clone(&self.agent_bridge);
+            std::thread::spawn(move || {
+                let rt = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        tracing::error!("Failed to create tokio runtime for TLDR warm: {}", e);
+                        return;
+                    }
+                };
+                rt.block_on(async {
+                    let tldr_tool = agent_bridge.lock().unwrap().tldr_tool();
+                    if let Some(tldr_tool) = tldr_tool {
+                        tldr_tool.run_warm().await;
+                    }
+                });
+            });
+        }
+    }
+
     /// Get a clone of the agent bridge Arc for spawning tasks
     pub fn agent_bridge_arc(&self) -> Arc<Mutex<AgentBridge>> {
         self.agent_bridge.clone()

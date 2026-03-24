@@ -134,6 +134,8 @@ impl TuiApp {
     }
 
     fn run_inner(&mut self) -> Result<(), CliError> {
+        self.tui_bridge.trigger_tldr_warm_if_enabled();
+
         while self.running {
             // Process events from the agent
             self.tui_bridge.process_events()?;
