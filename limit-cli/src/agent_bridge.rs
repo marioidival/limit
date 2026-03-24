@@ -11,8 +11,10 @@ use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
 use limit_agent::Tool;
+use limit_llm::apply_cache_control;
 use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
+use limit_llm::ModelHandoff;
 use limit_llm::ProviderFactory;
 use limit_llm::ProviderResponseChunk;
 use limit_llm::TrackingDb;
@@ -77,9 +79,6 @@ const MAX_RECENT_TOOL_CALLS: usize = 20;
 /// Maximum characters in tool result before truncation
 const MAX_TOOL_RESULT_CHARS: usize = 10000;
 
-/// Maximum messages to keep in context (excluding system message)
-const MAX_CONTEXT_MESSAGES: usize = 50;
-
 /// Bridge connecting limit-cli REPL to limit-agent executor and limit-llm client
 pub struct AgentBridge {
     /// LLM client for communicating with LLM providers
@@ -101,6 +100,8 @@ pub struct AgentBridge {
     /// Recent tool calls for deduplication (tool_name, args_hash)
     recent_tool_calls: RefCell<Vec<(String, u64)>>,
     tldr_tool: Option<Arc<TldrTool>>,
+    /// Token-aware compaction handler
+    handoff: ModelHandoff,
 }
 
 impl AgentBridge {
@@ -174,6 +175,7 @@ impl AgentBridge {
             operation_id: 0,
             recent_tool_calls: RefCell::new(Vec::new()),
             tldr_tool,
+            handoff: ModelHandoff::new(),
         })
     }
 
@@ -341,6 +343,7 @@ impl AgentBridge {
                 content: Some(get_system_prompt()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             };
             _messages.push(system_message);
         }
@@ -351,6 +354,7 @@ impl AgentBridge {
             content: Some(user_input.to_string()),
             tool_calls: None,
             tool_call_id: None,
+                cache_control: None,
         };
         _messages.push(user_message);
 
@@ -387,11 +391,29 @@ impl AgentBridge {
             // Track timing for token usage
             let request_start = std::time::Instant::now();
 
-            truncate_context(_messages);
+            // Token-aware compaction if enabled
+            if self.config.compaction.enabled {
+                let context_window: usize = 200_000; // Default context window for most models
+                let target_tokens =
+                    context_window.saturating_sub(self.config.compaction.reserve_tokens as usize);
+                let current_tokens = self.handoff.count_total_tokens(_messages);
+
+                if current_tokens > target_tokens {
+                    debug!(
+                        "Compacting context: {} tokens > {} target, keeping {} recent tokens",
+                        current_tokens, target_tokens, self.config.compaction.keep_recent_tokens
+                    );
+                    let compacted = self.handoff.compact_messages(_messages, target_tokens);
+                    *_messages = compacted;
+                }
+            }
+
+            // Apply cache control to messages for prompt caching
+            let cached_messages = apply_cache_control(_messages, &self.config.cache);
 
             let mut stream = self
                 .llm_client
-                .send(_messages.clone(), tool_definitions.clone())
+                .send(cached_messages, tool_definitions.clone())
                 .await
                 .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
@@ -574,6 +596,7 @@ impl AgentBridge {
                 content: None, // Don't include content when tool_calls are present
                 tool_calls: Some(tool_calls.clone()),
                 tool_call_id: None,
+                cache_control: None,
             };
             _messages.push(assistant_message);
 
@@ -632,6 +655,7 @@ impl AgentBridge {
                         content: Some(result_str),
                         tool_calls: None,
                         tool_call_id: Some(id.clone()),
+                        cache_control: None,
                     };
                     _messages.push(tool_result_message);
                 }
@@ -694,6 +718,7 @@ impl AgentBridge {
                         content: Some(truncate_tool_result(&output_json)),
                         tool_calls: None,
                         tool_call_id: Some(result.call_id),
+                        cache_control: None,
                     };
                     _messages.push(tool_result_message);
                 }
@@ -731,6 +756,7 @@ impl AgentBridge {
                 ),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             };
             _messages.push(constraint_message);
 
@@ -831,6 +857,7 @@ impl AgentBridge {
                         content: Some(full_response.clone()),
                         tool_calls: None,
                         tool_call_id: None,
+                cache_control: None,
                     };
                     _messages.push(final_assistant_message);
                 }
@@ -842,6 +869,7 @@ impl AgentBridge {
                     content: Some(full_response.clone()),
                     tool_calls: None,
                     tool_call_id: None,
+                cache_control: None,
                 };
                 _messages.push(final_assistant_message);
             }
@@ -1480,20 +1508,6 @@ fn truncate_tool_result(result: &str) -> String {
     }
 }
 
-fn truncate_context(messages: &mut Vec<Message>) {
-    if messages.len() <= MAX_CONTEXT_MESSAGES + 1 {
-        return;
-    }
-    let system_msg = messages.first().filter(|m| m.role == Role::System).cloned();
-    messages.drain(1..);
-    if messages.len() > MAX_CONTEXT_MESSAGES {
-        messages.drain(..messages.len() - MAX_CONTEXT_MESSAGES);
-    }
-    if let Some(system) = system_msg {
-        messages.insert(0, system);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1520,6 +1534,8 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            compaction: limit_llm::CompactionSettings::default(),
+            cache: limit_llm::CacheSettings::default(),
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1546,6 +1562,8 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            compaction: limit_llm::CompactionSettings::default(),
+            cache: limit_llm::CacheSettings::default(),
         };
 
         let result = AgentBridge::new(config);
@@ -1572,6 +1590,8 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            compaction: limit_llm::CompactionSettings::default(),
+            cache: limit_llm::CacheSettings::default(),
         };
 
         let bridge = AgentBridge::new(config).unwrap();
@@ -1638,9 +1658,115 @@ mod tests {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            compaction: limit_llm::CompactionSettings::default(),
+            cache: limit_llm::CacheSettings::default(),
         };
 
         let bridge = AgentBridge::new(config_with_key).unwrap();
         assert!(bridge.is_ready());
+    }
+
+    #[test]
+    fn test_handoff_compaction_preserves_system() {
+        let handoff = ModelHandoff::new();
+
+        let mut messages = vec![Message {
+            role: Role::System,
+            content: Some("System prompt".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+                cache_control: None,
+        }];
+
+        for i in 0..50 {
+            messages.push(Message {
+                role: if i % 2 == 0 {
+                    Role::User
+                } else {
+                    Role::Assistant
+                },
+                content: Some(format!(
+                    "Message {} with enough content to consume tokens",
+                    i
+                )),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            });
+        }
+
+        let target = 500;
+        let compacted = handoff.compact_messages(&messages, target);
+
+        assert_eq!(compacted[0].role, Role::System);
+        assert!(compacted.len() < messages.len());
+    }
+
+    #[test]
+    fn test_handoff_compaction_keeps_recent() {
+        let handoff = ModelHandoff::new();
+
+        let mut messages = vec![Message {
+            role: Role::System,
+            content: Some("System".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+                cache_control: None,
+        }];
+
+        for i in 0..100 {
+            messages.push(Message {
+                role: if i % 2 == 0 {
+                    Role::User
+                } else {
+                    Role::Assistant
+                },
+                content: Some(format!("Message {}", i)),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            });
+        }
+
+        let target = 200;
+        let compacted = handoff.compact_messages(&messages, target);
+
+        assert!(compacted.len() < messages.len());
+        let last_content = compacted.last().unwrap().content.clone();
+        assert_eq!(last_content, Some("Message 99".to_string()));
+    }
+
+    #[test]
+    fn test_compaction_config_respects_settings() {
+        let mut providers = HashMap::new();
+        providers.insert(
+            "anthropic".to_string(),
+            ProviderConfig {
+                api_key: Some("test-key".to_string()),
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                base_url: None,
+                max_tokens: 4096,
+                timeout: 60,
+                max_iterations: 100,
+                thinking_enabled: false,
+                clear_thinking: true,
+            },
+        );
+
+        let config = LlmConfig {
+            provider: "anthropic".to_string(),
+            providers,
+            browser: BrowserConfigSection::default(),
+            compaction: limit_llm::CompactionSettings {
+                enabled: true,
+                reserve_tokens: 8192,
+                keep_recent_tokens: 10000,
+            },
+        };
+
+        let bridge = AgentBridge::new(config).unwrap();
+        assert!(bridge.config.compaction.enabled);
+        assert_eq!(bridge.config.compaction.reserve_tokens, 8192);
+        assert_eq!(bridge.config.compaction.keep_recent_tokens, 10000);
     }
 }
