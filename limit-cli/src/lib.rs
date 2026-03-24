@@ -44,6 +44,10 @@ pub mod session_share;
 pub mod session_tree;
 pub mod system_prompt;
 
+pub use session_tree::{
+    generate_entry_id, SerializableMessage, SessionEntry, SessionEntryType, SessionTree,
+};
+
 pub mod error;
 pub mod file_finder;
 pub mod logging;

@@ -9,6 +9,8 @@ pub enum CliError {
     ConfigError(String),
     #[error("Agent error: {0}")]
     AgentError(#[from] limit_agent::error::AgentError),
+    #[error("Session tree error: {0}")]
+    SessionTreeError(#[from] crate::session_tree::SessionTreeError),
     #[error("{0}")]
     Other(String),
 }

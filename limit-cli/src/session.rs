@@ -1,4 +1,5 @@
 use crate::error::CliError;
+use crate::session_tree::{SessionEntry, SessionTree};
 use bincode::{deserialize, serialize};
 use chrono::{DateTime, Utc};
 use limit_llm::Message;
@@ -337,6 +338,72 @@ impl SessionManager {
         .map_err(|e| CliError::ConfigError(format!("Failed to update session tokens: {}", e)))?;
         Ok(())
     }
+
+    /// Create a new tree-based session
+    pub fn create_tree_session(
+        &self,
+        session_id: &str,
+        cwd: String,
+    ) -> Result<SessionTree, CliError> {
+        let tree = SessionTree::new(cwd);
+        let file_path = self.tree_session_path(session_id);
+
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        tree.save_to_file(&file_path)?;
+        Ok(tree)
+    }
+
+    /// Load a tree-based session
+    pub fn load_tree_session(&self, session_id: &str) -> Result<SessionTree, CliError> {
+        let file_path = self.tree_session_path(session_id);
+        SessionTree::load_from_file(&file_path)
+            .map_err(|e| CliError::ConfigError(format!("Failed to load tree session: {}", e)))
+    }
+
+    /// Append entry to tree session (incremental save)
+    pub fn append_tree_entry(
+        &self,
+        session_id: &str,
+        entry: &SessionEntry,
+    ) -> Result<(), CliError> {
+        let file_path = self.tree_session_path(session_id);
+
+        if !file_path.exists() {
+            return Err(CliError::ConfigError(
+                "Tree session file not found".to_string(),
+            ));
+        }
+
+        let tree = self.load_tree_session(session_id)?;
+        tree.append_to_file(&file_path, entry)?;
+        Ok(())
+    }
+
+    /// Save complete tree session
+    pub fn save_tree_session(&self, session_id: &str, tree: &SessionTree) -> Result<(), CliError> {
+        let file_path = self.tree_session_path(session_id);
+
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        tree.save_to_file(&file_path)?;
+        Ok(())
+    }
+
+    /// Check if a tree session exists
+    pub fn has_tree_session(&self, session_id: &str) -> Result<bool, CliError> {
+        let path = self.tree_session_path(session_id);
+        Ok(path.exists())
+    }
+
+    /// Get the file path for a tree session
+    fn tree_session_path(&self, session_id: &str) -> PathBuf {
+        self.sessions_dir.join(format!("{}.jsonl", session_id))
+    }
 }
 
 #[cfg(test)]
@@ -411,14 +478,12 @@ mod tests {
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
-                cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Assistant,
                 content: Some("Hi there!".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
-                cache_control: None,
                 cache_control: None,
             },
         ];
@@ -509,7 +574,6 @@ mod tests {
             content: Some("Test message".to_string()),
             tool_calls: None,
             tool_call_id: None,
-                cache_control: None,
             cache_control: None,
         }];
 
@@ -527,5 +591,41 @@ mod tests {
         let loaded = manager2.load_session(&session_id).unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].content, Some("Test message".to_string()));
+    }
+
+    #[test]
+    fn test_tree_session_save_load() {
+        use crate::session_tree::{generate_entry_id, SerializableMessage, SessionEntryType};
+
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("session.db");
+        let sessions_dir = dir.path().join("sessions");
+
+        let manager = SessionManager::with_paths(db_path, sessions_dir).unwrap();
+        let session_id = manager.create_new_session().unwrap();
+
+        manager
+            .create_tree_session(&session_id, "/test".to_string())
+            .unwrap();
+
+        let entry = SessionEntry {
+            id: generate_entry_id(),
+            parent_id: None,
+            timestamp: Utc::now().to_rfc3339(),
+            entry_type: SessionEntryType::Message {
+                message: SerializableMessage::from(Message {
+                    role: limit_llm::Role::User,
+                    content: Some("Hello".to_string()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    cache_control: None,
+                }),
+            },
+        };
+
+        manager.append_tree_entry(&session_id, &entry).unwrap();
+
+        let loaded = manager.load_tree_session(&session_id).unwrap();
+        assert_eq!(loaded.entries().len(), 1);
     }
 }
