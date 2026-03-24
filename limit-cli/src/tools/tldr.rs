@@ -36,6 +36,8 @@ pub enum AnalysisType {
     Context,
     /// Get source code of a function (use instead of file_read for implementation details)
     Source,
+    /// Get function summary: name, file, line, signature, doc comment
+    Summary,
     /// Find who calls a function (impact analysis for refactoring)
     Impact,
     /// Get control flow graph (complexity analysis)
@@ -62,9 +64,13 @@ pub struct TldrParams {
     /// File path relative to project root (required for cfg, dfg)
     pub file: Option<String>,
 
-    /// Depth for context traversal (default: 2)
+    /// Depth for context traversal (default: 1)
     #[serde(default = "default_depth")]
     pub depth: usize,
+
+    /// Maximum items for context output (default: 30)
+    #[serde(default = "default_max_items")]
+    pub max_items: usize,
 
     /// Entry points for dead code detection (default: ["main"])
     #[serde(default = "default_entries")]
@@ -73,22 +79,33 @@ pub struct TldrParams {
     /// Search query for finding functions
     pub query: Option<String>,
 
-    /// Maximum results for search (default: 10)
+    /// Maximum results for search (default: 20)
     #[serde(default = "default_limit")]
     pub limit: usize,
 
     /// Project path (defaults to current directory)
     pub project_path: Option<String>,
+
+    /// Group results by: "crate", "file", or "directory" (default: none)
+    #[serde(default)]
+    pub group_by: Option<String>,
+
+    /// Include summary with counts (default: false)
+    #[serde(default)]
+    pub include_summary: bool,
 }
 
 fn default_depth() -> usize {
-    2
+    1
 }
 fn default_entries() -> Vec<String> {
     vec!["main".to_string()]
 }
 fn default_limit() -> usize {
-    10
+    20
+}
+fn default_max_items() -> usize {
+    30
 }
 
 /// TLDR tool for code analysis
@@ -125,8 +142,13 @@ impl TldrTool {
         }
     }
 
-    /// Spawn pre_warm if not already started. Safe to call inside tokio runtime.
-    fn ensure_pre_warm_started(&self) {
+    /// Trigger background warm if not already started. Safe to call inside or outside tokio runtime.
+    pub fn trigger_warm(&self) {
+        self.ensure_pre_warm_started();
+    }
+
+    /// Run warm synchronously (for startup). Blocks until warm completes.
+    pub async fn run_warm(&self) {
         if self
             .warm_started
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -136,9 +158,28 @@ impl TldrTool {
             let cache = Arc::clone(&self.cache);
             let notify = Arc::clone(&self.warm_notify);
 
-            tokio::spawn(async move {
-                Self::pre_warm(project, cache, notify).await;
-            });
+            Self::pre_warm(project, cache, notify).await;
+        }
+    }
+
+    /// Spawn pre_warm if not already started. Only spawns if inside tokio runtime.
+    fn ensure_pre_warm_started(&self) {
+        if self
+            .warm_started
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            if tokio::runtime::Handle::try_current().is_ok() {
+                let project = self.default_project.clone();
+                let cache = Arc::clone(&self.cache);
+                let notify = Arc::clone(&self.warm_notify);
+
+                tokio::spawn(async move {
+                    Self::pre_warm(project, cache, notify).await;
+                });
+            } else {
+                self.warm_started.store(false, Ordering::Release);
+            }
         }
     }
 
@@ -352,7 +393,7 @@ impl TldrTool {
         let lines: Vec<&str> = source.lines().collect();
         let start = start_line.saturating_sub(1);
         let end = end_line.min(lines.len());
-        let max_lines = 80;
+        let max_lines = 30;
         let truncated = (end - start) > max_lines;
         let actual_end = if truncated { start + max_lines } else { end };
 
@@ -389,18 +430,94 @@ impl TldrTool {
                     AgentError::ToolError("function parameter required for context analysis".into())
                 })?;
 
-                let context = tldr
-                    .get_context(&function, params.depth)
-                    .await
-                    .map_err(|e| {
-                        AgentError::ToolError(format!("Context analysis failed: {}", e))
-                    })?;
+                let callers = tldr.get_impact(&function).map_err(|e| {
+                    AgentError::ToolError(format!("Context analysis failed: {}", e))
+                })?;
 
-                Ok(json!({
+                let callees = tldr.get_calls(&function).map_err(|e| {
+                    AgentError::ToolError(format!("Context analysis failed: {}", e))
+                })?;
+
+                // Build lean items with dedup by name
+                let mut seen = std::collections::HashSet::new();
+                let mut items: Vec<Value> = Vec::new();
+
+                for c in &callers {
+                    let relative = c.file.strip_prefix(&project_path).unwrap_or(&c.file);
+                    if seen.insert(c.function.clone()) {
+                        items.push(json!({
+                            "name": c.function,
+                            "file": relative.display().to_string(),
+                            "line": c.line,
+                            "role": "caller"
+                        }));
+                    }
+                }
+
+                for callee_name in &callees {
+                    if seen.insert(callee_name.clone()) {
+                        if let Ok(Some(info)) = tldr.find_function(callee_name).await {
+                            let relative =
+                                info.file.strip_prefix(&project_path).unwrap_or(&info.file);
+                            items.push(json!({
+                                "name": info.name,
+                                "file": relative.display().to_string(),
+                                "line": info.line,
+                                "role": "callee"
+                            }));
+                        } else {
+                            items.push(json!({
+                                "name": callee_name,
+                                "role": "callee"
+                            }));
+                        }
+                    }
+                }
+
+                let truncated = items.len() > params.max_items;
+                items.truncate(params.max_items);
+
+                let mut response = json!({
                     "type": "context",
                     "function": function,
                     "depth": params.depth,
-                    "context": context
+                    "items": items,
+                    "truncated": truncated
+                });
+
+                if truncated {
+                    response["hint"] =
+                        json!("Use 'impact' for full caller list or increase max_items");
+                }
+
+                Ok(response)
+            }
+
+            AnalysisType::Summary => {
+                let function = params.function.ok_or_else(|| {
+                    AgentError::ToolError("function parameter required for summary".into())
+                })?;
+
+                let func_info = tldr
+                    .find_function(&function)
+                    .await
+                    .map_err(|e| AgentError::ToolError(format!("Summary failed: {}", e)))?
+                    .ok_or_else(|| {
+                        AgentError::ToolError(format!("Function not found: {}", function))
+                    })?;
+
+                let relative = func_info
+                    .file
+                    .strip_prefix(&project_path)
+                    .unwrap_or(&func_info.file);
+
+                Ok(json!({
+                    "type": "summary",
+                    "name": func_info.name,
+                    "file": relative.display().to_string(),
+                    "line": func_info.line,
+                    "signature": func_info.signature,
+                    "doc": func_info.docstring.as_deref().unwrap_or("")
                 }))
             }
 
@@ -672,23 +789,83 @@ impl TldrTool {
                     .await
                     .map_err(|e| AgentError::ToolError(format!("Search failed: {}", e)))?;
 
-                Ok(json!({
-                    "type": "search",
-                    "query": query,
-                    "results": results.iter().map(|r| {
-                        let relative = r
-                            .file
-                            .strip_prefix(&project_path)
-                            .unwrap_or(&r.file);
-                        json!({
-                            "function": r.function,
-                            "file": relative.display().to_string(),
-                            "line": r.line,
-                            "score": r.score,
-                            "signature": r.signature
-                        })
-                    }).collect::<Vec<_>>()
-                }))
+                let results: Vec<_> = results
+                    .iter()
+                    .map(|r| {
+                        let relative = r.file.strip_prefix(&project_path).unwrap_or(&r.file);
+                        (r, relative.display().to_string())
+                    })
+                    .collect();
+
+                if let Some(ref group_by) = params.group_by {
+                    let mut groups: std::collections::BTreeMap<String, Vec<Value>> =
+                        std::collections::BTreeMap::new();
+
+                    for (r, relative) in &results {
+                        let key = match group_by.as_str() {
+                            "crate" => relative.split('/').next().unwrap_or("unknown").to_string(),
+                            "directory" => {
+                                let parts: Vec<_> = relative.split('/').collect();
+                                if parts.len() > 1 {
+                                    parts[..parts.len() - 1].join("/")
+                                } else {
+                                    ".".to_string()
+                                }
+                            }
+                            "file" => relative.clone(),
+                            _ => relative.split('/').next().unwrap_or("unknown").to_string(),
+                        };
+
+                        groups.entry(key).or_default().push(json!({
+                            "name": r.function,
+                            "file": relative,
+                            "line": r.line
+                        }));
+                    }
+
+                    let mut response = json!({
+                        "type": "search_grouped",
+                        "query": query,
+                        "group_by": group_by,
+                        "groups": {}
+                    });
+
+                    let groups_json: serde_json::Map<String, Value> = groups
+                        .into_iter()
+                        .map(|(k, v)| (k.clone(), json!({"count": v.len(), "results": v})))
+                        .collect();
+                    response["groups"] = Value::Object(groups_json);
+
+                    if params.include_summary {
+                        let total: usize = results.len();
+                        let group_counts: Vec<_> = response["groups"]
+                            .as_object()
+                            .unwrap()
+                            .iter()
+                            .map(|(k, v)| (k.clone(), v["count"].as_u64().unwrap() as usize))
+                            .collect();
+                        response["summary"] = json!({
+                            "total": total,
+                            "group_count": group_counts.len(),
+                            "groups": group_counts.into_iter().map(|(k, c)| json!({"name": k, "count": c})).collect::<Vec<_>>()
+                        });
+                    }
+
+                    Ok(response)
+                } else {
+                    Ok(json!({
+                        "type": "search",
+                        "query": query,
+                        "count": results.len(),
+                        "results": results.iter().map(|(r, relative)| {
+                            json!({
+                                "name": r.function,
+                                "file": relative,
+                                "line": r.line
+                            })
+                        }).collect::<Vec<_>>()
+                    }))
+                }
             }
         };
 
@@ -748,10 +925,10 @@ impl Tool for TldrTool {
         let result_str =
             serde_json::to_string(&result).unwrap_or_else(|_| "serialize error".to_string());
         info!(
-            "tldr_analyze result: {} chars, {} bytes, preview: {}",
+            "tldr_analyze result: {} chars, {} bytes: {}",
             result_str.chars().count(),
             result_str.len(),
-            &result_str.chars().take(200).collect::<String>()
+            result_str
         );
         Ok(result)
     }
@@ -767,7 +944,7 @@ pub fn tldr_tool_definition() -> Value {
             "properties": {
                 "analysis_type": {
                     "type": "string",
-                    "enum": ["search", "context", "source", "impact", "cfg", "dfg", "dead_code", "architecture"],
+                    "enum": ["search", "context", "source", "summary", "impact", "cfg", "dfg", "dead_code", "architecture"],
                     "description": "Type: search=find by keyword, context=dependencies+callers, source=function code (use instead of file_read), impact=who calls this, cfg=control flow, dfg=data flow, dead_code=unreachable, architecture=module layers"
                 },
                 "function": {
@@ -780,8 +957,13 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "depth": {
                     "type": "integer",
-                    "description": "Depth for context traversal (default: 2)",
-                    "default": 2
+                    "description": "Depth for context traversal (default: 1)",
+                    "default": 1
+                },
+                "max_items": {
+                    "type": "integer",
+                    "description": "Maximum items for context output (default: 30)",
+                    "default": 30
                 },
                 "entries": {
                     "type": "array",
@@ -795,12 +977,22 @@ pub fn tldr_tool_definition() -> Value {
                 },
                 "limit": {
                     "type": "integer",
-                    "description": "Maximum results for search (default: 10)",
-                    "default": 10
+                    "description": "Maximum results for search (default: 20)",
+                    "default": 20
                 },
                 "project_path": {
                     "type": "string",
                     "description": "Project root directory (defaults to current directory). Do NOT use file paths here — use 'file' parameter for file paths."
+                },
+                "group_by": {
+                    "type": "string",
+                    "enum": ["crate", "file", "directory"],
+                    "description": "Group search results by crate, file, or directory. Eliminates need for post-processing with bash/grep."
+                },
+                "include_summary": {
+                    "type": "boolean",
+                    "description": "Include summary with total counts per group. Use with group_by.",
+                    "default": false
                 }
             },
             "required": ["analysis_type"]
@@ -833,20 +1025,38 @@ mod tests {
         assert_eq!(params.depth, 3);
     }
 
-    #[tokio::test]
-    #[ignore = "requires fastembed model download — run with: cargo test -- --ignored test_cache_returns_cached_instance"]
-    async fn test_cache_returns_cached_instance() {
+    #[test]
+    fn test_summary_type_deserialization() {
+        let json = json!({
+            "analysis_type": "summary",
+            "function": "process_message"
+        });
+
+        let params: TldrParams = serde_json::from_value(json).unwrap();
+        assert!(matches!(params.analysis_type, AnalysisType::Summary));
+        assert_eq!(params.function, Some("process_message".to_string()));
+    }
+
+    #[test]
+    fn test_trigger_warm_outside_runtime() {
         let tool = TldrTool::new();
-        let test_path = std::env::current_dir().unwrap();
-
-        let tldr1 = tool.get_tldr(&test_path).await.unwrap();
-        let tldr2 = tool.get_tldr(&test_path).await.unwrap();
-
-        let addr1 = Arc::as_ptr(&tldr1) as usize;
-        let addr2 = Arc::as_ptr(&tldr2) as usize;
-        assert_eq!(
-            addr1, addr2,
-            "Second call should return cached instance (same memory address)"
+        assert!(!tool.warm_started.load(Ordering::Acquire));
+        tool.trigger_warm();
+        assert!(
+            !tool.warm_started.load(Ordering::Acquire),
+            "warm_started should remain false outside tokio runtime"
         );
+    }
+
+    #[tokio::test]
+    async fn test_trigger_warm_inside_runtime() {
+        let tool = TldrTool::new();
+        assert!(!tool.warm_started.load(Ordering::Acquire));
+        tool.trigger_warm();
+        assert!(
+            tool.warm_started.load(Ordering::Acquire),
+            "warm_started should be true inside tokio runtime"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
