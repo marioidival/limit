@@ -88,6 +88,10 @@ pub struct Message {
     /// Only present in tool result messages.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+
+    /// Cache control for prompt caching (Anthropic/OpenAI).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
 }
 
 /// The role of a message sender in a conversation.
@@ -113,6 +117,40 @@ pub enum Role {
 
     /// A tool result message containing the output of a tool execution.
     Tool,
+}
+
+/// Cache control settings for prompt caching.
+///
+/// Used to enable API-level caching of messages to reduce input token costs.
+/// Supported by Anthropic Claude and OpenAI models.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CacheControl {
+    /// The type of cache control. Currently only "ephemeral" is supported.
+    #[serde(rename = "type")]
+    pub cache_type: String,
+
+    /// Time-to-live for the cache entry (Anthropic only).
+    /// Options: "5m" (default), "1h" when long retention is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl: Option<String>,
+}
+
+impl CacheControl {
+    /// Create a new ephemeral cache control with default TTL.
+    pub fn ephemeral() -> Self {
+        Self {
+            cache_type: "ephemeral".to_string(),
+            ttl: None,
+        }
+    }
+
+    /// Create an ephemeral cache control with long TTL (1 hour).
+    pub fn ephemeral_long() -> Self {
+        Self {
+            cache_type: "ephemeral".to_string(),
+            ttl: Some("1h".to_string()),
+        }
+    }
 }
 
 /// A tool call made by the assistant.
@@ -229,6 +267,21 @@ pub struct Usage {
 
     /// Number of tokens in the completion/output.
     pub output_tokens: u64,
+
+    /// Number of tokens read from cache (~10% of input cost).
+    #[serde(default)]
+    pub cache_read_tokens: u64,
+
+    /// Number of tokens written to cache.
+    #[serde(default)]
+    pub cache_write_tokens: u64,
+}
+
+impl Usage {
+    /// Calculate total tokens including cache operations.
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
+    }
 }
 
 #[cfg(test)]
@@ -242,6 +295,7 @@ mod tests {
             content: Some("Hello".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: Message = serde_json::from_str(&json).unwrap();
@@ -262,6 +316,7 @@ mod tests {
                 },
             }]),
             tool_call_id: None,
+            cache_control: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let deserialized: Message = serde_json::from_str(&json).unwrap();
@@ -275,6 +330,7 @@ mod tests {
             content: Some("result output".to_string()),
             tool_calls: None,
             tool_call_id: Some("call_123".to_string()),
+            cache_control: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         println!("Tool result message JSON: {}", json);
@@ -287,7 +343,7 @@ mod tests {
     fn test_assistant_with_tool_calls_serialization() {
         let msg = Message {
             role: Role::Assistant,
-            content: None, // Empty content
+            content: None,
             tool_calls: Some(vec![ToolCall {
                 id: "call_123".to_string(),
                 tool_type: "function".to_string(),
@@ -297,10 +353,10 @@ mod tests {
                 },
             }]),
             tool_call_id: None,
+            cache_control: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         println!("Assistant with tool_calls JSON: {}", json);
-        // Content should be omitted when None
         assert!(!json.contains("\"content\":null"));
         assert!(json.contains("tool_calls"));
     }
@@ -335,6 +391,8 @@ mod tests {
             usage: Usage {
                 input_tokens: 10,
                 output_tokens: 5,
+                cache_read_tokens: 0,
+                cache_write_tokens: 0,
             },
         };
         let json = serde_json::to_string(&response).unwrap();
@@ -348,10 +406,52 @@ mod tests {
         let usage = Usage {
             input_tokens: 100,
             output_tokens: 50,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
         };
         let json = serde_json::to_string(&usage).unwrap();
         let deserialized: Usage = serde_json::from_str(&json).unwrap();
         assert_eq!(usage.input_tokens, deserialized.input_tokens);
         assert_eq!(usage.output_tokens, deserialized.output_tokens);
+    }
+
+    #[test]
+    fn test_cache_control_serialization() {
+        let cache = CacheControl::ephemeral();
+        let json = serde_json::to_string(&cache).unwrap();
+        assert_eq!(json, r#"{"type":"ephemeral"}"#);
+
+        let cache_long = CacheControl::ephemeral_long();
+        let json_long = serde_json::to_string(&cache_long).unwrap();
+        assert!(json_long.contains(r#""ttl":"1h""#));
+    }
+
+    #[test]
+    fn test_message_with_cache_control() {
+        let msg = Message {
+            role: Role::User,
+            content: Some("Hello".to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+            cache_control: Some(CacheControl::ephemeral()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("cache_control"));
+        let deserialized: Message = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.cache_control.is_some());
+    }
+
+    #[test]
+    fn test_usage_with_cache_fields() {
+        let usage = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_tokens: 80,
+            cache_write_tokens: 20,
+        };
+        assert_eq!(usage.total_tokens(), 250);
+
+        let json = serde_json::to_string(&usage).unwrap();
+        assert!(json.contains("cache_read_tokens"));
     }
 }

@@ -176,7 +176,7 @@ pub mod types;
 pub mod zai_provider;
 
 pub use client::AnthropicClient;
-pub use config::{BrowserConfigSection, Config, ProviderConfig};
+pub use config::{BrowserConfigSection, CompactionSettings, Config, ProviderConfig};
 pub use error::LlmError;
 pub use handoff::ModelHandoff;
 pub use local_provider::LocalProvider;
@@ -185,5 +185,5 @@ pub use persistence::StatePersistence;
 pub use provider_factory::ProviderFactory;
 pub use providers::{LlmProvider, ProviderResponseChunk};
 pub use tracking::TrackingDb;
-pub use types::{FunctionCall, Message, Response, Role, Tool, ToolCall, ToolFunction, Usage};
+pub use types::{CacheControl, FunctionCall, Message, Response, Role, Tool, ToolCall, ToolFunction, Usage};
 pub use zai_provider::{ThinkingConfig, ZaiProvider};

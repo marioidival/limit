@@ -404,6 +404,7 @@ mod tests {
             content: Some("Hello".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let base_url = format!("{}/v1/messages", server.url());
@@ -459,6 +460,7 @@ mod tests {
             content: Some("Hello".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let base_url = format!("{}/v1/messages", server.url());
@@ -508,6 +510,7 @@ mod tests {
             content: Some("Hello".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let base_url = format!("{}/v1/messages", server.url());
@@ -553,6 +556,7 @@ mod tests {
             content: Some("Use test_tool".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let tools = vec![Tool {

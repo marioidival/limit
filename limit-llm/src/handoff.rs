@@ -148,6 +148,7 @@ mod tests {
             content: Some("Hello, world!".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         };
         let tokens = handoff.count_message_tokens(&msg);
         assert!(tokens > 4); // Content tokens + role overhead
@@ -168,6 +169,7 @@ mod tests {
                 },
             }]),
             tool_call_id: None,
+            cache_control: None,
         };
         let tokens = handoff.count_message_tokens(&msg);
         assert!(tokens > 10);
@@ -182,12 +184,14 @@ mod tests {
                 content: Some("Hello".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+            cache_control: None,
             },
             Message {
                 role: Role::Assistant,
                 content: Some("Hi there!".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+            cache_control: None,
             },
         ];
         let total = handoff.count_total_tokens(&messages);
@@ -203,12 +207,14 @@ mod tests {
                 content: Some("You are a helpful assistant.".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+            cache_control: None,
             },
             Message {
                 role: Role::User,
                 content: Some("Hello".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+            cache_control: None,
             },
         ];
         let compacted = handoff.compact_messages(&messages, 500);
@@ -226,6 +232,7 @@ mod tests {
             content: Some("System".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         // Add 100 messages
@@ -239,6 +246,7 @@ mod tests {
                 content: Some(format!("Message {}", i)),
                 tool_calls: None,
                 tool_call_id: None,
+            cache_control: None,
             });
         }
 
@@ -264,6 +272,7 @@ mod tests {
             content: Some("Hello".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let result = handoff.handoff_to_model(
@@ -285,6 +294,7 @@ mod tests {
             content: Some("System".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         // Create 5000 messages with substantial content to exceed 200K context
@@ -301,6 +311,7 @@ mod tests {
                 )),
                 tool_calls: None,
                 tool_call_id: None,
+            cache_control: None,
             });
         }
 

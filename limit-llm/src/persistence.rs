@@ -19,6 +19,7 @@ struct PersistedMessage {
     content: Option<String>,
     tool_calls: Option<Vec<crate::types::ToolCall>>,
     tool_call_id: Option<String>,
+    cache_control: Option<crate::types::CacheControl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -58,6 +59,7 @@ impl From<PersistedMessage> for Message {
             content: msg.content,
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
+            cache_control: msg.cache_control,
         }
     }
 }
@@ -69,6 +71,7 @@ impl From<Message> for PersistedMessage {
             content: msg.content,
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
+            cache_control: msg.cache_control,
         }
     }
 }
@@ -151,12 +154,14 @@ mod tests {
                 content: Some("Hello".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
             Message {
                 role: Role::Assistant,
                 content: Some("Hi there!".to_string()),
                 tool_calls: None,
                 tool_call_id: None,
+                cache_control: None,
             },
         ];
 
@@ -181,6 +186,7 @@ mod tests {
             content: Some("tool output".to_string()),
             tool_calls: None,
             tool_call_id: Some("call_123".to_string()),
+            cache_control: None,
         }];
 
         persistence.save(&messages).unwrap();

@@ -331,6 +331,8 @@ fn parse_openai_sse_stream(
                                         yield Ok(ProviderResponseChunk::Done(Usage {
                                             input_tokens,
                                             output_tokens,
+                                            cache_read_tokens: 0,
+                                            cache_write_tokens: 0,
                                         }));
                                         return;
                                     } else {
@@ -338,6 +340,8 @@ fn parse_openai_sse_stream(
                                         yield Ok(ProviderResponseChunk::Done(Usage {
                                             input_tokens: 0,
                                             output_tokens: 0,
+                                            cache_read_tokens: 0,
+                                            cache_write_tokens: 0,
                                         }));
                                         return;
                                     }
@@ -422,6 +426,7 @@ mod tests {
             content: Some("Hello".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let base_url = format!("{}/v1/chat/completions", server.url());
@@ -463,6 +468,7 @@ mod tests {
             content: Some("Use test_tool".to_string()),
             tool_calls: None,
             tool_call_id: None,
+            cache_control: None,
         }];
 
         let tools = vec![Tool {
