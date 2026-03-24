@@ -117,12 +117,49 @@ impl ModelHandoff {
 
         let current_tokens = self.count_total_tokens(messages);
 
-        // Only compact if we're over the target (with 10% buffer for safety)
         if current_tokens > target_tokens * 9 / 10 {
             Ok(self.compact_messages(messages, target_tokens))
         } else {
             Ok(messages.to_vec())
         }
+    }
+
+    pub fn find_cut_point(&self, messages: &[Message], keep_recent_tokens: usize) -> Option<usize> {
+        if messages.is_empty() {
+            return None;
+        }
+
+        let non_system: Vec<_> = messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| !matches!(m.role, Role::System))
+            .collect();
+
+        if non_system.is_empty() {
+            return None;
+        }
+
+        let mut accumulated = 0;
+        for (idx, msg) in non_system.iter().rev() {
+            accumulated += self.count_message_tokens(msg);
+
+            if accumulated >= keep_recent_tokens {
+                let cut_idx = self.find_valid_cut_point(&non_system, *idx);
+                return Some(cut_idx);
+            }
+        }
+
+        Some(0)
+    }
+
+    fn find_valid_cut_point(&self, non_system: &[(usize, &Message)], min_idx: usize) -> usize {
+        for (idx, msg) in non_system.iter() {
+            if *idx >= min_idx && matches!(msg.role, Role::User) {
+                return *idx;
+            }
+        }
+
+        min_idx
     }
 }
 
@@ -334,12 +371,9 @@ mod tests {
         let handoff = ModelHandoff::new();
         let text = "The quick brown fox jumps over the lazy dog. ";
 
-        // Count tokens
         let counted = handoff.count_tokens(text);
 
-        // Expected value based on cl100k_base tokenizer
         let expected = 11;
-        // Allow 10% tolerance for tokenizer variations
         let tolerance = (expected as f64 * 0.10) as i32;
 
         assert!(
@@ -349,5 +383,90 @@ mod tests {
             10,
             expected
         );
+    }
+
+    #[test]
+    fn test_find_cut_point_basic() {
+        let handoff = ModelHandoff::new();
+
+        let messages: Vec<Message> = (0..10)
+            .map(|i| Message {
+                role: if i % 2 == 0 {
+                    Role::User
+                } else {
+                    Role::Assistant
+                },
+                content: Some(format!("Message {} with some content to make it longer", i)),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            })
+            .collect();
+
+        let cut = handoff.find_cut_point(&messages, 50);
+        assert!(cut.is_some());
+        let cut_idx = cut.unwrap();
+        assert!(cut_idx > 0);
+        assert!(cut_idx < messages.len());
+    }
+
+    #[test]
+    fn test_find_cut_point_empty_messages() {
+        let handoff = ModelHandoff::new();
+        let messages: Vec<Message> = vec![];
+
+        let cut = handoff.find_cut_point(&messages, 100);
+        assert!(cut.is_none());
+    }
+
+    #[test]
+    fn test_find_cut_point_all_fit() {
+        let handoff = ModelHandoff::new();
+
+        let messages = vec![
+            Message {
+                role: Role::User,
+                content: Some("Short".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            },
+            Message {
+                role: Role::Assistant,
+                content: Some("Hi".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            },
+        ];
+
+        let cut = handoff.find_cut_point(&messages, 1000);
+        assert_eq!(cut, Some(0));
+    }
+
+    #[test]
+    fn test_find_cut_point_prefers_user_message() {
+        let handoff = ModelHandoff::new();
+
+        let mut messages = vec![];
+        for _ in 0..5 {
+            messages.push(Message {
+                role: Role::User,
+                content: Some("This is a user message with enough content".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            });
+            messages.push(Message {
+                role: Role::Assistant,
+                content: Some("Assistant reply".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            });
+        }
+
+        let cut = handoff.find_cut_point(&messages, 30).unwrap();
+        assert!(matches!(messages[cut].role, Role::User));
     }
 }
