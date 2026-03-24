@@ -17,6 +17,7 @@ use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use limit_llm::ModelHandoff;
 use limit_llm::ProviderFactory;
 use limit_llm::ProviderResponseChunk;
+use limit_llm::Summarizer;
 use limit_llm::TrackingDb;
 use serde_json::json;
 use std::cell::RefCell;
@@ -100,8 +101,8 @@ pub struct AgentBridge {
     /// Recent tool calls for deduplication (tool_name, args_hash)
     recent_tool_calls: RefCell<Vec<(String, u64)>>,
     tldr_tool: Option<Arc<TldrTool>>,
-    /// Token-aware compaction handler
     handoff: ModelHandoff,
+    summarizer: Option<Summarizer>,
 }
 
 impl AgentBridge {
@@ -138,10 +139,8 @@ impl AgentBridge {
         let mut tool_registry = ToolRegistry::new();
         let tldr_tool = Self::register_tools(&mut tool_registry, &config);
 
-        // Create executor (which takes ownership of registry as Arc)
         let executor = ToolExecutor::new(tool_registry);
 
-        // Generate tool definitions before giving ownership to executor
         let tool_names = vec![
             "file_read",
             "file_write",
@@ -164,6 +163,15 @@ impl AgentBridge {
             "tldr_analyze",
         ];
 
+        let summarizer = if config.compaction.enabled && config.compaction.use_summarization {
+            Some(Summarizer::new(
+                ProviderFactory::create_provider(&config)
+                    .map_err(|e| CliError::ConfigError(e.to_string()))?,
+            ))
+        } else {
+            None
+        };
+
         Ok(Self {
             llm_client,
             executor,
@@ -176,6 +184,7 @@ impl AgentBridge {
             recent_tool_calls: RefCell::new(Vec::new()),
             tldr_tool,
             handoff: ModelHandoff::new(),
+            summarizer,
         })
     }
 
@@ -213,6 +222,63 @@ impl AgentBridge {
         if let Some(ref tldr_tool) = self.tldr_tool {
             tldr_tool.run_warm().await;
         }
+    }
+
+    async fn maybe_compact(&self, messages: &mut Vec<Message>) {
+        if !self.config.compaction.enabled {
+            return;
+        }
+
+        let context_window: usize = 200_000;
+        let target_tokens =
+            context_window.saturating_sub(self.config.compaction.reserve_tokens as usize);
+        let current_tokens = self.handoff.count_total_tokens(messages);
+
+        if current_tokens <= target_tokens {
+            return;
+        }
+
+        let keep_recent = self.config.compaction.keep_recent_tokens as usize;
+
+        if let Some(ref summarizer) = self.summarizer {
+            if let Some(cut_idx) = self.handoff.find_cut_point(messages, keep_recent) {
+                if cut_idx > 0 {
+                    let to_summarize = &messages[..cut_idx];
+
+                    match summarizer.summarize(to_summarize, None).await {
+                        Ok(summary) => {
+                            let summary_msg = Message {
+                                role: Role::User,
+                                content: Some(format!(
+                                    "<context_summary>\n{}\n</context_summary>",
+                                    summary
+                                )),
+                                tool_calls: None,
+                                tool_call_id: None,
+                                cache_control: None,
+                            };
+
+                            let mut new_messages = vec![summary_msg];
+                            new_messages.extend(messages[cut_idx..].to_vec());
+                            *messages = new_messages;
+
+                            debug!(
+                                "Compacted via summarization: {} messages -> {} messages",
+                                cut_idx,
+                                messages.len()
+                            );
+                            return;
+                        }
+                        Err(e) => {
+                            debug!("Summarization failed, falling back to truncation: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        let compacted = self.handoff.compact_messages(messages, target_tokens);
+        *messages = compacted;
     }
 
     fn hash_tool_call(tool_name: &str, args: &serde_json::Value) -> u64 {
@@ -388,32 +454,10 @@ impl AgentBridge {
                 operation_id: self.operation_id,
             });
 
-            // Track timing for token usage
             let request_start = std::time::Instant::now();
 
-            // Token-aware compaction if enabled
-            if self.config.compaction.enabled {
-                let context_window: usize = 200_000; // Default context window for most models
-                let target_tokens =
-                    context_window.saturating_sub(self.config.compaction.reserve_tokens as usize);
-                let current_tokens = self.handoff.count_total_tokens(_messages);
+            self.maybe_compact(_messages).await;
 
-                if current_tokens > target_tokens {
-                    debug!(
-                        "Compacting context: {} tokens > {} target, keeping {} recent tokens",
-                        current_tokens, target_tokens, self.config.compaction.keep_recent_tokens
-                    );
-                    let compacted = self.handoff.compact_messages(_messages, target_tokens);
-                    *_messages = compacted;
-                }
-            }
-
-            // Apply cache control to messages for prompt caching
-            debug!(
-                "Applying cache control: enabled={}, retention={}",
-                self.config.cache.is_enabled(),
-                self.config.cache.retention
-            );
             let cached_messages = apply_cache_control(_messages, &self.config.cache);
             let cache_count = cached_messages
                 .iter()
@@ -1792,6 +1836,7 @@ mod tests {
                 enabled: true,
                 reserve_tokens: 8192,
                 keep_recent_tokens: 10000,
+                use_summarization: true,
             },
             cache: limit_llm::CacheSettings::default(),
         };

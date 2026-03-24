@@ -1,6 +1,8 @@
 use crate::error::LlmError;
 use crate::providers::LlmProvider;
-use crate::types::{FunctionCall, Message, Role, ToolCall};
+#[allow(unused_imports)]
+use crate::types::ToolCall;
+use crate::types::{FunctionCall, Message, Role};
 use crate::ProviderResponseChunk;
 use futures::StreamExt;
 use std::collections::HashSet;
