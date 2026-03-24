@@ -2,6 +2,7 @@
 //!
 //! Provides a plugin-like command architecture for handling user commands.
 
+mod branch;
 mod browser;
 mod builtin;
 mod registry;
@@ -9,6 +10,7 @@ mod session;
 mod share;
 mod tldr;
 
+pub use branch::{branch_from, list_branches, BranchInfo};
 pub use browser::BrowserCommand;
 pub use builtin::{ClearCommand, ExitCommand, HelpCommand};
 pub use registry::{Command, CommandContext, CommandRegistry, CommandResult};
