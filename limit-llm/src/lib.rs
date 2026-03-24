@@ -162,6 +162,7 @@
 //! # }
 //! ```
 
+pub mod cache;
 pub mod client;
 pub mod config;
 pub mod error;
@@ -175,6 +176,7 @@ pub mod tracking;
 pub mod types;
 pub mod zai_provider;
 
+pub use cache::apply_cache_control;
 pub use client::AnthropicClient;
 pub use config::{BrowserConfigSection, CacheSettings, CompactionSettings, Config, ProviderConfig};
 pub use error::LlmError;

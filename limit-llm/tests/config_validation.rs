@@ -1,4 +1,6 @@
-use limit_llm::{BrowserConfigSection, Config, ProviderConfig, ProviderFactory};
+use limit_llm::{
+    BrowserConfigSection, CompactionSettings, Config, ProviderConfig, ProviderFactory,
+};
 use std::collections::HashMap;
 
 #[test]
@@ -21,6 +23,9 @@ fn test_unknown_provider_error() {
         provider: "openai".to_string(), // Known but not configured
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+            cache: CacheSettings::default(),
+            cache: CacheSettings::default(),
     };
 
     let result = ProviderFactory::create_provider(&config);
@@ -37,6 +42,9 @@ fn test_missing_provider_error() {
         provider: "anthropic".to_string(),
         providers: HashMap::new(),
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+            cache: CacheSettings::default(),
+            cache: CacheSettings::default(),
     };
 
     let result = ProviderFactory::create_provider(&config);
@@ -66,6 +74,9 @@ fn test_missing_api_key_error() {
         provider: "anthropic".to_string(),
         providers,
         browser: BrowserConfigSection::default(),
+        compaction: CompactionSettings::default(),
+            cache: CacheSettings::default(),
+            cache: CacheSettings::default(),
     };
 
     // Ensure no env var is set
