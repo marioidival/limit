@@ -414,6 +414,13 @@ impl TuiBridge {
         })?;
 
         session_manager.save_session(&session_id, &messages, input_tokens, output_tokens)?;
+
+        if !messages.is_empty() {
+            if let Err(e) = session_manager.migrate_to_tree(&session_id) {
+                tracing::warn!("Failed to migrate session to tree format: {}", e);
+            }
+        }
+
         tracing::info!(
             "✓ Session {} saved successfully ({} messages, {} in tokens, {} out tokens)",
             session_id,
