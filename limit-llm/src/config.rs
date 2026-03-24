@@ -10,6 +10,10 @@ pub struct Config {
     pub providers: HashMap<String, ProviderConfig>,
     #[serde(default)]
     pub browser: BrowserConfigSection,
+    #[serde(default)]
+    pub compaction: CompactionSettings,
+    #[serde(default)]
+    pub cache: CacheSettings,
 }
 
 /// Browser configuration section in config.toml
@@ -54,6 +58,77 @@ fn default_true() -> bool {
 
 fn default_browser_timeout() -> u64 {
     30_000
+}
+
+/// Compaction settings for managing context window
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct CompactionSettings {
+    /// Enable token-aware compaction (default: true)
+    #[serde(default = "default_compaction_enabled")]
+    pub enabled: bool,
+    /// Tokens to reserve for LLM response (default: 16384)
+    #[serde(default = "default_reserve_tokens")]
+    pub reserve_tokens: u32,
+    /// Recent tokens to keep when compacting (default: 20000)
+    #[serde(default = "default_keep_recent_tokens")]
+    pub keep_recent_tokens: u32,
+}
+
+fn default_compaction_enabled() -> bool {
+    true
+}
+
+fn default_reserve_tokens() -> u32 {
+    16384
+}
+
+fn default_keep_recent_tokens() -> u32 {
+    20000
+}
+
+impl Default for CompactionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            reserve_tokens: 16384,
+            keep_recent_tokens: 20000,
+        }
+    }
+}
+
+/// Cache settings for API-level prompt caching.
+#[derive(Debug, Deserialize, PartialEq, Clone)]
+pub struct CacheSettings {
+    /// Cache retention policy.
+    /// - "none": Disable caching
+    /// - "short": Default retention (5 min for Anthropic, in-memory for OpenAI)
+    /// - "long": Extended retention (1h for Anthropic, 24h for OpenAI)
+    #[serde(default = "default_cache_retention")]
+    pub retention: String,
+}
+
+fn default_cache_retention() -> String {
+    "short".to_string()
+}
+
+impl Default for CacheSettings {
+    fn default() -> Self {
+        Self {
+            retention: default_cache_retention(),
+        }
+    }
+}
+
+impl CacheSettings {
+    /// Check if caching is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.retention != "none"
+    }
+
+    /// Check if long retention is enabled.
+    pub fn is_long_retention(&self) -> bool {
+        self.retention == "long"
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -223,6 +298,8 @@ impl Default for Config {
             provider: "anthropic".to_string(),
             providers,
             browser: BrowserConfigSection::default(),
+            compaction: CompactionSettings::default(),
+            cache: CacheSettings::default(),
         }
     }
 }

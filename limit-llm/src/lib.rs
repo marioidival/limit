@@ -176,7 +176,7 @@ pub mod types;
 pub mod zai_provider;
 
 pub use client::AnthropicClient;
-pub use config::{BrowserConfigSection, CompactionSettings, Config, ProviderConfig};
+pub use config::{BrowserConfigSection, CacheSettings, CompactionSettings, Config, ProviderConfig};
 pub use error::LlmError;
 pub use handoff::ModelHandoff;
 pub use local_provider::LocalProvider;
