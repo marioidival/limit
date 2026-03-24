@@ -41,6 +41,7 @@ pub mod agent_bridge;
 pub mod clipboard;
 pub mod project_settings;
 pub mod session_share;
+pub mod session_tree;
 pub mod system_prompt;
 
 pub mod error;
