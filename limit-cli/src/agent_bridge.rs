@@ -103,6 +103,7 @@ pub struct AgentBridge {
     tldr_tool: Option<Arc<TldrTool>>,
     handoff: ModelHandoff,
     summarizer: Option<Summarizer>,
+    last_context_percent: RefCell<usize>,
 }
 
 impl AgentBridge {
@@ -185,6 +186,7 @@ impl AgentBridge {
             tldr_tool,
             handoff: ModelHandoff::new(),
             summarizer,
+            last_context_percent: RefCell::new(0),
         })
     }
 
@@ -233,14 +235,20 @@ impl AgentBridge {
         let target_tokens = (context_window * 6) / 10;
         let warn_tokens = context_window / 2;
         let current_tokens = self.handoff.count_total_tokens(messages);
+        let current_pct = (current_tokens * 100) / context_window;
 
         if current_tokens > warn_tokens && current_tokens <= target_tokens {
-            let pct = (current_tokens * 100) / context_window;
-            tracing::warn!(
-                "Context at {}% ({} tokens). Compaction will trigger at 60%.",
-                pct,
-                current_tokens
-            );
+            let last_pct = *self.last_context_percent.borrow();
+            if current_pct != last_pct {
+                tracing::warn!(
+                    "Context at {}% ({} tokens). Compaction will trigger at 60%.",
+                    current_pct,
+                    current_tokens
+                );
+                *self.last_context_percent.borrow_mut() = current_pct;
+            }
+        } else if current_tokens <= warn_tokens {
+            *self.last_context_percent.borrow_mut() = 0;
         }
 
         if current_tokens <= target_tokens {
