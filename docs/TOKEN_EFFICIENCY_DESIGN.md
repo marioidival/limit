@@ -333,37 +333,39 @@ reserve_tokens = 16384
 
 **Effort**: ~1 hour
 
-### Phase 2: Add Summarization (Medium) - NOT STARTED
+### Phase 2: LLM-Based Summarization ✅ COMPLETED
 
-**Goal**: Replace truncated messages with LLM-generated summary.
+**Status**: Implemented in v0.0.40+
 
-**New components**:
-```rust
-// limit-llm/src/compaction.rs
-pub struct CompactionResult {
-    pub summary: String,
-    pub first_kept_message_id: usize,
-    pub tokens_before: u64,
-}
+**What was done**:
+1. Created `limit-llm/src/summarization.rs` with:
+   - `Summarizer` struct wrapping LLM provider for summary generation
+   - `extract_file_operations()` to track read/written/edited files from tool calls
+   - `FileOperations` struct with HashSet for deduplicated file paths
+   - `build_summary_prompt()` with structured format (Goal, Decisions, Files, Pending)
 
-pub async fn generate_summary(
-    messages: &[Message],
-    model: &dyn LlmProvider,
-    previous_summary: Option<&str>,
-) -> Result<String, LlmError>;
+2. Extended `ModelHandoff` in `limit-llm/src/handoff.rs`:
+   - `find_cut_point(messages, keep_recent_tokens)` - returns split index for summarization
+   - `find_valid_cut_point()` - prefers cutting at user message boundaries
+
+3. Added config option:
+   - `CompactionSettings.use_summarization: bool` (default: true)
+
+4. Integrated in `AgentBridge`:
+   - `maybe_compact()` async method with summarization-first, truncation-fallback strategy
+   - Creates `<context_summary>` message when summarization succeeds
+   - Falls back to truncation on summarization failure
+
+**Configuration** (`~/.limit/config.toml`):
+```toml
+[compaction]
+enabled = true
+reserve_tokens = 16384
+keep_recent_tokens = 20000
+use_summarization = true
 ```
 
-**Summary message format**:
-```rust
-Message {
-    role: Role::User,  // or custom "summary" role
-    content: Some(summary_text),
-    tool_calls: None,
-    tool_call_id: None,
-}
-```
-
-**Effort**: 1-2 days
+**Effort**: ~4 hours
 
 ### Phase 3: Tree-based Sessions ✅ COMPLETED
 
@@ -574,7 +576,7 @@ impl Usage {
 | Phase | Status | Description |
 |-------|--------|-------------|
 | **Phase 1** | ✅ COMPLETED | Token-aware compaction with `ModelHandoff` |
-| **Phase 2** | 🔲 NOT STARTED | LLM-generated summaries |
+| **Phase 2** | ✅ COMPLETED | LLM-generated summaries |
 | **Phase 3** | ✅ COMPLETED | Tree-based sessions with JSONL |
 | **Phase 4** | ✅ COMPLETED | API-level prompt caching |
 
@@ -583,7 +585,7 @@ impl Usage {
 1. ~~Phase 1 (Quick win): Integrate `ModelHandoff::compact_messages()` - 1-2 hours~~ ✅ DONE
 2. ~~**Phase 4** (API caching): Add prompt caching - 1 day~~ ✅ DONE
 3. ~~**Phase 3** (Tree sessions): Branching support - 2-3 days~~ ✅ DONE
-4. **Phase 2** (Summarization): LLM-generated summaries - 1-2 days
+4. ~~**Phase 2** (Summarization): LLM-generated summaries - 1-2 days~~ ✅ DONE
 
 ### Expected Token Savings
 
