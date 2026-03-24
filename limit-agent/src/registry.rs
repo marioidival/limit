@@ -27,6 +27,13 @@ impl ToolRegistry {
         Ok(())
     }
 
+    /// Register an already-Arc-wrapped tool with the registry
+    pub fn register_arc(&mut self, tool: Arc<dyn Tool>) -> Result<(), AgentError> {
+        let name = tool.name().to_string();
+        self.tools.insert(name, tool);
+        Ok(())
+    }
+
     /// Get a tool by name
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
         self.tools.get(name).cloned()
