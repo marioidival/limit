@@ -328,10 +328,17 @@ fn parse_openai_sse_stream(
                                         let input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                                         let output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
 
+                                        // Parse cached tokens from prompt_tokens_details
+                                        let cache_read_tokens = usage
+                                            .get("prompt_tokens_details")
+                                            .and_then(|d| d.get("cached_tokens"))
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+
                                         yield Ok(ProviderResponseChunk::Done(Usage {
                                             input_tokens,
                                             output_tokens,
-                                            cache_read_tokens: 0,
+                                            cache_read_tokens,
                                             cache_write_tokens: 0,
                                         }));
                                         return;
