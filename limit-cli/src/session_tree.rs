@@ -2,6 +2,9 @@ use limit_llm::{CacheControl, Message, Role, ToolCall};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::Path;
 
 /// Unique 8-character hex ID for session entries
 pub type EntryId = String;
@@ -228,6 +231,110 @@ impl SessionTree {
     pub fn session_id(&self) -> &str {
         &self.session_id
     }
+
+    /// Save tree to JSONL file
+    pub fn save_to_file(&self, path: &Path) -> Result<(), SessionTreeError> {
+        let file = File::create(path)?;
+        let mut writer = BufWriter::new(file);
+
+        let header = SessionEntry {
+            id: self.session_id.clone(),
+            parent_id: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            entry_type: SessionEntryType::Session {
+                version: 1,
+                cwd: self.cwd.clone(),
+            },
+        };
+        writeln!(writer, "{}", serde_json::to_string(&header)?)?;
+
+        let sorted = self.sort_entries()?;
+        for entry in sorted {
+            writeln!(writer, "{}", serde_json::to_string(&entry)?)?;
+        }
+
+        writer.flush()?;
+        Ok(())
+    }
+
+    /// Load tree from JSONL file
+    pub fn load_from_file(path: &Path) -> Result<Self, SessionTreeError> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+
+        let mut entries = Vec::new();
+        let mut session_id = String::new();
+        let mut cwd = String::new();
+
+        for line in reader.lines() {
+            let line: String = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let entry: SessionEntry = serde_json::from_str(&line)?;
+
+            if let SessionEntryType::Session { version: _, cwd: c } = &entry.entry_type {
+                session_id = entry.id.clone();
+                cwd = c.clone();
+            } else {
+                entries.push(entry);
+            }
+        }
+
+        Self::from_entries(entries, session_id, cwd)
+    }
+
+    /// Append a single entry to file (for incremental saves)
+    pub fn append_to_file(
+        &self,
+        path: &Path,
+        entry: &SessionEntry,
+    ) -> Result<(), SessionTreeError> {
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+
+        writeln!(file, "{}", serde_json::to_string(entry)?)?;
+        Ok(())
+    }
+
+    fn sort_entries(&self) -> Result<Vec<SessionEntry>, SessionTreeError> {
+        let mut sorted = Vec::new();
+        let mut visited: std::collections::HashSet<EntryId> = std::collections::HashSet::new();
+
+        let roots: Vec<_> = self
+            .entries
+            .values()
+            .filter(|e| e.parent_id.is_none())
+            .collect();
+
+        for root in roots {
+            self.sort_dfs(root, &mut sorted, &mut visited)?;
+        }
+
+        Ok(sorted)
+    }
+
+    fn sort_dfs(
+        &self,
+        entry: &SessionEntry,
+        sorted: &mut Vec<SessionEntry>,
+        visited: &mut std::collections::HashSet<EntryId>,
+    ) -> Result<(), SessionTreeError> {
+        if visited.contains(&entry.id) {
+            return Ok(());
+        }
+
+        visited.insert(entry.id.clone());
+        sorted.push(entry.clone());
+
+        for child in self.entries.values() {
+            if child.parent_id.as_ref() == Some(&entry.id) {
+                self.sort_dfs(child, sorted, visited)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -362,6 +469,46 @@ mod tests {
                     cache_control: None,
                 }),
             },
+        }
+    }
+
+    #[test]
+    fn test_jsonl_roundtrip() {
+        let mut tree = SessionTree::new("/test".to_string());
+
+        let entry1 = create_test_entry("a1b2c3d4", None, "first");
+        let entry2 = create_test_entry("b2c3d4e5", Some("a1b2c3d4"), "second");
+
+        tree.append(entry1).unwrap();
+        tree.append(entry2).unwrap();
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        tree.save_to_file(file.path()).unwrap();
+
+        let loaded = SessionTree::load_from_file(file.path()).unwrap();
+
+        assert_eq!(loaded.leaf_id(), "b2c3d4e5");
+        assert_eq!(loaded.entries().len(), 2);
+
+        let context = loaded.build_context("b2c3d4e5").unwrap();
+        assert_eq!(context.len(), 2);
+    }
+
+    #[test]
+    fn test_jsonl_format() {
+        let mut tree = SessionTree::new("/test".to_string());
+        tree.append(create_test_entry("a1b2c3d4", None, "test"))
+            .unwrap();
+
+        let file = tempfile::NamedTempFile::new().unwrap();
+        tree.save_to_file(file.path()).unwrap();
+
+        let content = std::fs::read_to_string(file.path()).unwrap();
+
+        for line in content.lines() {
+            if !line.is_empty() {
+                serde_json::from_str::<serde_json::Value>(line).expect("Line should be valid JSON");
+            }
         }
     }
 }
