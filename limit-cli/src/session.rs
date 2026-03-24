@@ -413,18 +413,20 @@ impl SessionManager {
     pub fn migrate_to_tree(&self, session_id: &str) -> Result<SessionTree, CliError> {
         use crate::session_tree::{generate_entry_id, SerializableMessage, SessionEntryType};
 
-        // Load old format
-        let messages = self.load_session(session_id)?;
+        if self.has_tree_session(session_id)? {
+            let tree = self.load_tree_session(session_id)?;
+            if !tree.entries().is_empty() {
+                return Ok(tree);
+            }
+        }
 
-        // Get session info for cwd (default to home)
+        let messages = self.load_session(session_id)?;
         let cwd = dirs::home_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| "/".to_string());
 
-        // Create tree
-        let _tree = self.create_tree_session(session_id, cwd)?;
+        self.create_tree_session(session_id, cwd)?;
 
-        // Add each message as entry
         let mut parent_id: Option<String> = None;
         for msg in messages {
             let entry_id = generate_entry_id();
@@ -441,7 +443,11 @@ impl SessionManager {
             parent_id = Some(entry_id);
         }
 
-        // Reload to get the complete tree
+        let bin_path = self.sessions_dir.join(format!("{}.bin", session_id));
+        if bin_path.exists() {
+            fs::remove_file(&bin_path)?;
+        }
+
         self.load_tree_session(session_id)
     }
 
