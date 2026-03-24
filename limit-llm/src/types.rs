@@ -269,11 +269,11 @@ pub struct Usage {
     pub output_tokens: u64,
 
     /// Number of tokens read from cache (~10% of input cost).
-    #[serde(default)]
+    #[serde(default, alias = "cache_read_input_tokens")]
     pub cache_read_tokens: u64,
 
     /// Number of tokens written to cache.
-    #[serde(default)]
+    #[serde(default, alias = "cache_creation_input_tokens")]
     pub cache_write_tokens: u64,
 }
 
@@ -453,5 +453,21 @@ mod tests {
 
         let json = serde_json::to_string(&usage).unwrap();
         assert!(json.contains("cache_read_tokens"));
+    }
+
+    #[test]
+    fn test_usage_anthropic_aliases() {
+        let json = r#"{
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_read_input_tokens": 80,
+            "cache_creation_input_tokens": 20
+        }"#;
+        let usage: Usage = serde_json::from_str(json).unwrap();
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.output_tokens, 50);
+        assert_eq!(usage.cache_read_tokens, 80);
+        assert_eq!(usage.cache_write_tokens, 20);
+        assert_eq!(usage.total_tokens(), 250);
     }
 }
