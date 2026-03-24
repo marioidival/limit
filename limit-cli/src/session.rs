@@ -409,6 +409,42 @@ impl SessionManager {
         Ok(path.exists())
     }
 
+    /// Migrate a binary session to tree-based JSONL format
+    pub fn migrate_to_tree(&self, session_id: &str) -> Result<SessionTree, CliError> {
+        use crate::session_tree::{generate_entry_id, SerializableMessage, SessionEntryType};
+
+        // Load old format
+        let messages = self.load_session(session_id)?;
+
+        // Get session info for cwd (default to home)
+        let cwd = dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "/".to_string());
+
+        // Create tree
+        let _tree = self.create_tree_session(session_id, cwd)?;
+
+        // Add each message as entry
+        let mut parent_id: Option<String> = None;
+        for msg in messages {
+            let entry_id = generate_entry_id();
+            let entry = SessionEntry {
+                id: entry_id.clone(),
+                parent_id: parent_id.clone(),
+                timestamp: Utc::now().to_rfc3339(),
+                entry_type: SessionEntryType::Message {
+                    message: SerializableMessage::from(msg),
+                },
+            };
+
+            self.append_tree_entry(session_id, &entry)?;
+            parent_id = Some(entry_id);
+        }
+
+        // Reload to get the complete tree
+        self.load_tree_session(session_id)
+    }
+
     /// Get the file path for a tree session
     fn tree_session_path(&self, session_id: &str) -> PathBuf {
         self.sessions_dir.join(format!("{}.jsonl", session_id))
@@ -636,5 +672,47 @@ mod tests {
 
         let loaded = manager.load_tree_session(&session_id).unwrap();
         assert_eq!(loaded.entries().len(), 1);
+    }
+
+    #[test]
+    fn test_migrate_bin_to_jsonl() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("session.db");
+        let sessions_dir = dir.path().join("sessions");
+
+        let manager = SessionManager::with_paths(db_path, sessions_dir).unwrap();
+        let session_id = manager.create_new_session().unwrap();
+
+        // Save in old format
+        let messages = vec![
+            Message {
+                role: limit_llm::Role::User,
+                content: Some("Hello".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            },
+            Message {
+                role: limit_llm::Role::Assistant,
+                content: Some("Hi!".to_string()),
+                tool_calls: None,
+                tool_call_id: None,
+                cache_control: None,
+            },
+        ];
+
+        manager
+            .save_session(&session_id, &messages, 100, 50)
+            .unwrap();
+
+        // Migrate
+        let tree = manager.migrate_to_tree(&session_id).unwrap();
+
+        // Verify
+        assert_eq!(tree.entries().len(), 2);
+        let context = tree.build_context(tree.leaf_id()).unwrap();
+        assert_eq!(context.len(), 2);
+        assert_eq!(context[0].content, Some("Hello".to_string()));
+        assert_eq!(context[1].content, Some("Hi!".to_string()));
     }
 }
