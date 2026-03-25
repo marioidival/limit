@@ -8,4 +8,7 @@ members = [
 resolver = "2"
 
 [profile.release]
-debug = true
+opt-level = "z"      # Optimize for size
+lto = true           # Link-time optimization
+strip = true         # Strip symbols
+codegen-units = 1    # Better optimization

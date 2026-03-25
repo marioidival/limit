@@ -39,11 +39,5 @@ jobs:
       - name: Wait for index update
         run: sleep 10
 
-      - name: Publish limit-tldr
-        run: cargo publish -p limit-tldr
-
-      - name: Wait for index update
-        run: sleep 10
-
       - name: Publish limit-cli
         run: cargo publish -p limit-cli

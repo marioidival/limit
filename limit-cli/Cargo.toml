@@ -35,11 +35,8 @@ tempfile = "3.8"
 termimad = "0.34"
 regex = "1.10"
 syntect = { version = "5.2", default-features = false, features = [
-    "default-fancy",
-    "regex-fancy",
+    "default-onig",
     "parsing",
-    "html",
-    "yaml-load",
     "dump-load",
 ] }
 lsp-types = "0.95"
