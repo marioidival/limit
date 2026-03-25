@@ -134,8 +134,6 @@ impl TuiApp {
     }
 
     fn run_inner(&mut self) -> Result<(), CliError> {
-        self.tui_bridge.trigger_tldr_warm_if_enabled();
-
         while self.running {
             // Process events from the agent
             self.tui_bridge.process_events()?;
@@ -748,94 +746,6 @@ impl TuiApp {
                                 *cmd_ctx.total_output_tokens.lock().unwrap();
                             return Ok(());
                         }
-                        CommandResult::TldrWarm => {
-                            let project_path = cmd_ctx.project_path.clone();
-                            let activity_feed = self.tui_bridge.activity_feed().clone();
-                            let chat_view = self.tui_bridge.chat_view().clone();
-
-                            activity_feed
-                                .lock()
-                                .unwrap()
-                                .add("Building code indexes (TLDR warm)...".to_string(), true);
-
-                            std::thread::spawn(move || {
-                                let rt = match tokio::runtime::Runtime::new() {
-                                    Ok(rt) => rt,
-                                    Err(e) => {
-                                        tracing::error!("Failed to create tokio runtime: {}", e);
-                                        activity_feed.lock().unwrap().complete_current();
-                                        chat_view.lock().unwrap().add_message(Message::system(
-                                            format!("Failed to start warm: {}", e),
-                                        ));
-                                        return;
-                                    }
-                                };
-
-                                rt.block_on(async {
-                                    use limit_tldr::{Config as TldrConfig, Language, TLDR};
-
-                                    let home = match dirs::home_dir() {
-                                        Some(h) => h,
-                                        None => {
-                                            tracing::error!("Cannot find home directory");
-                                            activity_feed.lock().unwrap().complete_current();
-                                            return;
-                                        }
-                                    };
-
-                                    let project_id = project_path
-                                        .canonicalize()
-                                        .map(|p| p.to_string_lossy().to_string())
-                                        .unwrap_or_else(|_| project_path.to_string_lossy().to_string());
-
-                                    use std::collections::hash_map::DefaultHasher;
-                                    use std::hash::{Hash, Hasher};
-                                    let mut hasher = DefaultHasher::new();
-                                    project_id.hash(&mut hasher);
-                                    let hash = format!("{:x}", hasher.finish());
-
-                                    let cache_dir = home
-                                        .join(".limit")
-                                        .join("projects")
-                                        .join(&hash)
-                                        .join("tldr");
-
-                                    let config = TldrConfig {
-                                        language: Language::Auto,
-                                        max_depth: 3,
-                                        cache_dir: Some(cache_dir),
-                                    };
-
-                                    match TLDR::new(&project_path, config).await {
-                                        Ok(mut tldr) => match tldr.warm().await {
-                                            Ok(()) => {
-                                                tracing::info!("TLDR warm complete for {:?}", project_path);
-                                                activity_feed.lock().unwrap().complete_current();
-                                                chat_view.lock().unwrap().add_message(
-                                                    Message::system("✓ Code indexes built successfully. You can now use code analysis features.".to_string())
-                                                );
-                                            }
-                                            Err(e) => {
-                                                tracing::error!("TLDR warm failed: {}", e);
-                                                activity_feed.lock().unwrap().complete_current();
-                                                chat_view.lock().unwrap().add_message(
-                                                    Message::system(format!("Failed to build indexes: {}", e))
-                                                );
-                                            }
-                                        },
-                                        Err(e) => {
-                                            tracing::error!("TLDR::new failed: {}", e);
-                                            activity_feed.lock().unwrap().complete_current();
-                                            chat_view.lock().unwrap().add_message(
-                                                Message::system(format!("Failed to initialize code analysis: {}", e))
-                                            );
-                                        }
-                                    }
-                                });
-                            });
-
-                            return Ok(());
-                        }
                         CommandResult::Continue
                         | CommandResult::Message(_)
                         | CommandResult::Share(_) => {
@@ -881,7 +791,6 @@ impl TuiApp {
                  /clear - Clear chat history\n\
                  /exit  - Exit the application\n\
                  /quit  - Exit the application\n\
-                 /tldr  - Enable code analysis for this project\n\
                  /session list  - List all sessions\n\
                  /session new   - Create a new session\n\
                  /session load  <id> - Load a session by ID\n\
