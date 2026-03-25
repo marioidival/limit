@@ -1,16 +1,14 @@
 use crate::error::CliError;
 use crate::system_prompt::get_system_prompt;
-use crate::tools::tldr_tool_definition;
 use crate::tools::{
     AstGrepTool, BashTool, BrowserTool, FileEditTool, FileReadTool, FileWriteTool, GitAddTool,
     GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool, GitStatusTool,
-    /* GrepTool, LspTool, */ TldrTool, WebFetchTool, WebSearchTool,
+    WebFetchTool, WebSearchTool,
 };
 use chrono::Datelike;
 use futures::StreamExt;
 use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
-use limit_agent::Tool;
 use limit_llm::apply_cache_control;
 use limit_llm::providers::LlmProvider;
 use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
@@ -23,7 +21,6 @@ use serde_json::json;
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, instrument, trace};
@@ -94,13 +91,9 @@ pub struct AgentBridge {
     event_tx: Option<mpsc::UnboundedSender<AgentEvent>>,
     /// Token usage tracking database
     tracking_db: TrackingDb,
-    /// Cancellation token for aborting current operation
     cancellation_token: Option<CancellationToken>,
-    /// Current operation ID for event tracking
     operation_id: u64,
-    /// Recent tool calls for deduplication (tool_name, args_hash)
     recent_tool_calls: RefCell<Vec<(String, u64)>>,
-    tldr_tool: Option<Arc<TldrTool>>,
     handoff: ModelHandoff,
     summarizer: Option<Summarizer>,
     last_context_percent: RefCell<usize>,
@@ -138,7 +131,7 @@ impl AgentBridge {
             .map_err(|e| CliError::ConfigError(e.to_string()))?;
 
         let mut tool_registry = ToolRegistry::new();
-        let tldr_tool = Self::register_tools(&mut tool_registry, &config);
+        Self::register_tools(&mut tool_registry, &config);
 
         let executor = ToolExecutor::new(tool_registry);
 
@@ -161,17 +154,7 @@ impl AgentBridge {
             "web_search",
             "web_fetch",
             "browser",
-            "tldr_analyze",
         ];
-
-        let summarizer = if config.compaction.enabled && config.compaction.use_summarization {
-            Some(Summarizer::new(
-                ProviderFactory::create_provider(&config)
-                    .map_err(|e| CliError::ConfigError(e.to_string()))?,
-            ))
-        } else {
-            None
-        };
 
         Ok(Self {
             llm_client,
@@ -183,9 +166,8 @@ impl AgentBridge {
             cancellation_token: None,
             operation_id: 0,
             recent_tool_calls: RefCell::new(Vec::new()),
-            tldr_tool,
             handoff: ModelHandoff::new(),
-            summarizer,
+            summarizer: None,
             last_context_percent: RefCell::new(0),
         })
     }
@@ -205,25 +187,6 @@ impl AgentBridge {
     /// Clear the cancellation token
     pub fn clear_cancellation_token(&mut self) {
         self.cancellation_token = None;
-    }
-
-    /// Trigger TLDR warm if tool is available. Call at startup if warm is enabled.
-    pub fn trigger_tldr_warm(&self) {
-        if let Some(ref tldr_tool) = &self.tldr_tool {
-            tldr_tool.trigger_warm();
-        }
-    }
-
-    /// Get reference to TLDR tool for run_warm() synchronously.
-    pub fn tldr_tool(&self) -> Option<Arc<TldrTool>> {
-        self.tldr_tool.clone()
-    }
-
-    /// Run TLDR warm synchronously. Blocks until complete.
-    pub async fn run_tldr_warm(&self) {
-        if let Some(ref tldr_tool) = self.tldr_tool {
-            tldr_tool.run_warm().await;
-        }
     }
 
     async fn maybe_compact(&self, messages: &mut Vec<Message>) {
@@ -324,10 +287,7 @@ impl AgentBridge {
     }
 
     /// Register all CLI tools into the tool registry
-    fn register_tools(
-        registry: &mut ToolRegistry,
-        config: &limit_llm::Config,
-    ) -> Option<Arc<TldrTool>> {
+    fn register_tools(registry: &mut ToolRegistry, config: &limit_llm::Config) {
         // File tools
         registry
             .register(FileReadTool::new())
@@ -395,13 +355,6 @@ impl AgentBridge {
         registry
             .register(BrowserTool::with_config(browser_config))
             .expect("Failed to register browser");
-
-        // TLDR tool for code analysis
-        let tldr_tool = Arc::new(TldrTool::new());
-        registry
-            .register_arc(Arc::clone(&tldr_tool) as Arc<dyn Tool>)
-            .expect("Failed to register tldr_analyze");
-        Some(tldr_tool)
     }
 
     /// Process a user message through the LLM and execute any tool calls
@@ -1508,13 +1461,6 @@ impl AgentBridge {
                     "required": ["action"]
                 }),
             ),
-            "tldr_analyze" => {
-                let tool_def = tldr_tool_definition();
-                (
-                    tool_def["description"].as_str().unwrap_or("").to_string(),
-                    tool_def["parameters"].clone()
-                )
-            },
             _ => (
                 format!("Tool: {}", name),
                 json!({
@@ -1689,7 +1635,7 @@ mod tests {
         let bridge = AgentBridge::new(config).unwrap();
         let definitions = bridge.get_tool_definitions();
 
-        assert_eq!(definitions.len(), 17); // grep, lsp disabled; tldr_analyze enabled
+        assert_eq!(definitions.len(), 16); // grep, lsp disabled
 
         // Check file_read tool definition
         let file_read = definitions
