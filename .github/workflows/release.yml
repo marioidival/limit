@@ -52,7 +52,6 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            export RUSTFLAGS='-C link-args=-Wl,-rpath,$ORIGIN/lib'
             cross build --release --target ${{ matrix.target }}
           else
             cargo build --release --target ${{ matrix.target }}
@@ -62,24 +61,7 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-
-          # For Linux builds, bundle ONNX Runtime shared library
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            ARCH=$(echo "${{ matrix.target }}" | cut -d'-' -f1)
-            if [ "$ARCH" = "x86_64" ]; then ORT_ARCH="x64"; else ORT_ARCH="aarch64"; fi
-
-            wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/onnxruntime-linux-${ORT_ARCH}-1.23.2.tgz
-            tar xzf onnxruntime-linux-${ORT_ARCH}-1.23.2.tgz
-            mkdir -p lib
-            cp onnxruntime-linux-${ORT_ARCH}-1.23.2/lib/libonnxruntime.so* lib/
-            rm -rf onnxruntime-linux-${ORT_ARCH}-1.23.2 onnxruntime-linux-${ORT_ARCH}-1.23.2.tgz
-          fi
-
-          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
-            tar czf ${{ matrix.name }}.tar.gz lim lib/
-          else
-            tar czf ${{ matrix.name }}.tar.gz lim
-          fi
+          tar czf ${{ matrix.name }}.tar.gz lim
           shasum -a 256 ${{ matrix.name }}.tar.gz > ${{ matrix.name }}.tar.gz.sha256
 
       - name: Upload artifact
