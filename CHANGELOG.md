@@ -2,6 +2,151 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.41] - 2026-03-25
+
+### 🚀 Features
+
+- Add search/replace/scan commands and 25+ language support to ast-grep tool
+
+- Update ast-grep tool schema and TUI activity formatting
+
+- Add ast-grep-core and ast-grep-language crates
+
+- Add thinking parameter support for ZAI GLM models
+
+- Add debug logging for thinking parameter verification
+
+- Add tool call deduplication and improve logging
+
+- Add register_arc method to ToolRegistry
+
+- Add warm cache support to TldrTool
+
+- Integrate TLDR warm cache in AgentBridge
+
+- Add TLDR warm cache integration in TUI
+
+- Add CacheControl type and extend Message/Usage for prompt caching
+
+- Add CacheSettings for prompt caching configuration
+
+- Parse cache token usage from Anthropic API responses
+
+- Parse cache token usage from OpenAI API responses
+
+- Add apply_cache_control helper for strategic cache placement
+
+- Integrate prompt caching into message flow
+
+- Add SessionEntry data structures for tree-based sessions
+
+- Implement SessionTree with context building
+
+- Implement JSONL storage for session tree
+
+- Integrate SessionTree with SessionManager
+
+- Add branching commands for tree sessions
+
+- Add migration from binary to tree sessions
+
+- Add token-aware context compaction
+
+- Auto-migrate sessions to tree format on save
+
+- Add summarization module for context compaction
+
+- Add find_cut_point for summarization split
+
+- Add use_summarization config option
+
+- Integrate summarization into context compaction
+
+- Improve token efficiency
+
+
+### 🐛 Bug Fixes
+
+- Join background thread on drop to prevent SIGSEGV
+
+- Prevent token waste from invalid tool calls
+
+- Improve migration with idempotency and cleanup, and atomicity
+
+- Improve migration safety with count verification
+
+- Add hysteresis to context warning
+
+
+### 🚜 Refactor
+
+- Use ast-grep crates for search and replace commands
+
+- Remove TLDR tool module
+
+- Remove TLDR references from agent_bridge
+
+- Remove TLDR command from TUI
+
+- Remove TLDR warm handling from TUI
+
+- Remove project_settings module
+
+- Update system prompt to use ast_grep
+
+- Update file tool warning message
+
+
+### 📚 Documentation
+
+- Update system prompt to prioritize tldr_analyze
+
+- Mark Phase 3 (tree sessions) as completed
+
+- Mark Phase 2 (summarization) as completed
+
+- Remove TLDR references from documentation
+
+
+### ⚡ Performance
+
+- Optimize append_tree_entry and improve error handling
+
+
+### 🎨 Styling
+
+- Apply cargo fmt to analysis.rs
+
+- Apply cargo fmt to analysis.rs
+
+
+### 🧪 Testing
+
+- Add tests for ast-grep search/replace/scan commands
+
+- Update ast-grep tests to use crate implementation
+
+- Update tests after TLDR removal
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove ast-grep binary dependency from scan command
+
+- Test with ast grep finds
+
+- Remove limit-tldr crate from workspace
+
+- Remove Cross.toml and docker/cross
+
+- Simplify release workflow
+
+- Remove limit-tldr from release script
+
+## [0.0.41] - 2026-03-24
+
+All notable changes to this project will be documented in this file.
+
 ## [Unreleased]
 
 ### 🚀 Features
