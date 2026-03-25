@@ -3,8 +3,6 @@ mod bash;
 pub mod browser;
 mod file;
 mod git;
-mod tldr;
-mod warm_guard;
 mod web_fetch;
 mod web_search;
 
@@ -19,6 +17,5 @@ pub use git::{
     GitAddTool, GitCloneTool, GitCommitTool, GitDiffTool, GitLogTool, GitPullTool, GitPushTool,
     GitStatusTool,
 };
-pub use tldr::{tldr_tool_definition, TldrTool};
 pub use web_fetch::WebFetchTool;
 pub use web_search::WebSearchTool;
