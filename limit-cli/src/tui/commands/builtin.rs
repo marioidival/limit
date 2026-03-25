@@ -33,7 +33,6 @@ impl Command for HelpCommand {
                  /clear - Clear chat history\n\
                  /exit  - Exit the application\n\
                  /quit  - Exit the application\n\
-                 /tldr  - Enable code analysis for this project\n\
                  /session list  - List all sessions\n\
                  /session new   - Create a new session\n\
                  /session load  <id> - Load a session by ID\n\

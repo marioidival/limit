@@ -26,8 +26,6 @@ pub enum CommandResult {
     LoadSession(String),
     /// Share/export session
     Share(String),
-    /// Enable TLDR warm for project
-    TldrWarm,
 }
 
 /// Context provided to commands for execution
