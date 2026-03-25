@@ -353,6 +353,14 @@ impl ChatView {
         self.add_message(Message::assistant(content.to_string()));
     }
 
+    pub fn start_new_assistant_message(&mut self) {
+        debug!(
+            "start_new_assistant_message: creating fresh assistant message (total messages: {})",
+            self.messages.len()
+        );
+        self.add_message(Message::assistant(String::new()));
+    }
+
     /// Get the number of messages
     pub fn message_count(&self) -> usize {
         self.messages.len()

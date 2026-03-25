@@ -195,6 +195,7 @@ impl TuiBridge {
                 AgentEvent::Thinking { operation_id } => *operation_id,
                 AgentEvent::ToolStart { operation_id, .. } => *operation_id,
                 AgentEvent::ToolComplete { operation_id, .. } => *operation_id,
+                AgentEvent::ResponseStart { operation_id } => *operation_id,
                 AgentEvent::ContentChunk { operation_id, .. } => *operation_id,
                 AgentEvent::Done { operation_id } => *operation_id,
                 AgentEvent::Cancelled { operation_id } => *operation_id,
@@ -243,6 +244,10 @@ impl TuiBridge {
                     trace!("process_events: ToolComplete event");
                     // Mark current activity as complete
                     self.activity_feed.lock().unwrap().complete_current();
+                }
+                AgentEvent::ResponseStart { operation_id: _ } => {
+                    trace!("process_events: ResponseStart event - creating new assistant message");
+                    self.chat_view.lock().unwrap().start_new_assistant_message();
                 }
                 AgentEvent::ContentChunk {
                     operation_id: _,

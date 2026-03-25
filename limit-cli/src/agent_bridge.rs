@@ -42,6 +42,9 @@ pub enum AgentEvent {
         name: String,
         result: String,
     },
+    ResponseStart {
+        operation_id: u64,
+    },
     ContentChunk {
         operation_id: u64,
         chunk: String,
@@ -453,6 +456,10 @@ impl AgentBridge {
                 (String, serde_json::Value),
             > = std::collections::HashMap::new();
 
+            self.send_event(AgentEvent::ResponseStart {
+                operation_id: self.operation_id,
+            });
+
             // Process stream chunks with cancellation support
             loop {
                 // Check for cancellation FIRST (before waiting for stream)
@@ -815,6 +822,9 @@ impl AgentBridge {
 
             // BUG FIX: Replace full_response instead of appending
             full_response.clear();
+            self.send_event(AgentEvent::ResponseStart {
+                operation_id: self.operation_id,
+            });
             loop {
                 // Check for cancellation FIRST (before waiting for stream)
                 if let Some(ref token) = self.cancellation_token {
