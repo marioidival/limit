@@ -204,7 +204,7 @@ mod tests {
         }];
 
         let ops = extract_file_operations(&messages);
-        assert!(ops.read.contains(&"/src/main.rs".to_string()));
+        assert!(ops.read.contains("/src/main.rs"));
         assert!(ops.written.is_empty());
         assert!(ops.edited.is_empty());
     }
@@ -223,7 +223,7 @@ mod tests {
         }];
 
         let ops = extract_file_operations(&messages);
-        assert!(ops.edited.contains(&"/src/lib.rs".to_string()));
+        assert!(ops.edited.contains("/src/lib.rs"));
         assert!(ops.read.is_empty());
     }
 
@@ -241,7 +241,7 @@ mod tests {
         }];
 
         let ops = extract_file_operations(&messages);
-        assert!(ops.written.contains(&"/src/new.rs".to_string()));
+        assert!(ops.written.contains("/src/new.rs"));
     }
 
     #[test]

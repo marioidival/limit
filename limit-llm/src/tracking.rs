@@ -115,6 +115,7 @@ impl TrackingDb {
     }
 
     /// Track a new LLM request
+    #[allow(clippy::too_many_arguments)]
     pub fn track_request(
         &self,
         model: &str,
