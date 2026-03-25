@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.42] - 2026-03-25
+
+### ⚡ Performance
+
+- Optimize release binary size and remove limit-tldr refs
+
+## [0.0.42] - 2026-03-24
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.41] - 2026-03-25
 
 ### 🚀 Features

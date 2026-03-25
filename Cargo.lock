@@ -1737,7 +1737,7 @@ dependencies = [
 
 [[package]]
 name = "limit-agent"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "async-trait",
  "bincode",
@@ -1757,7 +1757,7 @@ dependencies = [
 
 [[package]]
 name = "limit-cli"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "arboard",
  "ast-grep-core",
@@ -1798,7 +1798,7 @@ dependencies = [
 
 [[package]]
 name = "limit-llm"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1822,7 +1822,7 @@ dependencies = [
 
 [[package]]
 name = "limit-tui"
-version = "0.0.41"
+version = "0.0.42"
 dependencies = [
  "chrono",
  "crossterm 0.29.0",
