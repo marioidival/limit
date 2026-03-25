@@ -19,7 +19,7 @@ name = "lim"
 path = "src/main.rs"
 
 [dependencies]
-thiserror = "1.0"
+thiserror = "2"
 futures = "0.3"
 limit-agent = { path = "../limit-agent", version = "0.0.43" }
 crossterm = { version = "0.29", features = ["bracketed-paste"] }
@@ -47,7 +47,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5.0"
 arboard = "3.6"
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 frizbee = "0.8"
 ignore = "0.4"
 regex = "1.10"
@@ -55,4 +55,4 @@ ast-grep-core = "0.42"
 ast-grep-language = { version = "0.42", features = ["builtin-parser"] }
 
 walkdir = "2.5"
-rand = "0.8"
+rand = "0.10"

@@ -1,5 +1,5 @@
 use limit_llm::{CacheControl, Message, Role, ToolCall};
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -91,8 +91,8 @@ impl From<SerializableMessage> for Message {
 
 /// Generate a random 8-char hex ID
 pub fn generate_entry_id() -> EntryId {
-    let mut rng = rand::thread_rng();
-    format!("{:08x}", rng.gen::<u32>())
+    let mut rng = rand::rng();
+    format!("{:08x}", rng.random::<u32>())
 }
 
 /// In-memory tree structure for session entries
