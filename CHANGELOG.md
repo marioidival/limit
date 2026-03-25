@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.43] - 2026-03-25
+
+### 🐛 Bug Fixes
+
+- Add line breaks between LLM messages after tool calls
+
+- Resolve clippy warnings for -D warnings flag
+
+## [0.0.43] - 2026-03-25
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.42] - 2026-03-25
 
 ### ⚡ Performance
