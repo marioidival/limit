@@ -4,7 +4,6 @@ members = [
     "limit-agent",
     "limit-cli",
     "limit-tui",
-    "limit-tldr",
 ]
 resolver = "2"
 
