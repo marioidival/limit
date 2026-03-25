@@ -6,7 +6,7 @@
 
 **AI-powered terminal coding assistant with REPL and TUI.**
 
-An intelligent coding assistant that lives in your terminal. Features multi-provider LLM support, session persistence, and 18 built-in tools for file operations, git, and code analysis.
+An intelligent coding assistant that lives in your terminal. Features multi-provider LLM support, session persistence, and 16 built-in tools for file operations, git, and code analysis.
 
 Part of the [Limit](https://github.com/marioidival/limit) ecosystem.
 
@@ -18,9 +18,8 @@ Developers shouldn't have to leave their terminal to get AI assistance. `limit-c
 
 - **Multi-provider LLM**: Anthropic Claude, OpenAI GPT, z.ai GLM, and local models
 - **Two interfaces**: Full TUI (default) or simple REPL mode with `--no-tui`
-- **18 built-in tools**: File I/O, bash execution, git operations, code analysis
+- **16 built-in tools**: File I/O, bash execution, git operations, code analysis
 - **AST-aware search**: Structural code matching with `ast-grep` (Rust, TypeScript, Python)
-- **LSP integration**: Go-to-definition, find-references
 - **Session persistence**: Auto-save and restore conversations
 - **Token tracking**: SQLite-based usage tracking with cost estimation
 - **Web search**: Fetch current information via Exa AI
@@ -105,9 +104,7 @@ max_tokens = 4096
 ### Code Analysis
 | Tool | Description |
 |------|-------------|
-| `grep` | Regex search in files |
 | `ast_grep` | AST-aware code search (Rust, TypeScript, Python) |
-| `lsp` | Language server operations |
 
 ### Web
 | Tool | Description |
@@ -151,59 +148,12 @@ Features:
 | `/clear` | Clear the screen |
 | `/help` | Show available commands |
 | `/model` | Show current model configuration |
-| `/tldr` | Enable code analysis for this project |
 | `/session list` | List all saved sessions |
 | `/session new` | Create a new session |
 | `/session load <id>` | Load a specific session |
 | `/share` | Copy session to clipboard |
 | `/share md` | Export session as markdown |
 | `/share json` | Export session as JSON |
-
-## Code Analysis (TLDR)
-
-TLDR provides token-efficient code analysis with 95% savings vs reading raw code. It's **opt-in per project** for performance reasons.
-
-### Enabling TLDR
-
-```bash
-# In the TUI, run:
-/tldr
-
-# Or use the alias:
-/warm
-```
-
-This enables code analysis for the current project. The setting persists in `~/.limit/tracking.db`.
-
-### Permissive Mode
-
-If the AI tries to use code analysis but TLDR isn't enabled, it will ask for permission:
-
-```
-AI: Code analysis (TLDR) is not enabled for this project. 
-    Would you like to enable it? Run /tldr to activate.
-```
-
-### Available Analysis Types
-
-| Type | Description |
-|------|-------------|
-| `search` | Find functions/structs by keyword |
-| `context` | Get dependencies and callers |
-| `source` | Get function code (instead of file_read) |
-| `impact` | Find who calls a function |
-| `cfg` | Control flow graph |
-| `dfg` | Data flow graph |
-| `dead_code` | Find unreachable functions |
-| `architecture` | Detect module layers |
-
-### Example Usage
-
-Ask the AI natural language questions:
-- "What does the `process_message` function do?"
-- "Who calls `handle_request`?"
-- "Find all functions related to authentication"
-- "Show me the architecture of this codebase"
 
 ## Token Tracking
 

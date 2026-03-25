@@ -69,7 +69,6 @@ pub struct Message {
 |-----------|----------|--------|
 | `ModelHandoff` | `limit-llm/src/handoff.rs` | **EXISTS but UNUSED** |
 | `TrackingDb` | `limit-llm/src/tracking.rs` | Records stats only |
-| TLDR counter | `limit-tldr/src/utils/token_counter.rs` | Simple heuristic (inaccurate) |
 
 **Key finding**: `ModelHandoff::compact_messages()` already exists with:
 - `tiktoken_rs::cl100k_base` tokenizer

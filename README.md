@@ -31,8 +31,6 @@ cargo install limit-cli
 
 **From source:** Rust 1.70+, git, Unix-like OS (Linux, macOS)
 
-> Note: macOS Intel (x86_64) not supported due to ONNX Runtime limitations.
-
 ## Quick Start
 
 ```bash
@@ -49,8 +47,8 @@ lim
 | Feature | Description |
 |---------|-------------|
 | **Multi-Provider** | Anthropic Claude, OpenAI, z.ai, Ollama, LM Studio, vLLM |
-| **18 Tools** | File I/O, Bash, Git, code analysis, web search, browser automation |
-| **Code Analysis** | 95% token savings with limit-tldr (AST, call graph, CFG, DFG, PDG) |
+| **16 Tools** | File I/O, Bash, Git, AST-aware code search, web search, browser automation |
+| **AST Search** | Structural code matching with ast-grep (Rust, TypeScript, Python) |
 | **Session Persistence** | Auto-save/restore conversations |
 | **Docker Sandbox** | Optional isolated execution |
 | **TUI + REPL** | Beautiful terminal UI or simple text mode |
@@ -88,7 +86,6 @@ model = "claude-sonnet-4-6-20260217"
 | `file_write` | Write files |
 | `file_edit` | Diff-based edits |
 | `bash` | Execute shell commands |
-| `grep` | Regex search |
 
 ### Git
 | Tool | Description |
@@ -104,9 +101,7 @@ model = "claude-sonnet-4-6-20260217"
 ### Code Analysis
 | Tool | Description |
 |------|-------------|
-| `tldr_analyze` | Token-efficient analysis (95% savings) — search, context, source, impact, cfg, dfg, dead_code, architecture. **Requires `/tldr` to enable per project.** See [limit-tldr/README.md](limit-tldr/README.md) |
 | `ast_grep` | AST-aware search (Rust, TS, Python) |
-| `lsp` | Go-to-definition, find-references |
 
 ### Web & Browser
 | Tool | Description |
@@ -123,7 +118,6 @@ model = "claude-sonnet-4-6-20260217"
 | `/clear` | Clear screen |
 | `/help` | Show commands |
 | `/model` | Show config |
-| `/tldr` | Enable code analysis for this project |
 | `/session list` | List sessions |
 | `/session new` | New session |
 | `/share` | Export session (clipboard/md/json) |
@@ -134,9 +128,6 @@ model = "claude-sonnet-4-6-20260217"
 |------|---------|---------|
 | Docker | Sandbox isolation | [docker.com](https://docs.docker.com/get-docker/) |
 | ast-grep | AST search | `brew install ast-grep` |
-| rust-analyzer | LSP for Rust | `rustup component add rust-analyzer` |
-| typescript-language-server | LSP for TS | `npm i -g typescript-language-server` |
-| pylsp | LSP for Python | `pip install python-lsp-server` |
 
 ## Crates
 
@@ -144,7 +135,7 @@ model = "claude-sonnet-4-6-20260217"
 |-------|-------------|
 | [`limit-llm`](limit-llm) | Multi-provider LLM client |
 | [`limit-agent`](limit-agent) | Agent runtime with tool registry |
-| [`limit-tldr`](limit-tldr) | Code analysis (95% token savings) |
+| [`limit-tui`](limit-tui) | TUI components |
 | [`limit-cli`](limit-cli) | TUI/REPL interface |
 
 ## Documentation
