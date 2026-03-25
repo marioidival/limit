@@ -18,7 +18,7 @@
 //! ```no_run
 //! use limit_cli::tui::app::{TuiBridge, TuiApp};
 //! use limit_cli::agent_bridge::AgentBridge;
-//! use limit_llm::{Config, ProviderConfig};
+//! use limit_llm::{Config, ProviderConfig, CompactionSettings, CacheSettings};
 //! use tokio::sync::mpsc;
 //! use std::collections::HashMap;
 //!
@@ -35,7 +35,13 @@
 //!     thinking_enabled: false,
 //!     clear_thinking: true,
 //! });
-//! let config = Config { provider: "anthropic".to_string(), providers, browser: limit_llm::BrowserConfigSection::default() };
+//! let config = Config {
+//!     provider: "anthropic".to_string(),
+//!     providers,
+//!     browser: limit_llm::BrowserConfigSection::default(),
+//!     compaction: CompactionSettings::default(),
+//!     cache: CacheSettings::default(),
+//! };
 //!
 //! // Create agent bridge and event channel
 //! let (tx, rx) = mpsc::unbounded_channel();

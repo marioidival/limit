@@ -247,7 +247,7 @@ fn test_e2e_all_tools_registered() {
     let agent_bridge = AgentBridge::new(config).expect("Failed to create agent bridge");
     let tools = agent_bridge.get_tool_definitions();
 
-    // Expected tools from the plan
+    // Expected tools (grep and lsp are temporarily disabled)
     let expected_tools = [
         "file_read",
         "file_write",
@@ -261,9 +261,10 @@ fn test_e2e_all_tools_registered() {
         "git_push",
         "git_pull",
         "git_clone",
-        "grep",
         "ast_grep",
-        "lsp",
+        "web_search",
+        "web_fetch",
+        "browser",
     ];
 
     let tool_names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
