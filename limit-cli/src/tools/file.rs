@@ -90,7 +90,7 @@ impl Tool for FileReadTool {
 
         if was_truncated {
             result["warning"] = Value::String(format!(
-                "File truncated ({} chars shown of {} total). Use tldr_analyze for structure overview.",
+                "File truncated ({} chars shown of {} total). Use ast_grep for structural search.",
                 LARGE_FILE_THRESHOLD,
                 metadata.len()
             ));
