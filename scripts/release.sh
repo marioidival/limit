@@ -57,7 +57,6 @@ show_rationale() {
     echo "   - Atualiza limit-cli/Cargo.toml"
     echo "   - Atualiza limit-agent/Cargo.toml"
     echo "   - Atualiza limit-llm/Cargo.toml"
-    echo "   - Atualiza limit-tldr/Cargo.toml"
     echo "   - Atualiza limit-tui/Cargo.toml"
     echo "   - (Workspace Cargo.toml não tem versão)"
     echo ""
@@ -198,7 +197,7 @@ update_workspace_dependencies() {
     log_info "Atualizando dependências do workspace para $new_version..."
 
     # Atualiza dependências limit-* nos Cargo.toml
-    for file in limit-cli/Cargo.toml limit-agent/Cargo.toml limit-tui/Cargo.toml limit-tldr/Cargo.toml; do
+    for file in limit-cli/Cargo.toml limit-agent/Cargo.toml limit-tui/Cargo.toml; do
         if [ -f "$file" ]; then
             # Atualiza limit-llm dependency
             sed -i '' "s/limit-llm = { path = \"\.\.\/limit-llm\", version = \"[^\"]*\" }/limit-llm = { path = \"\.\.\/limit-llm\", version = \"$new_version\" }/g" "$file"
@@ -206,8 +205,6 @@ update_workspace_dependencies() {
             sed -i '' "s/limit-agent = { path = \"\.\.\/limit-agent\", version = \"[^\"]*\" }/limit-agent = { path = \"\.\.\/limit-agent\", version = \"$new_version\" }/g" "$file"
             # Atualiza limit-tui dependency
             sed -i '' "s/limit-tui = { path = \"\.\.\/limit-tui\", version = \"[^\"]*\" }/limit-tui = { path = \"\.\.\/limit-tui\", version = \"$new_version\" }/g" "$file"
-            # Atualiza limit-tldr dependency
-            sed -i '' "s/limit-tldr = { path = \"\.\.\/limit-tldr\", version = \"[^\"]*\" }/limit-tldr = { path = \"\.\.\/limit-tldr\", version = \"$new_version\" }/g" "$file"
             log_success "  Dependências atualizadas em $file"
         fi
     done
@@ -224,7 +221,6 @@ update_all_versions() {
     update_cargo_toml_version "limit-cli/Cargo.toml" "$new_version"
     update_cargo_toml_version "limit-agent/Cargo.toml" "$new_version"
     update_cargo_toml_version "limit-llm/Cargo.toml" "$new_version"
-    update_cargo_toml_version "limit-tldr/Cargo.toml" "$new_version"
     update_cargo_toml_version "limit-tui/Cargo.toml" "$new_version"
 
     # Atualiza dependências internas do workspace
@@ -304,7 +300,6 @@ commit_changes() {
     git add limit-cli/Cargo.toml
     git add limit-agent/Cargo.toml
     git add limit-llm/Cargo.toml
-    git add limit-tldr/Cargo.toml
     git add limit-tui/Cargo.toml
     git add CHANGELOG.md
     git add Cargo.lock
