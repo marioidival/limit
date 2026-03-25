@@ -3,29 +3,15 @@ use limit_cli::CliError;
 
 #[derive(Parser)]
 #[command(name = "limit", about = "AI-powered code agent with TUI", version)]
-struct Args {
-    /// Use text-based REPL instead of TUI
-    #[arg(long)]
-    no_tui: bool,
-}
+struct Args;
 
 fn main() {
     limit_cli::init_logging();
-    let args = Args::parse();
 
-    let result = if args.no_tui { run_repl() } else { run_tui() };
-
-    if let Err(e) = result {
+    if let Err(e) = run_tui() {
         tracing::error!("Application error: {}", e);
         std::process::exit(1);
     }
-}
-
-fn run_repl() -> Result<(), CliError> {
-    // For now, just error - REPL is not the main focus
-    Err(CliError::ConfigError(
-        "REPL mode not yet implemented in this version".to_string(),
-    ))
 }
 
 fn run_tui() -> Result<(), CliError> {

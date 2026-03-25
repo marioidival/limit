@@ -2,7 +2,7 @@
 name = "limit-cli"
 version = "0.0.43"
 edition = "2021"
-description = "AI-powered terminal coding assistant with REPL and TUI. Multi-provider LLM support, session persistence, and built-in tools."
+description = "AI-powered terminal coding assistant with TUI. Multi-provider LLM support, session persistence, and built-in tools."
 authors = ["Mário Idival <marioidival@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/marioidival/limit"
@@ -22,7 +22,6 @@ path = "src/main.rs"
 thiserror = "1.0"
 futures = "0.3"
 limit-agent = { path = "../limit-agent", version = "0.0.43" }
-rustyline = "14.0"
 crossterm = { version = "0.29", features = ["bracketed-paste"] }
 ratatui = "0.29"
 similar = "2.4"
@@ -32,8 +31,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 async-trait = "0.1"
 tempfile = "3.8"
-termimad = "0.34"
-regex = "1.10"
 syntect = { version = "5.2", default-features = false, features = [
     "default-onig",
     "parsing",
@@ -54,6 +51,7 @@ arboard = "3.6"
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 frizbee = "0.8"
 ignore = "0.4"
+regex = "1.10"
 ast-grep-core = "0.42"
 ast-grep-language = { version = "0.42", features = ["builtin-parser"] }
 
