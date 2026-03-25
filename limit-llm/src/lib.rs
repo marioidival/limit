@@ -14,7 +14,7 @@
 //! - **Multi-provider support**: Anthropic Claude, OpenAI GPT, z.ai GLM, and local LLMs
 //! - **Streaming responses**: Async streaming with `futures::Stream`
 //! - **Token tracking**: SQLite-based usage tracking and cost estimation
-//! - **State persistence**: Serialize/restore conversation state with bincode
+//! - **State persistence**: Serialize/restore conversation state with JSON
 //! - **Model handoff**: Automatic fallback between providers on failure
 //! - **Tool calling**: Full function/tool support for all compatible providers
 //! - **Thinking mode**: Extended reasoning support (Claude, z.ai)
@@ -42,6 +42,7 @@
 //!             content: Some("Hello, Claude!".to_string()),
 //!             tool_calls: None,
 //!             tool_call_id: None,
+//!             cache_control: None,
 //!         }
 //!     ];
 //!
@@ -113,6 +114,8 @@
 //!     "claude-sonnet-4-6-20260217",
 //!     100,  // input tokens
 //!     50,   // output tokens
+//!     0,    // cache read tokens
+//!     0,    // cache write tokens
 //!     0.001, // cost in USD
 //!     1500,  // duration in ms
 //! )?;
@@ -130,7 +133,7 @@
 //! use limit_llm::{StatePersistence, Message};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let persistence = StatePersistence::new("~/.limit/state/session.bin");
+//! let persistence = StatePersistence::new("~/.limit/state/session.json");
 //!
 //! // Save conversation
 //! let messages: Vec<Message> = vec![];

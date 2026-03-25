@@ -1,8 +1,5 @@
 //! Input history management for TUI
-//!
-//! Provides persistent history of user inputs with navigation support.
 
-use bincode::{deserialize, serialize};
 use std::fs;
 use std::path::PathBuf;
 
@@ -173,10 +170,11 @@ impl InputHistory {
             return Ok(Self::new());
         }
 
-        let data = fs::read(path).map_err(|e| format!("Failed to read history file: {}", e))?;
+        let data =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read history file: {}", e))?;
 
-        let entries: Vec<String> =
-            deserialize(&data).map_err(|e| format!("Failed to deserialize history: {}", e))?;
+        let entries: Vec<String> = serde_json::from_str(&data)
+            .map_err(|e| format!("Failed to deserialize history: {}", e))?;
 
         Ok(Self {
             entries,
@@ -194,8 +192,8 @@ impl InputHistory {
                 .map_err(|e| format!("Failed to create history directory: {}", e))?;
         }
 
-        let serialized =
-            serialize(&self.entries).map_err(|e| format!("Failed to serialize history: {}", e))?;
+        let serialized = serde_json::to_string_pretty(&self.entries)
+            .map_err(|e| format!("Failed to serialize history: {}", e))?;
 
         fs::write(path, serialized).map_err(|e| format!("Failed to write history file: {}", e))?;
 
@@ -410,7 +408,7 @@ mod tests {
     #[test]
     fn test_roundtrip_save_load() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("history.bin");
+        let path = dir.path().join("history.json");
 
         let mut history = InputHistory::new();
         history.add("first");
@@ -429,7 +427,7 @@ mod tests {
     #[test]
     fn test_load_missing_file_returns_empty() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("nonexistent.bin");
+        let path = dir.path().join("nonexistent.json");
 
         let history = InputHistory::load(&path).unwrap();
         assert!(history.is_empty());
@@ -438,7 +436,7 @@ mod tests {
     #[test]
     fn test_save_creates_parent_directory() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("nested").join("dir").join("history.bin");
+        let path = dir.path().join("nested").join("dir").join("history.json");
 
         let mut history = InputHistory::new();
         history.add("test");

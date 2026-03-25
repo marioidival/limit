@@ -1,6 +1,5 @@
 use crate::error::LlmError;
 use crate::types::Message;
-use bincode::{deserialize, serialize};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -96,7 +95,7 @@ impl StatePersistence {
             messages: persisted_messages,
         };
 
-        let serialized = serialize(&state)
+        let serialized = serde_json::to_string_pretty(&state)
             .map_err(|e| LlmError::PersistenceError(format!("Failed to serialize state: {}", e)))?;
 
         fs::write(&self.file_path, serialized)
@@ -106,7 +105,7 @@ impl StatePersistence {
     }
 
     pub fn load(&self) -> Result<Vec<Message>, LlmError> {
-        let data = match fs::read(&self.file_path) {
+        let data = match fs::read_to_string(&self.file_path) {
             Ok(data) => data,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
             Err(e) => {
@@ -117,11 +116,10 @@ impl StatePersistence {
             }
         };
 
-        let state: PersistedState = deserialize(&data).map_err(|e| {
+        let state: PersistedState = serde_json::from_str(&data).map_err(|e| {
             LlmError::PersistenceError(format!("Failed to deserialize state: {}", e))
         })?;
 
-        // Handle version migration if needed
         if state.version > CURRENT_VERSION {
             return Err(LlmError::PersistenceError(format!(
                 "Version mismatch: expected {}, found {}",
@@ -144,7 +142,7 @@ mod tests {
     #[test]
     fn test_save_load_roundtrip() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("test_state.bin");
+        let file_path = dir.path().join("test_state.json");
 
         let persistence = StatePersistence::new(&file_path);
 
@@ -177,7 +175,7 @@ mod tests {
     #[test]
     fn test_save_load_with_tool_result() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("test_state.bin");
+        let file_path = dir.path().join("test_state.json");
 
         let persistence = StatePersistence::new(&file_path);
 
@@ -200,7 +198,7 @@ mod tests {
     #[test]
     fn test_load_empty_file_returns_empty() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("nonexistent.bin");
+        let file_path = dir.path().join("nonexistent.json");
 
         let persistence = StatePersistence::new(&file_path);
 
@@ -212,9 +210,9 @@ mod tests {
     #[test]
     fn test_load_corrupted_file_returns_error() {
         let dir = tempdir().unwrap();
-        let file_path = dir.path().join("corrupted.bin");
+        let file_path = dir.path().join("corrupted.json");
 
-        std::fs::write(&file_path, b"invalid binary data").unwrap();
+        std::fs::write(&file_path, b"invalid json data").unwrap();
 
         let persistence = StatePersistence::new(&file_path);
 

@@ -1,6 +1,5 @@
 use crate::error::CliError;
 use crate::session_tree::{SessionEntry, SessionTree, SessionTreeError};
-use bincode::{deserialize, serialize};
 use chrono::{DateTime, Utc};
 use limit_llm::Message;
 use rusqlite::{params, Connection};
@@ -187,7 +186,7 @@ impl SessionManager {
         total_input_tokens: u64,
         total_output_tokens: u64,
     ) -> Result<(), CliError> {
-        let file_path = self.sessions_dir.join(format!("{}.bin", session_id));
+        let file_path = self.sessions_dir.join(format!("{}.json", session_id));
 
         fs::create_dir_all(&self.sessions_dir).map_err(|e| {
             CliError::ConfigError(format!("Failed to create sessions directory: {}", e))
@@ -201,7 +200,7 @@ impl SessionManager {
             messages: persisted_messages,
         };
 
-        let serialized = serialize(&state)
+        let serialized = serde_json::to_string_pretty(&state)
             .map_err(|e| CliError::ConfigError(format!("Failed to serialize messages: {}", e)))?;
 
         fs::write(&file_path, serialized)
@@ -220,12 +219,25 @@ impl SessionManager {
 
     #[instrument(skip(self))]
     pub fn load_session(&self, session_id: &str) -> Result<Vec<Message>, CliError> {
-        let file_path = self.sessions_dir.join(format!("{}.bin", session_id));
+        let file_path = self.sessions_dir.join(format!("{}.json", session_id));
 
-        let data = fs::read(&file_path)
-            .map_err(|e| CliError::ConfigError(format!("Failed to read session file: {}", e)))?;
+        let data = match fs::read_to_string(&file_path) {
+            Ok(data) => data,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(CliError::ConfigError(format!(
+                    "Session file not found: {}",
+                    session_id
+                )))
+            }
+            Err(e) => {
+                return Err(CliError::ConfigError(format!(
+                    "Failed to read session file: {}",
+                    e
+                )))
+            }
+        };
 
-        let state: PersistedState = deserialize(&data)
+        let state: PersistedState = serde_json::from_str(&data)
             .map_err(|e| CliError::ConfigError(format!("Failed to deserialize messages: {}", e)))?;
 
         // Handle version migration if needed
@@ -463,10 +475,10 @@ impl SessionManager {
         // Load tree to verify and return
         let tree = self.load_tree_session(session_id)?;
 
-        // Cleanup old binary file AFTER successful migration
-        let bin_path = self.sessions_dir.join(format!("{}.bin", session_id));
-        if bin_path.exists() {
-            let _ = fs::remove_file(&bin_path);
+        // Cleanup old json file AFTER successful migration
+        let json_path = self.sessions_dir.join(format!("{}.json", session_id));
+        if json_path.exists() {
+            let _ = fs::remove_file(&json_path);
         }
 
         Ok(tree)
@@ -702,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn test_migrate_bin_to_jsonl() {
+    fn test_migrate_json_to_jsonl() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("session.db");
         let sessions_dir = dir.path().join("sessions");

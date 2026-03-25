@@ -8,8 +8,8 @@ pub enum AgentError {
     SandboxError(String),
     #[error("IO error: {0}")]
     IoError(String),
-    #[error("Bincode error: {0}")]
-    BincodeError(String),
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 }
 
 impl Clone for AgentError {
@@ -19,7 +19,7 @@ impl Clone for AgentError {
             AgentError::StateError(s) => AgentError::StateError(s.clone()),
             AgentError::SandboxError(s) => AgentError::SandboxError(s.clone()),
             AgentError::IoError(s) => AgentError::IoError(s.clone()),
-            AgentError::BincodeError(s) => AgentError::BincodeError(s.clone()),
+            AgentError::SerializationError(s) => AgentError::SerializationError(s.clone()),
         }
     }
 }

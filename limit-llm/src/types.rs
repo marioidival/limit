@@ -31,6 +31,43 @@ use serde::{Deserialize, Serialize};
 ///     content: Some("What is the capital of France?".to_string()),
 ///     tool_calls: None,
 ///     tool_call_id: None,
+///     cache_control: None,
+/// };
+/// ```
+///
+/// ## Assistant Message with Tool Calls
+///
+/// ```
+/// use limit_llm::{Message, Role, ToolCall, FunctionCall};
+/// use serde_json::json;
+///
+/// let msg = Message {
+///     role: Role::Assistant,
+///     content: None,
+///     tool_calls: Some(vec![ToolCall {
+///         id: "call_123".to_string(),
+///         tool_type: "function".to_string(),
+///         function: FunctionCall {
+///             name: "get_weather".to_string(),
+///             arguments: json!({"location": "Paris"}).to_string(),
+///         },
+///     }]),
+///     tool_call_id: None,
+///     cache_control: None,
+/// };
+/// ```
+///
+/// ## Tool Result Message
+///
+/// ```
+/// use limit_llm::{Message, Role};
+///
+/// let msg = Message {
+///     role: Role::Tool,
+///     content: Some(r#"{"temp": 22, "condition": "sunny"}"#.to_string()),
+///     tool_calls: None,
+///     tool_call_id: Some("call_123".to_string()),
+///     cache_control: None,
 /// };
 /// ```
 ///
@@ -51,6 +88,7 @@ use serde::{Deserialize, Serialize};
 ///         },
 ///     }]),
 ///     tool_call_id: None,
+///     cache_control: None,
 /// };
 /// ```
 ///
@@ -64,6 +102,7 @@ use serde::{Deserialize, Serialize};
 ///     content: Some(r#"{"temp": 22, "condition": "sunny"}"#.to_string()),
 ///     tool_calls: None,
 ///     tool_call_id: Some("call_123".to_string()),
+///     cache_control: None,
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,5 +1,4 @@
 use crate::error::AgentError;
-use bincode::{deserialize, serialize};
 use limit_llm::types::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -8,7 +7,7 @@ use std::path::PathBuf;
 use tracing::instrument;
 
 const STATE_DIR: &str = ".limit";
-const STATE_FILE: &str = "agent-state.bin";
+const STATE_FILE: &str = "agent-state.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Decision {
@@ -69,8 +68,9 @@ impl AgentState {
             fs::create_dir_all(parent)?;
         }
 
-        let encoded = serialize(self)
-            .map_err(|e| AgentError::BincodeError(format!("Serialization failed: {:?}", e)))?;
+        let encoded = serde_json::to_string_pretty(self).map_err(|e| {
+            AgentError::SerializationError(format!("Serialization failed: {:?}", e))
+        })?;
         fs::write(&path, encoded)?;
 
         Ok(())
@@ -84,9 +84,10 @@ impl AgentState {
             return Ok(Self::new());
         }
 
-        let encoded = fs::read(&path)?;
-        let _state: AgentState = deserialize(&encoded)
-            .map_err(|e| AgentError::BincodeError(format!("Deserialization failed: {:?}", e)))?;
+        let encoded = fs::read_to_string(&path)?;
+        let _state: AgentState = serde_json::from_str(&encoded).map_err(|e| {
+            AgentError::SerializationError(format!("Deserialization failed: {:?}", e))
+        })?;
 
         Ok(_state)
     }
