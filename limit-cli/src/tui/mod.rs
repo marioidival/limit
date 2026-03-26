@@ -12,6 +12,7 @@
 //! - **Input**: Input handling (`InputHandler`, `InputEditor`, `ClipboardHandler`)
 //! - **Activity**: Activity message formatting
 //! - **Autocomplete**: File autocomplete management
+//! - **InputQueue**: Message queue for async operations
 //!
 //! # Example
 //!
@@ -65,8 +66,10 @@ pub mod autocomplete;
 pub mod bridge;
 pub mod commands;
 pub mod input;
+pub mod input_queue;
 pub mod ui;
 
 // Re-export public API
 pub use input::InputHandler;
+pub use input_queue::InputQueue;
 pub use state::{FileAutocompleteState, TuiState, MAX_PASTE_SIZE};

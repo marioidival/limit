@@ -45,6 +45,8 @@ pub struct TuiApp {
     command_registry: crate::tui::commands::CommandRegistry,
     /// Pending image attachments (from clipboard paste)
     pending_images: Vec<std::path::PathBuf>,
+    /// Input queue for managing messages during async operations
+    input_queue: crate::tui::input_queue::InputQueue,
 }
 
 impl TuiApp {
@@ -101,6 +103,7 @@ impl TuiApp {
             input_handler: InputHandler::new(),
             command_registry,
             pending_images: Vec::new(),
+            input_queue: crate::tui::input_queue::InputQueue::new(),
         })
     }
 
@@ -247,7 +250,7 @@ impl TuiApp {
         if self.status_message.starts_with("Image attached") {
             return;
         }
-        
+
         let session_id = self.tui_bridge.session_id();
         let has_activity = self
             .tui_bridge
@@ -258,10 +261,28 @@ impl TuiApp {
 
         match self.tui_bridge.state() {
             TuiState::Idle => {
+                // Send queued messages when transitioning to idle
+                self.maybe_send_next_queued_input();
+
                 if has_activity {
                     // Show spinner when there are in-progress activities
                     let spinner = self.tui_bridge.spinner().lock().unwrap();
                     self.status_message = format!("{} Processing...", spinner.current_frame());
+                } else if self.input_queue.has_queued_messages()
+                    || self.input_queue.has_pending_steers()
+                {
+                    // Show queue status
+                    let queued = self.input_queue.queued_count();
+                    let steers = self.input_queue.steer_count();
+                    let mut parts = vec![];
+                    if queued > 0 {
+                        parts.push(format!("{} queued", queued));
+                    }
+                    if steers > 0 {
+                        parts.push(format!("{} pending", steers));
+                    }
+                    self.status_message =
+                        format!("Ready | {} message(s) in queue", parts.join(", "));
                 } else {
                     self.status_message = format!(
                         "Ready | Session: {}",
@@ -272,7 +293,24 @@ impl TuiApp {
             }
             TuiState::Thinking => {
                 let spinner = self.tui_bridge.spinner().lock().unwrap();
-                self.status_message = format!("{} Thinking...", spinner.current_frame());
+                if self.input_queue.has_queued_messages() || self.input_queue.has_pending_steers() {
+                    let queued = self.input_queue.queued_count();
+                    let steers = self.input_queue.steer_count();
+                    let mut parts = vec![];
+                    if queued > 0 {
+                        parts.push(format!("{} queued", queued));
+                    }
+                    if steers > 0 {
+                        parts.push(format!("{} pending", steers));
+                    }
+                    self.status_message = format!(
+                        "{} Thinking... | {} message(s) waiting",
+                        spinner.current_frame(),
+                        parts.join(", ")
+                    );
+                } else {
+                    self.status_message = format!("{} Thinking...", spinner.current_frame());
+                }
                 self.status_is_error = false;
             }
         }
@@ -373,7 +411,7 @@ impl TuiApp {
         let is_paste_shortcut = {
             #[cfg(target_os = "macos")]
             {
-                let has_mod = key.modifiers.contains(KeyModifiers::SUPER) 
+                let has_mod = key.modifiers.contains(KeyModifiers::SUPER)
                     || key.modifiers.contains(KeyModifiers::CONTROL);
                 let is_v = key.code == KeyCode::Char('v');
                 is_v && has_mod
@@ -383,31 +421,36 @@ impl TuiApp {
                 self.is_copy_paste_modifier(&key, 'v')
             }
         };
-        
+
         // Alt+V for image paste (macOS and Linux)
-        if key.code == KeyCode::Char('v') 
+        if key.code == KeyCode::Char('v')
             && key.modifiers.contains(KeyModifiers::ALT)
-            && !self.tui_bridge.is_busy() {
+            && !self.tui_bridge.is_busy()
+        {
             tracing::trace!("Attempting image paste (Alt+V)...");
-            
+
             // Check if current provider supports vision
-            let model = self.tui_bridge.agent_bridge_arc()
+            let model = self
+                .tui_bridge
+                .agent_bridge_arc()
                 .lock()
                 .unwrap()
                 .model()
                 .to_lowercase();
-            let provider = self.tui_bridge.agent_bridge_arc()
+            let provider = self
+                .tui_bridge
+                .agent_bridge_arc()
                 .lock()
                 .unwrap()
                 .provider_name()
                 .to_lowercase();
-            
+
             let supports_vision = {
                 // OpenAI vision models
                 if provider == "openai" || provider == "openai-compatible" {
-                    model.contains("gpt-4o") 
-                    || model.contains("gpt-4-turbo")
-                    || model.contains("gpt-4-vision")
+                    model.contains("gpt-4o")
+                        || model.contains("gpt-4-turbo")
+                        || model.contains("gpt-4-vision")
                 // Anthropic Claude 3+ all support vision
                 } else if provider == "anthropic" || provider == "claude" {
                     model.contains("claude-3")
@@ -419,13 +462,13 @@ impl TuiApp {
                     false
                 }
             };
-            
+
             if !supports_vision {
                 self.status_message = "Current provider/model does not support images. Use a vision-capable model like gpt-4o or claude-3.".to_string();
                 self.status_is_error = true;
                 return Ok(());
             }
-            
+
             match crate::clipboard_paste::paste_image_to_temp_png() {
                 Ok((_path, info)) => {
                     tracing::debug!(
@@ -451,7 +494,7 @@ impl TuiApp {
             }
             return Ok(());
         }
-        
+
         // Regular text paste (Ctrl/Cmd+V)
         if is_paste_shortcut && !self.tui_bridge.is_busy() {
             let clipboard_result = if let Some(ref clipboard) = self.clipboard {
@@ -592,9 +635,54 @@ impl TuiApp {
             _ => {}
         }
 
-        // Don't accept input while agent is busy
+        // Don't accept input while agent is busy - queue messages instead
         if self.tui_bridge.is_busy() {
-            tracing::debug!("Agent busy, ignoring");
+            // Allow character input and queue it
+            match key.code {
+                KeyCode::Char(c)
+                    if key.modifiers == KeyModifiers::NONE
+                        || key.modifiers == KeyModifiers::SHIFT =>
+                {
+                    // Insert character
+                    self.input_editor.insert_char(c);
+                    tracing::debug!("Agent busy, queuing character: {}", c);
+                }
+                KeyCode::Backspace => {
+                    self.delete_char_before_cursor();
+                }
+                KeyCode::Delete => {
+                    self.input_editor.delete_char_at();
+                }
+                KeyCode::Left => {
+                    self.input_editor.move_left();
+                }
+                KeyCode::Right => {
+                    self.input_editor.move_right();
+                }
+                KeyCode::Home => {
+                    self.input_editor.move_to_start();
+                }
+                KeyCode::End => {
+                    self.input_editor.move_to_end();
+                }
+                KeyCode::Enter => {
+                    // Queue the message
+                    let text = self.input_editor.take_and_add_to_history();
+                    if !text.is_empty() {
+                        self.input_queue.queue_message(text);
+                        tracing::info!("Message queued while agent is busy");
+                    }
+                }
+                KeyCode::Esc => {
+                    // If we have pending steers, mark for immediate submit after interrupt
+                    if self.input_queue.has_pending_steers() {
+                        self.input_queue.set_submit_after_interrupt(true);
+                        self.cancel_current_operation();
+                        tracing::info!("Interrupting with pending steers to send immediately");
+                    }
+                }
+                _ => {}
+            }
             return Ok(());
         }
 
@@ -1057,10 +1145,7 @@ impl TuiApp {
                     // Set cancellation token and operation ID
                     bridge.set_cancellation_token(cancel_token.clone(), operation_id);
 
-                    match bridge
-                        .process_message(&text, &mut messages_guard)
-                        .await
-                    {
+                    match bridge.process_message(&text, &mut messages_guard).await {
                         Ok(result) => {
                             {
                                 let mut input = total_input_tokens.lock().unwrap();
@@ -1132,27 +1217,50 @@ impl TuiApp {
             // Increment operation ID to ignore subsequent events from old operation
             self.tui_bridge.next_operation_id();
 
-            // Force reset TUI state to Idle
-            self.tui_bridge.set_state(TuiState::Idle);
+            // Check if we should send pending steers immediately after interrupt
+            let should_send_steers = self.input_queue.should_submit_after_interrupt();
 
-            // Update UI state
-            self.status_message = "Operation cancelled".to_string();
-            self.status_is_error = false;
+            if should_send_steers {
+                // Drain steers and send as new turn
+                if let Some(merged) = self.input_queue.merge_all() {
+                    tracing::info!(
+                        "Sending pending steers immediately after interrupt: {}",
+                        merged
+                    );
 
-            // Clear activity feed
-            self.tui_bridge
-                .activity_feed()
-                .lock()
-                .unwrap()
-                .complete_all();
+                    // Add user message to chat
+                    self.tui_bridge.add_user_message(merged.clone());
 
-            // Add cancellation message to chat
-            let cancel_msg = Message::system("⚠ Operation cancelled by user".to_string());
-            self.tui_bridge
-                .chat_view()
-                .lock()
-                .unwrap()
-                .add_message(cancel_msg);
+                    // TODO: Submit to agent - this would need to call handle_enter logic
+                    // For now, just restore to input editor
+                    self.input_editor.set_text(&merged);
+                    self.status_message =
+                        "Steers restored to input - press Enter to send".to_string();
+                }
+                self.input_queue.set_submit_after_interrupt(false);
+            } else {
+                // Force reset TUI state to Idle
+                self.tui_bridge.set_state(TuiState::Idle);
+
+                // Update UI state
+                self.status_message = "Operation cancelled".to_string();
+                self.status_is_error = false;
+
+                // Clear activity feed
+                self.tui_bridge
+                    .activity_feed()
+                    .lock()
+                    .unwrap()
+                    .complete_all();
+
+                // Add cancellation message to chat
+                let cancel_msg = Message::system("⚠ Operation cancelled by user".to_string());
+                self.tui_bridge
+                    .chat_view()
+                    .lock()
+                    .unwrap()
+                    .add_message(cancel_msg);
+            }
         }
         self.cancellation_token = None;
         // Reset ESC time via input_handler
@@ -1185,6 +1293,40 @@ impl TuiApp {
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
 
         Ok(())
+    }
+
+    /// Send next queued input if available (called when transitioning to Idle)
+    fn maybe_send_next_queued_input(&mut self) {
+        if self.input_queue.is_autosend_suppressed() {
+            return;
+        }
+
+        if self.tui_bridge.is_busy() {
+            return;
+        }
+
+        // Pop the next queued message
+        if let Some(msg) = self.input_queue.pop_queued() {
+            tracing::info!("Sending queued message: {}", msg.text);
+
+            // Set text in editor and trigger handle_enter
+            self.input_editor.set_text(&msg.text);
+
+            // Add to history
+            self.input_editor.add_to_history(&msg.text);
+
+            // Clear editor after setting
+            self.input_editor.clear();
+
+            // Submit the message
+            // Note: We're calling the internal logic directly to avoid recursive queueing
+            // This is a simplified version of handle_enter
+            self.tui_bridge.add_user_message(msg.text.clone());
+
+            // TODO: Spawn LLM processing thread similar to handle_enter
+            // For now, just add the message to chat
+            tracing::info!("Queued message added to chat (full submission not yet implemented)");
+        }
     }
 }
 
