@@ -6,6 +6,7 @@ use limit_cli::CliError;
 struct Args;
 
 fn main() {
+    let _args = Args::parse();
     limit_cli::init_logging();
 
     if let Err(e) = run_tui() {
