@@ -1,5 +1,5 @@
 use crate::error::LlmError;
-use crate::types::Message;
+use crate::types::{Message, MessageContent};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -55,7 +55,7 @@ impl From<PersistedMessage> for Message {
     fn from(msg: PersistedMessage) -> Self {
         Message {
             role: msg.role.into(),
-            content: msg.content,
+            content: msg.content.map(MessageContent::Text),
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
             cache_control: msg.cache_control,
@@ -67,7 +67,7 @@ impl From<Message> for PersistedMessage {
     fn from(msg: Message) -> Self {
         PersistedMessage {
             role: msg.role.into(),
-            content: msg.content,
+            content: msg.content.map(|c| c.to_text()),
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
             cache_control: msg.cache_control,
@@ -149,14 +149,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(crate::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::Assistant,
-                content: Some("Hi there!".to_string()),
+                content: Some(crate::MessageContent::text("Hi there!")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -181,7 +181,7 @@ mod tests {
 
         let messages = vec![Message {
             role: Role::Tool,
-            content: Some("tool output".to_string()),
+            content: Some(crate::MessageContent::text("tool output")),
             tool_calls: None,
             tool_call_id: Some("call_123".to_string()),
             cache_control: None,

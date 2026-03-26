@@ -103,12 +103,21 @@ impl TuiBridge {
         for msg in &messages {
             match msg.role {
                 limit_llm::Role::User => {
-                    let chat_msg = Message::user(msg.content.clone().unwrap_or_default());
+                    let text = msg
+                        .content
+                        .as_ref()
+                        .map(|c| c.to_text())
+                        .unwrap_or_default();
+                    let chat_msg = Message::user(text);
                     chat_view.lock().unwrap().add_message(chat_msg);
                 }
                 limit_llm::Role::Assistant => {
-                    let content = msg.content.clone().unwrap_or_default();
-                    let chat_msg = Message::assistant(content);
+                    let text = msg
+                        .content
+                        .as_ref()
+                        .map(|c| c.to_text())
+                        .unwrap_or_default();
+                    let chat_msg = Message::assistant(text);
                     chat_view.lock().unwrap().add_message(chat_msg);
                 }
                 limit_llm::Role::System => {

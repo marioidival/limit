@@ -5,6 +5,7 @@
 mod branch;
 mod browser;
 mod builtin;
+mod copy;
 mod registry;
 mod session;
 mod share;
@@ -12,6 +13,7 @@ mod share;
 pub use branch::{branch_from, list_branches, BranchInfo};
 pub use browser::BrowserCommand;
 pub use builtin::{ClearCommand, ExitCommand, HelpCommand};
+pub use copy::CopyCommand;
 pub use registry::{Command, CommandContext, CommandRegistry, CommandResult};
 pub use session::SessionCommand;
 pub use share::ShareCommand;
@@ -26,6 +28,7 @@ pub fn create_default_registry() -> CommandRegistry {
     registry.register(Box::new(SessionCommand::new()));
     registry.register(Box::new(ShareCommand::new()));
     registry.register(Box::new(BrowserCommand::new()));
+    registry.register(Box::new(CopyCommand));
 
     registry
 }

@@ -27,7 +27,7 @@ impl ModelHandoff {
         let mut total = message
             .content
             .as_ref()
-            .map(|c| self.count_tokens(c))
+            .map(|c| self.count_tokens(&c.to_text()))
             .unwrap_or(0);
 
         // Add role overhead (4 tokens for message format)
@@ -182,7 +182,7 @@ mod tests {
         let handoff = ModelHandoff::new();
         let msg = Message {
             role: Role::User,
-            content: Some("Hello, world!".to_string()),
+            content: Some(crate::MessageContent::text("Hello, world!")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -196,7 +196,7 @@ mod tests {
         let handoff = ModelHandoff::new();
         let msg = Message {
             role: Role::Assistant,
-            content: Some("".to_string()),
+            content: Some(crate::MessageContent::text("")),
             tool_calls: Some(vec![ToolCall {
                 id: "call_123".to_string(),
                 tool_type: "function".to_string(),
@@ -218,14 +218,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(crate::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::Assistant,
-                content: Some("Hi there!".to_string()),
+                content: Some(crate::MessageContent::text("Hi there!")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -241,14 +241,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::System,
-                content: Some("You are a helpful assistant.".to_string()),
+                content: Some(crate::MessageContent::text("You are a helpful assistant.")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(crate::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -266,7 +266,7 @@ mod tests {
         let handoff = ModelHandoff::new();
         let mut messages = vec![Message {
             role: Role::System,
-            content: Some("System".to_string()),
+            content: Some(crate::MessageContent::text("System")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -280,7 +280,7 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: Some(format!("Message {}", i)),
+                content: Some(crate::MessageContent::text(format!("Message {}", i))),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -297,7 +297,7 @@ mod tests {
         // Last message should be preserved
         assert_eq!(
             compacted.last().unwrap().content,
-            Some("Message 99".to_string())
+            Some(crate::MessageContent::text("Message 99"))
         );
     }
 
@@ -306,7 +306,7 @@ mod tests {
         let handoff = ModelHandoff::new();
         let messages = vec![Message {
             role: Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -328,7 +328,7 @@ mod tests {
         let handoff = ModelHandoff::new();
         let mut messages = vec![Message {
             role: Role::System,
-            content: Some("System".to_string()),
+            content: Some(crate::MessageContent::text("System")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -342,10 +342,10 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: Some(format!(
+                content: Some(crate::MessageContent::text(format!(
                     "This is message number {}. It contains significantly more content to ensure we exceed the context window limit. Each message should be approximately 50-60 tokens in length when encoded with the cl100k_base tokenizer. This allows us to test the compaction functionality effectively. ",
                     i
-                )),
+                ))),
                 tool_calls: None,
                 tool_call_id: None,
             cache_control: None,
@@ -396,7 +396,10 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: Some(format!("Message {} with some content to make it longer", i)),
+                content: Some(crate::MessageContent::text(format!(
+                    "Message {} with some content to make it longer",
+                    i
+                ))),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -426,14 +429,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::User,
-                content: Some("Short".to_string()),
+                content: Some(crate::MessageContent::text("Short")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::Assistant,
-                content: Some("Hi".to_string()),
+                content: Some(crate::MessageContent::text("Hi")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -452,14 +455,16 @@ mod tests {
         for _ in 0..5 {
             messages.push(Message {
                 role: Role::User,
-                content: Some("This is a user message with enough content".to_string()),
+                content: Some(crate::MessageContent::text(
+                    "This is a user message with enough content",
+                )),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             });
             messages.push(Message {
                 role: Role::Assistant,
-                content: Some("Assistant reply".to_string()),
+                content: Some(crate::MessageContent::text("Assistant reply")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,

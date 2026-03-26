@@ -181,12 +181,20 @@ impl SessionCommand {
             for msg in &messages {
                 match msg.role {
                     limit_llm::Role::User => {
-                        let content = msg.content.as_deref().unwrap_or("");
+                        let content = msg
+                            .content
+                            .as_ref()
+                            .map(|c| c.to_text())
+                            .unwrap_or_default();
                         let chat_msg = limit_tui::components::Message::user(content.to_string());
                         chat.add_message(chat_msg);
                     }
                     limit_llm::Role::Assistant => {
-                        let content = msg.content.as_deref().unwrap_or("");
+                        let content = msg
+                            .content
+                            .as_ref()
+                            .map(|c| c.to_text())
+                            .unwrap_or_default();
                         let chat_msg =
                             limit_tui::components::Message::assistant(content.to_string());
                         chat.add_message(chat_msg);

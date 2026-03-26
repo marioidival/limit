@@ -91,7 +91,7 @@ impl Summarizer {
 
         let summary_request = vec![Message {
             role: Role::User,
-            content: Some(prompt),
+            content: Some(prompt.into()),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -129,11 +129,17 @@ fn build_summary_prompt(
     for msg in messages {
         match msg.role {
             Role::User => {
-                prompt.push_str(&format!("User: {}\n", msg.content.as_deref().unwrap_or("")));
+                prompt.push_str(&format!(
+                    "User: {}\n",
+                    msg.content
+                        .as_ref()
+                        .map(|c| c.to_text())
+                        .unwrap_or_default()
+                ));
             }
             Role::Assistant => {
                 if let Some(content) = &msg.content {
-                    prompt.push_str(&format!("Assistant: {}\n", content));
+                    prompt.push_str(&format!("Assistant: {}\n", content.to_text()));
                 }
                 if let Some(calls) = &msg.tool_calls {
                     for call in calls {
@@ -147,7 +153,10 @@ fn build_summary_prompt(
             Role::Tool => {
                 prompt.push_str(&format!(
                     "Tool result: {}\n",
-                    msg.content.as_deref().unwrap_or("")
+                    msg.content
+                        .as_ref()
+                        .map(|c| c.to_text())
+                        .unwrap_or_default()
                 ));
             }
             Role::System => {}
@@ -315,7 +324,7 @@ mod tests {
     fn test_build_summary_prompt_with_previous() {
         let messages = vec![Message {
             role: Role::User,
-            content: Some("New message".to_string()),
+            content: Some(crate::MessageContent::text("New message")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,

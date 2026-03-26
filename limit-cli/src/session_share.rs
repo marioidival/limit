@@ -53,18 +53,18 @@ impl SessionExport {
                 // Filter out empty messages
                 m.content
                     .as_ref()
-                    .map(|c| !c.trim().is_empty())
+                    .map(|c| !c.to_text().trim().is_empty())
                     .unwrap_or(false)
             })
             .filter(|m| {
                 // Filter out system messages that might be in User role
                 // (e.g., "We've reached the iteration limit" or other auto-generated messages)
-                let content = m.content.as_deref().unwrap_or("");
+                let content = m.content.as_ref().map(|c| c.to_text()).unwrap_or_default();
                 !content.starts_with("We've reached the iteration limit")
             })
             .map(|m| ExportedMessage {
                 role: format!("{:?}", m.role),
-                content: m.content.clone().unwrap_or_default(),
+                content: m.content.clone().map(|c| c.to_text()).unwrap_or_default(),
                 timestamp: None,
             })
             .collect();
@@ -234,14 +234,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: limit_llm::Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(limit_llm::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Assistant,
-                content: Some("Hi there!".to_string()),
+                content: Some(limit_llm::MessageContent::text("Hi there!")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -269,7 +269,7 @@ mod tests {
     fn test_session_export_json() {
         let messages = vec![Message {
             role: limit_llm::Role::User,
-            content: Some("Test".to_string()),
+            content: Some(limit_llm::MessageContent::text("Test")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -287,21 +287,21 @@ mod tests {
         let messages = vec![
             Message {
                 role: limit_llm::Role::User,
-                content: Some("User message".to_string()),
+                content: Some(limit_llm::MessageContent::text("User message")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Tool,
-                content: Some("Tool result".to_string()),
+                content: Some(limit_llm::MessageContent::text("Tool result")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: limit_llm::Role::System,
-                content: Some("System message".to_string()),
+                content: Some(limit_llm::MessageContent::text("System message")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,

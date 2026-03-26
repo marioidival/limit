@@ -426,7 +426,7 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -482,7 +482,7 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -532,7 +532,7 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -578,7 +578,7 @@ mod tests {
         );
         let messages = vec![Message {
             role: crate::types::Role::User,
-            content: Some("Use test_tool".to_string()),
+            content: Some(crate::MessageContent::text("Use test_tool")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,

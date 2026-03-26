@@ -11,7 +11,7 @@ use limit_agent::executor::{ToolCall, ToolExecutor};
 use limit_agent::registry::ToolRegistry;
 use limit_llm::apply_cache_control;
 use limit_llm::providers::LlmProvider;
-use limit_llm::types::{Message, Role, Tool as LlmTool, ToolCall as LlmToolCall};
+use limit_llm::types::{Message, MessageContent, Role, Tool as LlmTool, ToolCall as LlmToolCall};
 use limit_llm::ModelHandoff;
 use limit_llm::ProviderFactory;
 use limit_llm::ProviderResponseChunk;
@@ -232,10 +232,10 @@ impl AgentBridge {
                         Ok(summary) => {
                             let summary_msg = Message {
                                 role: Role::User,
-                                content: Some(format!(
+                                content: Some(MessageContent::text(format!(
                                     "<context_summary>\n{}\n</context_summary>",
                                     summary
-                                )),
+                                ))),
                                 tool_calls: None,
                                 tool_call_id: None,
                                 cache_control: None,
@@ -379,7 +379,7 @@ impl AgentBridge {
         if _messages.is_empty() {
             let system_message = Message {
                 role: Role::System,
-                content: Some(get_system_prompt()),
+                content: Some(MessageContent::text(get_system_prompt())),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -390,7 +390,7 @@ impl AgentBridge {
         // Add user message to history
         let user_message = Message {
             role: Role::User,
-            content: Some(user_input.to_string()),
+            content: Some(MessageContent::text(user_input.to_string())),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -704,7 +704,7 @@ impl AgentBridge {
                     });
                     let tool_result_message = Message {
                         role: Role::Tool,
-                        content: Some(result_str),
+                        content: Some(MessageContent::text(result_str)),
                         tool_calls: None,
                         tool_call_id: Some(id.clone()),
                         cache_control: None,
@@ -767,7 +767,7 @@ impl AgentBridge {
                     // OpenAI tool result format
                     let tool_result_message = Message {
                         role: Role::Tool,
-                        content: Some(truncate_tool_result(&output_json)),
+                        content: Some(MessageContent::text(truncate_tool_result(&output_json))),
                         tool_calls: None,
                         tool_call_id: Some(result.call_id),
                         cache_control: None,
@@ -799,13 +799,11 @@ impl AgentBridge {
             // Add constraint message to force text response
             let constraint_message = Message {
                 role: Role::User,
-                content: Some(
+                content: Some(MessageContent::text(
                     "We've reached the iteration limit. Please provide a summary of:\n\
                     1. What you've completed so far\n\
                     2. What remains to be done\n\
-                    3. Recommended next steps for the user to continue"
-                        .to_string(),
-                ),
+                    3. Recommended next steps for the user to continue")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -898,10 +896,10 @@ impl AgentBridge {
                     || last_assistant
                         .content
                         .as_ref()
-                        .map(|c| c.is_empty())
+                        .map(|c| c.to_text().is_empty())
                         .unwrap_or(true)
                 {
-                    last_assistant.content = Some(full_response.clone());
+                    last_assistant.content = Some(MessageContent::text(full_response.clone()));
                     debug!("Updated last assistant message with final response content");
                 } else {
                     // Last assistant already has content, this shouldn't happen normally
@@ -909,7 +907,7 @@ impl AgentBridge {
                     debug!("Last assistant already has content, adding new message");
                     let final_assistant_message = Message {
                         role: Role::Assistant,
-                        content: Some(full_response.clone()),
+                        content: Some(MessageContent::text(full_response.clone())),
                         tool_calls: None,
                         tool_call_id: None,
                         cache_control: None,
@@ -921,7 +919,7 @@ impl AgentBridge {
                 debug!("No assistant message found, adding new message");
                 let final_assistant_message = Message {
                     role: Role::Assistant,
-                    content: Some(full_response.clone()),
+                    content: Some(MessageContent::text(full_response.clone())),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,
@@ -1508,6 +1506,11 @@ impl AgentBridge {
             .unwrap_or("")
     }
 
+    /// Get the current provider name
+    pub fn provider_name(&self) -> &str {
+        &self.config.provider
+    }
+
     /// Get the max tokens setting
     pub fn max_tokens(&self) -> u32 {
         self.config
@@ -1720,7 +1723,7 @@ mod tests {
 
         let mut messages = vec![Message {
             role: Role::System,
-            content: Some("System prompt".to_string()),
+            content: Some(MessageContent::text("System prompt")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -1733,10 +1736,10 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: Some(format!(
+                content: Some(MessageContent::text(format!(
                     "Message {} with enough content to consume tokens",
                     i
-                )),
+                ))),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -1756,7 +1759,7 @@ mod tests {
 
         let mut messages = vec![Message {
             role: Role::System,
-            content: Some("System".to_string()),
+            content: Some(MessageContent::text("System")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -1769,7 +1772,7 @@ mod tests {
                 } else {
                     Role::Assistant
                 },
-                content: Some(format!("Message {}", i)),
+                content: Some(MessageContent::text(format!("Message {}", i))),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -1781,7 +1784,7 @@ mod tests {
 
         assert!(compacted.len() < messages.len());
         let last_content = compacted.last().unwrap().content.clone();
-        assert_eq!(last_content, Some("Message 99".to_string()));
+        assert_eq!(last_content, Some(MessageContent::text("Message 99")));
     }
 
     #[test]

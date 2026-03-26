@@ -98,7 +98,7 @@ mod tests {
             entry_type: SessionEntryType::Message {
                 message: SerializableMessage::from(Message {
                     role: Role::User,
-                    content: Some(content.to_string()),
+                    content: Some(limit_llm::MessageContent::text(content)),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,

@@ -43,6 +43,8 @@ pub struct TuiApp {
     input_handler: InputHandler,
     /// Command registry for handling /commands
     command_registry: crate::tui::commands::CommandRegistry,
+    /// Pending image attachments (from clipboard paste)
+    pending_images: Vec<std::path::PathBuf>,
 }
 
 impl TuiApp {
@@ -98,6 +100,7 @@ impl TuiApp {
             cancellation_token: None,
             input_handler: InputHandler::new(),
             command_registry,
+            pending_images: Vec::new(),
         })
     }
 
@@ -240,6 +243,11 @@ impl TuiApp {
     }
 
     fn update_status(&mut self) {
+        // Don't override status if showing image attachment message
+        if self.status_message.starts_with("Image attached") {
+            return;
+        }
+        
         let session_id = self.tui_bridge.session_id();
         let has_activity = self
             .tui_bridge
@@ -360,9 +368,92 @@ impl TuiApp {
             return Ok(());
         }
 
-        // Paste from clipboard (Ctrl/Cmd+V)
-        if self.is_copy_paste_modifier(&key, 'v') && !self.tui_bridge.is_busy() {
-            tracing::trace!("✓ Paste shortcut CONFIRMED - processing...");
+        // Paste from clipboard (Ctrl/Cmd+V or Alt+V for image)
+        // On macOS, Alt+V is handled separately below
+        let is_paste_shortcut = {
+            #[cfg(target_os = "macos")]
+            {
+                let has_mod = key.modifiers.contains(KeyModifiers::SUPER) 
+                    || key.modifiers.contains(KeyModifiers::CONTROL);
+                let is_v = key.code == KeyCode::Char('v');
+                is_v && has_mod
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.is_copy_paste_modifier(&key, 'v')
+            }
+        };
+        
+        // Alt+V for image paste (macOS and Linux)
+        if key.code == KeyCode::Char('v') 
+            && key.modifiers.contains(KeyModifiers::ALT)
+            && !self.tui_bridge.is_busy() {
+            tracing::trace!("Attempting image paste (Alt+V)...");
+            
+            // Check if current provider supports vision
+            let model = self.tui_bridge.agent_bridge_arc()
+                .lock()
+                .unwrap()
+                .model()
+                .to_lowercase();
+            let provider = self.tui_bridge.agent_bridge_arc()
+                .lock()
+                .unwrap()
+                .provider_name()
+                .to_lowercase();
+            
+            let supports_vision = {
+                // OpenAI vision models
+                if provider == "openai" || provider == "openai-compatible" {
+                    model.contains("gpt-4o") 
+                    || model.contains("gpt-4-turbo")
+                    || model.contains("gpt-4-vision")
+                // Anthropic Claude 3+ all support vision
+                } else if provider == "anthropic" || provider == "claude" {
+                    model.contains("claude-3")
+                // Google Gemini models
+                } else if provider == "google" || provider == "gemini" {
+                    model.contains("gemini")
+                // z.ai and other unsupported providers
+                } else {
+                    false
+                }
+            };
+            
+            if !supports_vision {
+                self.status_message = "Current provider/model does not support images. Use a vision-capable model like gpt-4o or claude-3.".to_string();
+                self.status_is_error = true;
+                return Ok(());
+            }
+            
+            match crate::clipboard_paste::paste_image_to_temp_png() {
+                Ok((_path, info)) => {
+                    tracing::debug!(
+                        "pasted image size={}x{} format={}",
+                        info.width,
+                        info.height,
+                        info.encoded_format.label()
+                    );
+                    self.pending_images.push(_path);
+                    self.status_message = format!(
+                        "Image attached ({}x{}) - {} image(s) pending. Press Enter to send.",
+                        info.width,
+                        info.height,
+                        self.pending_images.len()
+                    );
+                    self.status_is_error = false;
+                }
+                Err(err) => {
+                    tracing::warn!("failed to paste image: {err}");
+                    self.status_message = format!("Failed to paste image: {err}");
+                    self.status_is_error = true;
+                }
+            }
+            return Ok(());
+        }
+        
+        // Regular text paste (Ctrl/Cmd+V)
+        if is_paste_shortcut && !self.tui_bridge.is_busy() {
             let clipboard_result = if let Some(ref clipboard) = self.clipboard {
                 tracing::trace!("Attempting to read from clipboard...");
                 Some(clipboard.lock().unwrap().get_text())
@@ -811,6 +902,57 @@ impl TuiApp {
         }
 
         // Add user message to chat immediately for visual feedback
+        // Check if we have pending images
+        let content = if self.pending_images.is_empty() {
+            limit_llm::MessageContent::text(text.clone())
+        } else {
+            // Build multimodal content with text and images
+            let mut parts = vec![limit_llm::ContentPart::text(text.clone())];
+
+            for image_path in self.pending_images.drain(..) {
+                // Read image file and convert to base64
+                match std::fs::read(&image_path) {
+                    Ok(image_data) => {
+                        // Detect image type from extension
+                        let media_type = image_path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| match e.to_lowercase().as_str() {
+                                "png" => "image/png",
+                                "jpg" | "jpeg" => "image/jpeg",
+                                "gif" => "image/gif",
+                                "webp" => "image/webp",
+                                _ => "image/png",
+                            })
+                            .unwrap_or("image/png");
+
+                        let base64_data = base64::Engine::encode(
+                            &base64::engine::general_purpose::STANDARD,
+                            &image_data,
+                        );
+
+                        parts.push(limit_llm::ContentPart::image_base64(
+                            media_type,
+                            &base64_data,
+                        ));
+
+                        tracing::info!(
+                            "Attached image: {} ({} bytes, {})",
+                            image_path.display(),
+                            image_data.len(),
+                            media_type
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to read image {}: {}", image_path.display(), e);
+                    }
+                }
+            }
+
+            self.status_message = "Ready - Type a message and press Enter".to_string();
+            limit_llm::MessageContent::parts(parts)
+        };
+
         self.tui_bridge.add_user_message(text.clone());
 
         // Get new operation ID and ensure state is Idle
@@ -915,7 +1057,10 @@ impl TuiApp {
                     // Set cancellation token and operation ID
                     bridge.set_cancellation_token(cancel_token.clone(), operation_id);
 
-                    match bridge.process_message(&text, &mut messages_guard).await {
+                    match bridge
+                        .process_message(&text, &mut messages_guard)
+                        .await
+                    {
                         Ok(result) => {
                             {
                                 let mut input = total_input_tokens.lock().unwrap();

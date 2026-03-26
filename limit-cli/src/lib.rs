@@ -32,6 +32,8 @@
 
 pub mod agent_bridge;
 pub mod clipboard;
+pub mod clipboard_paste;
+pub mod clipboard_text;
 pub mod session_share;
 pub mod session_tree;
 pub mod system_prompt;

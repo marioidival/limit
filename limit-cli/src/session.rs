@@ -73,7 +73,7 @@ impl From<PersistedMessage> for Message {
     fn from(msg: PersistedMessage) -> Self {
         Message {
             role: msg.role.into(),
-            content: msg.content,
+            content: msg.content.map(limit_llm::MessageContent::text),
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
             cache_control: msg.cache_control,
@@ -85,7 +85,7 @@ impl From<Message> for PersistedMessage {
     fn from(msg: Message) -> Self {
         PersistedMessage {
             role: msg.role.into(),
-            content: msg.content,
+            content: msg.content.map(|c| c.to_text()),
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
             cache_control: msg.cache_control,
@@ -558,14 +558,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: limit_llm::Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(limit_llm::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Assistant,
-                content: Some("Hi there!".to_string()),
+                content: Some(limit_llm::MessageContent::text("Hi there!")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -655,7 +655,7 @@ mod tests {
 
         let messages = vec![Message {
             role: limit_llm::Role::User,
-            content: Some("Test message".to_string()),
+            content: Some(limit_llm::MessageContent::text("Test message")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -674,7 +674,10 @@ mod tests {
 
         let loaded = manager2.load_session(&session_id).unwrap();
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].content, Some("Test message".to_string()));
+        assert_eq!(
+            loaded[0].content.as_ref().unwrap().to_text(),
+            "Test message"
+        );
     }
 
     #[test]
@@ -699,7 +702,7 @@ mod tests {
             entry_type: SessionEntryType::Message {
                 message: SerializableMessage::from(Message {
                     role: limit_llm::Role::User,
-                    content: Some("Hello".to_string()),
+                    content: Some(limit_llm::MessageContent::text("Hello")),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,
@@ -726,14 +729,14 @@ mod tests {
         let messages = vec![
             Message {
                 role: limit_llm::Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(limit_llm::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: limit_llm::Role::Assistant,
-                content: Some("Hi!".to_string()),
+                content: Some(limit_llm::MessageContent::text("Hi!")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -751,7 +754,7 @@ mod tests {
         assert_eq!(tree.entries().len(), 2);
         let context = tree.build_context(tree.leaf_id()).unwrap();
         assert_eq!(context.len(), 2);
-        assert_eq!(context[0].content, Some("Hello".to_string()));
-        assert_eq!(context[1].content, Some("Hi!".to_string()));
+        assert_eq!(context[0].content.as_ref().unwrap().to_text(), "Hello");
+        assert_eq!(context[1].content.as_ref().unwrap().to_text(), "Hi!");
     }
 }

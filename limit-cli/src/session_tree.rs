@@ -63,7 +63,7 @@ impl From<Message> for SerializableMessage {
                 Role::System => "system".to_string(),
                 Role::Tool => "tool".to_string(),
             },
-            content: msg.content,
+            content: msg.content.map(|c| c.to_text()),
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
             cache_control: msg.cache_control,
@@ -81,7 +81,7 @@ impl From<SerializableMessage> for Message {
                 "tool" => Role::Tool,
                 _ => Role::User,
             },
-            content: msg.content,
+            content: msg.content.map(limit_llm::MessageContent::text),
             tool_calls: msg.tool_calls,
             tool_call_id: msg.tool_call_id,
             cache_control: msg.cache_control,
@@ -194,7 +194,10 @@ impl SessionTree {
                 SessionEntryType::Message { message } => Some(Message::from(message)),
                 SessionEntryType::Compaction { summary, .. } => Some(Message {
                     role: Role::User,
-                    content: Some(format!("<summary>\n{}\n</summary>", summary)),
+                    content: Some(limit_llm::MessageContent::text(format!(
+                        "<summary>\n{}\n</summary>",
+                        summary
+                    ))),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,
@@ -392,7 +395,7 @@ mod tests {
             entry_type: SessionEntryType::Message {
                 message: SerializableMessage::from(Message {
                     role: Role::User,
-                    content: Some("Hello".to_string()),
+                    content: Some(limit_llm::MessageContent::text("Hello")),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,
@@ -407,7 +410,7 @@ mod tests {
             entry_type: SessionEntryType::Message {
                 message: SerializableMessage::from(Message {
                     role: Role::Assistant,
-                    content: Some("Hi!".to_string()),
+                    content: Some(limit_llm::MessageContent::text("Hi!")),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,
@@ -420,8 +423,8 @@ mod tests {
 
         let messages = tree.build_context("b2c3d4e5").unwrap();
         assert_eq!(messages.len(), 2);
-        assert_eq!(messages[0].content, Some("Hello".to_string()));
-        assert_eq!(messages[1].content, Some("Hi!".to_string()));
+        assert_eq!(messages[0].content.as_ref().unwrap().to_text(), "Hello");
+        assert_eq!(messages[1].content.as_ref().unwrap().to_text(), "Hi!");
     }
 
     #[test]
@@ -452,7 +455,10 @@ mod tests {
         // Build context from C: root -> A -> C
         let context_c = tree.build_context("c").unwrap();
         assert_eq!(context_c.len(), 3);
-        assert_eq!(context_c[2].content, Some("c content".to_string()));
+        assert_eq!(
+            context_c[2].content.as_ref().unwrap().to_text(),
+            "c content"
+        );
     }
 
     fn create_test_entry(id: &str, parent_id: Option<&str>, content: &str) -> SessionEntry {
@@ -463,7 +469,7 @@ mod tests {
             entry_type: SessionEntryType::Message {
                 message: SerializableMessage::from(Message {
                     role: Role::User,
-                    content: Some(content.to_string()),
+                    content: Some(limit_llm::MessageContent::text(content)),
                     tool_calls: None,
                     tool_call_id: None,
                     cache_control: None,

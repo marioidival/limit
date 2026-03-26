@@ -51,7 +51,7 @@ mod tests {
         };
         let messages = vec![Message {
             role: Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -68,7 +68,7 @@ mod tests {
         };
         let messages = vec![Message {
             role: Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -86,28 +86,28 @@ mod tests {
         let messages = vec![
             Message {
                 role: Role::System,
-                content: Some("System prompt".to_string()),
+                content: Some(crate::MessageContent::text("System prompt")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::User,
-                content: Some("Hello".to_string()),
+                content: Some(crate::MessageContent::text("Hello")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::Assistant,
-                content: Some("Hi!".to_string()),
+                content: Some(crate::MessageContent::text("Hi!")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
             },
             Message {
                 role: Role::User,
-                content: Some("How are you?".to_string()),
+                content: Some(crate::MessageContent::text("How are you?")),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
@@ -133,7 +133,7 @@ mod tests {
         };
         let messages = vec![Message {
             role: Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(crate::MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,

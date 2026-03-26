@@ -47,6 +47,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "5.0"
 arboard = "3.6"
+image = { version = "0.25", features = ["jpeg", "png", "gif", "webp"] }
+base64 = "0.22"
+shlex = "1.3"
+url = "2.5"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 frizbee = "0.8"
 ignore = "0.4"

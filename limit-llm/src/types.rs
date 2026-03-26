@@ -13,6 +13,54 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Content part for multimodal messages
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ContentPart {
+    /// Text content
+    Text { text: String },
+    /// Image content (base64 or URL)
+    #[serde(rename = "image_url")]
+    ImageUrl { image_url: ImageUrl },
+}
+
+/// Image URL or base64 data
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageUrl {
+    /// The URL or base64 data URI
+    pub url: String,
+    /// Optional detail level (low, high, auto)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+impl ContentPart {
+    /// Create a text content part
+    pub fn text(text: impl Into<String>) -> Self {
+        ContentPart::Text { text: text.into() }
+    }
+
+    /// Create an image URL content part
+    pub fn image_url(url: impl Into<String>) -> Self {
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: url.into(),
+                detail: None,
+            },
+        }
+    }
+
+    /// Create an image from base64 data
+    pub fn image_base64(media_type: &str, base64_data: &str) -> Self {
+        ContentPart::ImageUrl {
+            image_url: ImageUrl {
+                url: format!("data:{};base64,{}", media_type, base64_data),
+                detail: None,
+            },
+        }
+    }
+}
+
 /// A single message in a conversation.
 ///
 /// Messages are the fundamental unit of communication with LLM providers.
@@ -28,7 +76,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// let msg = Message {
 ///     role: Role::User,
-///     content: Some("What is the capital of France?".to_string()),
+///     content: Some(MessageContent::text("What is the capital of France?")),
 ///     tool_calls: None,
 ///     tool_call_id: None,
 ///     cache_control: None,
@@ -110,11 +158,12 @@ pub struct Message {
     /// The role of the message sender.
     pub role: Role,
 
-    /// The text content of the message.
+    /// The content of the message.
     ///
+    /// Can be either a simple string or an array of content parts (for multimodal).
     /// Can be `None` for assistant messages that only contain tool calls.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
+    pub content: Option<MessageContent>,
 
     /// Tool calls made by the assistant.
     ///
@@ -131,6 +180,82 @@ pub struct Message {
     /// Cache control for prompt caching (Anthropic/OpenAI).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_control: Option<CacheControl>,
+}
+
+/// Message content - either simple text or multimodal parts
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum MessageContent {
+    /// Simple text content
+    Text(String),
+    /// Multimodal content parts (text + images)
+    Parts(Vec<ContentPart>),
+}
+
+impl MessageContent {
+    /// Create simple text content
+    pub fn text(text: impl Into<String>) -> Self {
+        MessageContent::Text(text.into())
+    }
+
+    /// Create multimodal content with parts
+    pub fn parts(parts: Vec<ContentPart>) -> Self {
+        MessageContent::Parts(parts)
+    }
+
+    /// Get text if this is simple text content
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            MessageContent::Text(text) => Some(text),
+            MessageContent::Parts(_) => None,
+        }
+    }
+
+    /// Get all text content (concatenates text parts)
+    pub fn to_text(&self) -> String {
+        match self {
+            MessageContent::Text(text) => text.clone(),
+            MessageContent::Parts(parts) => parts
+                .iter()
+                .filter_map(|part| match part {
+                    ContentPart::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
+        }
+    }
+}
+
+impl std::fmt::Display for MessageContent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MessageContent::Text(text) => write!(f, "{}", text),
+            MessageContent::Parts(parts) => {
+                let text = parts
+                    .iter()
+                    .filter_map(|p| match p {
+                        ContentPart::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                write!(f, "{}", text)
+            }
+        }
+    }
+}
+
+impl From<String> for MessageContent {
+    fn from(text: String) -> Self {
+        MessageContent::Text(text)
+    }
+}
+
+impl From<&str> for MessageContent {
+    fn from(text: &str) -> Self {
+        MessageContent::Text(text.to_string())
+    }
 }
 
 /// The role of a message sender in a conversation.
@@ -331,7 +456,7 @@ mod tests {
     fn test_message_serialization() {
         let msg = Message {
             role: Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,
@@ -345,7 +470,7 @@ mod tests {
     fn test_message_with_tool_calls() {
         let msg = Message {
             role: Role::Assistant,
-            content: Some("".to_string()),
+            content: Some(MessageContent::text("")),
             tool_calls: Some(vec![ToolCall {
                 id: "call_123".to_string(),
                 tool_type: "function".to_string(),
@@ -366,7 +491,7 @@ mod tests {
     fn test_tool_result_message() {
         let msg = Message {
             role: Role::Tool,
-            content: Some("result output".to_string()),
+            content: Some(MessageContent::text("result output")),
             tool_calls: None,
             tool_call_id: Some("call_123".to_string()),
             cache_control: None,
@@ -469,7 +594,7 @@ mod tests {
     fn test_message_with_cache_control() {
         let msg = Message {
             role: Role::User,
-            content: Some("Hello".to_string()),
+            content: Some(MessageContent::text("Hello")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: Some(CacheControl::ephemeral()),

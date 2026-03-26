@@ -114,7 +114,7 @@ mod tests {
     fn create_test_message() -> Message {
         Message {
             role: limit_llm::types::Role::User,
-            content: Some("test message".to_string()),
+            content: Some(limit_llm::MessageContent::text("test message")),
             tool_calls: None,
             tool_call_id: None,
             cache_control: None,

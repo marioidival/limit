@@ -193,6 +193,7 @@ pub use providers::{LlmProvider, ProviderResponseChunk};
 pub use summarization::{extract_file_operations, FileOperations, Summarizer, SummaryOutput};
 pub use tracking::TrackingDb;
 pub use types::{
-    CacheControl, FunctionCall, Message, Response, Role, Tool, ToolCall, ToolFunction, Usage,
+    CacheControl, ContentPart, FunctionCall, ImageUrl, Message, MessageContent, Response, Role,
+    Tool, ToolCall, ToolFunction, Usage,
 };
 pub use zai_provider::{ThinkingConfig, ZaiProvider};

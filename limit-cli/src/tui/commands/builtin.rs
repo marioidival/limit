@@ -31,6 +31,7 @@ impl Command for HelpCommand {
             let help_text = "Available commands:\n\
                  /help  - Show this help message\n\
                  /clear - Clear chat history\n\
+                 /copy  - Copy last AI output to clipboard\n\
                  /exit  - Exit the application\n\
                  /quit  - Exit the application\n\
                  /session list  - List all sessions\n\
@@ -40,7 +41,8 @@ impl Command for HelpCommand {
                  /share md      - Export session as markdown file\n\
                  /share json    - Export session as JSON file\n\
                  \n\
-                 Page Up/Down - Scroll chat history";
+                 Page Up/Down - Scroll chat history\n\
+                 Ctrl+V/Alt+V - Paste image from clipboard";
             ctx.add_system_message(help_text.to_string());
         } else {
             // Help for specific command (future enhancement)
