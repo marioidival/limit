@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.44] - 2026-03-26
+
+### 🚜 Refactor
+
+- Replace bincode with serde_json for state persistence
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove REPL mode and rustyline/termimad dependencies
+
+- Update dependencies and remove remaining REPL files
+
+## [0.0.44] - 2026-03-25
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.43] - 2026-03-25
 
 ### 🐛 Bug Fixes
