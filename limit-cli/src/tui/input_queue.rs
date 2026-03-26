@@ -165,15 +165,15 @@ impl InputQueue {
 
         let mut texts: Vec<String> = Vec::new();
 
-        // Add steers first
         for steer in self.pending_steers.drain(..) {
             texts.push(steer.text);
         }
 
-        // Then queued messages
         for msg in self.queued_messages.drain(..) {
             texts.push(msg.text);
         }
+
+        self.submit_pending_steers_after_interrupt = false;
 
         Some(texts.join("\n\n"))
     }
