@@ -1,19 +1,14 @@
 // Input queue system for managing messages during async operations
-// Based on Codex's input queue implementation
 
 use std::collections::VecDeque;
 
-/// Represents a user message in the queue
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueuedMessage {
-    /// Message text
     pub text: String,
-    /// Whether this message was submitted to core but not yet committed
     pub is_steer: bool,
 }
 
 impl QueuedMessage {
-    /// Create a new queued message
     pub fn new(text: String) -> Self {
         Self {
             text,
@@ -21,12 +16,25 @@ impl QueuedMessage {
         }
     }
 
-    /// Create a steer message (submitted but not committed)
     pub fn new_steer(text: String) -> Self {
         Self {
             text,
             is_steer: true,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ThreadInputState {
+    pub queued_messages: Vec<QueuedMessage>,
+    pub pending_steers: Vec<QueuedMessage>,
+    pub submit_after_interrupt: bool,
+    pub suppress_autosend: bool,
+}
+
+impl ThreadInputState {
+    pub fn has_content(&self) -> bool {
+        !self.queued_messages.is_empty() || !self.pending_steers.is_empty()
     }
 }
 
@@ -176,6 +184,33 @@ impl InputQueue {
         self.pending_steers.clear();
         self.submit_pending_steers_after_interrupt = false;
     }
+
+    pub fn save_thread_state(&self) -> Option<ThreadInputState> {
+        if self.queued_messages.is_empty() && self.pending_steers.is_empty() {
+            return None;
+        }
+
+        Some(ThreadInputState {
+            queued_messages: self.queued_messages.iter().cloned().collect(),
+            pending_steers: self.pending_steers.iter().cloned().collect(),
+            submit_after_interrupt: self.submit_pending_steers_after_interrupt,
+            suppress_autosend: self.suppress_autosend,
+        })
+    }
+
+    pub fn restore_thread_state(&mut self, state: Option<ThreadInputState>) {
+        if let Some(state) = state {
+            self.queued_messages.clear();
+            for msg in state.queued_messages {
+                self.queued_messages.push_back(msg);
+            }
+            for msg in state.pending_steers {
+                self.pending_steers.push_back(msg);
+            }
+            self.submit_pending_steers_after_interrupt = state.submit_after_interrupt;
+            self.suppress_autosend = state.suppress_autosend;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -263,5 +298,36 @@ mod tests {
         queue.clear();
         assert!(queue.is_empty());
         assert!(!queue.should_submit_after_interrupt());
+    }
+
+    #[test]
+    fn test_thread_state_roundtrip() {
+        let mut queue = InputQueue::new();
+        queue.queue_message("Queued".to_string());
+        queue.add_steer("Steer".to_string());
+        queue.set_submit_after_interrupt(true);
+        queue.set_suppress_autosend(true);
+
+        let state = queue.save_thread_state();
+        assert!(state.is_some());
+        let state = state.unwrap();
+        assert!(state.has_content());
+        assert_eq!(state.queued_messages.len(), 1);
+        assert_eq!(state.pending_steers.len(), 1);
+
+        queue.clear();
+        assert!(queue.is_empty());
+
+        queue.restore_thread_state(Some(state));
+        assert_eq!(queue.queued_count(), 1);
+        assert_eq!(queue.steer_count(), 1);
+        assert!(queue.should_submit_after_interrupt());
+        assert!(queue.is_autosend_suppressed());
+    }
+
+    #[test]
+    fn test_thread_state_empty() {
+        let queue = InputQueue::new();
+        assert!(queue.save_thread_state().is_none());
     }
 }
