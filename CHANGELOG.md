@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.46] - 2026-03-27
+
+### 🐛 Bug Fixes
+
+- Convert Option to Result in clipboard fallback
+
+## [0.0.46] - 2026-03-26
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.45] - 2026-03-27
 
 ### 🚀 Features
