@@ -1,5 +1,5 @@
 // Widget for displaying pending input messages
-// Based on Codex's pending_input_preview.rs
+// Two-tier queue preview: pending steers + queued messages
 
 use ratatui::{
     buffer::Buffer,
@@ -9,144 +9,155 @@ use ratatui::{
     widgets::Widget,
 };
 
-use std::borrow::Cow;
-
-/// Maximum lines to show per message preview
 const MAX_PREVIEW_LINES: usize = 3;
+const MAX_PREVIEW_WIDTH: usize = 60;
 
-/// Widget that displays pending input messages above the composer
-pub struct PendingInputPreview {
-    /// Pending steer messages (submitted to core but not committed)
-    pub pending_steers: Vec<String>,
-    /// Queued messages (not yet submitted)
-    pub queued_messages: Vec<String>,
+#[derive(Debug, Clone)]
+pub struct PreviewConfig {
+    pub edit_binding: String,
 }
 
-impl Default for PendingInputPreview {
+impl Default for PreviewConfig {
     fn default() -> Self {
-        Self::new()
+        Self {
+            edit_binding: "Alt+↑".to_string(),
+        }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PendingInputPreview {
+    pub pending_steers: Vec<String>,
+    pub queued_messages: Vec<String>,
+    pub interrupt_in_progress: bool,
+    config: PreviewConfig,
 }
 
 impl PendingInputPreview {
-    /// Create a new pending input preview widget
     pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_config(config: PreviewConfig) -> Self {
         Self {
             pending_steers: Vec::new(),
             queued_messages: Vec::new(),
+            interrupt_in_progress: false,
+            config,
         }
     }
 
-    /// Check if there are any messages to display
+    pub fn edit_binding_hint(&self) -> &str {
+        &self.config.edit_binding
+    }
+
     pub fn has_messages(&self) -> bool {
         !self.pending_steers.is_empty() || !self.queued_messages.is_empty()
     }
 
-    /// Truncate text to a maximum number of lines
-    fn truncate_lines(text: &str, max_lines: usize) -> Vec<&str> {
-        let lines: Vec<&str> = text.lines().take(max_lines).collect();
-        lines
+    pub fn set_data(
+        &mut self,
+        queued_messages: Vec<String>,
+        pending_steers: Vec<String>,
+        interrupt_in_progress: bool,
+    ) {
+        self.queued_messages = queued_messages;
+        self.pending_steers = pending_steers;
+        self.interrupt_in_progress = interrupt_in_progress;
     }
 
-    /// Render pending steers section
-    fn render_steers<'a>(&self, lines: &mut Vec<Line<'a>>, _width: u16) {
+    fn truncate_preview(text: &str) -> String {
+        let lines: Vec<&str> = text.lines().take(MAX_PREVIEW_LINES).collect();
+        let truncated = lines.join("\n");
+        if text.lines().count() > MAX_PREVIEW_LINES {
+            format!("{}…", truncated)
+        } else if truncated.chars().count() > MAX_PREVIEW_WIDTH {
+            format!(
+                "{}…",
+                truncated
+                    .chars()
+                    .take(MAX_PREVIEW_WIDTH)
+                    .collect::<String>()
+            )
+        } else {
+            truncated
+        }
+    }
+
+    fn render_steers(&self, lines: &mut Vec<Line>) {
         if self.pending_steers.is_empty() {
             return;
         }
 
-        // Header
-        lines.push(Line::from(vec![
-            Span::styled(
-                "Messages to be submitted after next tool call",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(" (press ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                "Esc",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                " to interrupt and send immediately)",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
+        let count = self.pending_steers.len();
+        let header = if self.interrupt_in_progress {
+            format!("⏳ Interrupting... ({} pending)", count)
+        } else {
+            format!("⏳ Pending ({}) [ESC: send now]", count)
+        };
 
-        // Render each steer
+        lines.push(Line::from(Span::styled(
+            header,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+
         for steer in &self.pending_steers {
-            let preview_lines = Self::truncate_lines(steer, MAX_PREVIEW_LINES);
-            for line in preview_lines {
-                lines.push(Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(*line, Style::default().fg(Color::Gray)),
-                ]));
-            }
-            if steer.lines().count() > MAX_PREVIEW_LINES {
-                lines.push(Line::from(vec![Span::styled(
-                    "  ...",
-                    Style::default().fg(Color::DarkGray),
-                )]));
-            }
+            let preview = Self::truncate_preview(steer);
+            let icon = if self.interrupt_in_progress {
+                "⚡"
+            } else {
+                "◯"
+            };
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(icon, Style::default().fg(Color::Yellow)),
+                Span::raw(" "),
+                Span::styled(preview, Style::default().fg(Color::Gray)),
+            ]));
         }
     }
 
-    /// Render queued messages section
-    fn render_queued<'a>(&self, lines: &mut Vec<Line<'a>>, _width: u16) {
+    fn render_queued(&self, lines: &mut Vec<Line>) {
         if self.queued_messages.is_empty() {
             return;
         }
 
-        // Header
-        lines.push(Line::from(vec![Span::styled(
-            "Queued follow-up messages",
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        )]));
-
-        // Render each queued message
-        for msg in &self.queued_messages {
-            let preview_lines = Self::truncate_lines(msg, MAX_PREVIEW_LINES);
-            for line in preview_lines {
-                lines.push(Line::from(vec![
-                    Span::styled("  ", Style::default()),
-                    Span::styled(*line, Style::default().fg(Color::Gray)),
-                ]));
-            }
-            if msg.lines().count() > MAX_PREVIEW_LINES {
-                lines.push(Line::from(vec![Span::styled(
-                    "  ...",
-                    Style::default().fg(Color::DarkGray),
-                )]));
-            }
+        if !self.pending_steers.is_empty() {
+            lines.push(Line::raw(""));
         }
 
-        // Hint for editing
-        lines.push(Line::from(vec![
-            Span::styled("    Alt+↑ ", Style::default().fg(Color::Cyan)),
-            Span::styled(
-                "edit last queued message",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]));
+        let count = self.queued_messages.len();
+        lines.push(Line::from(Span::styled(
+            format!("📝 Queued ({}) [{}: edit]", count, self.config.edit_binding),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        for msg in &self.queued_messages {
+            let preview = Self::truncate_preview(msg);
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("→", Style::default().fg(Color::Cyan)),
+                Span::raw(" "),
+                Span::styled(preview, Style::default().fg(Color::Gray)),
+            ]));
+        }
     }
 }
 
-impl Widget for PendingInputPreview {
+impl Widget for &PendingInputPreview {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if !self.has_messages() || area.width < 4 {
             return;
         }
 
         let mut lines = Vec::new();
+        self.render_steers(&mut lines);
+        self.render_queued(&mut lines);
 
-        self.render_steers(&mut lines, area.width);
-        self.render_queued(&mut lines, area.width);
-
-        // Render lines to buffer
         for (y, line) in lines.iter().enumerate() {
             if y >= area.height as usize {
                 break;
@@ -156,7 +167,6 @@ impl Widget for PendingInputPreview {
                 break;
             }
 
-            // Render line
             let x = area.x;
             let max_x = (area.x + area.width).min(buf.area.width);
 
@@ -179,6 +189,12 @@ impl Widget for PendingInputPreview {
                 }
             }
         }
+    }
+}
+
+impl Widget for PendingInputPreview {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        (&self).render(area, buf)
     }
 }
 
@@ -206,19 +222,25 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_lines() {
+    fn test_truncate_preview() {
         let text = "Line1\nLine2\nLine3\nLine4\nLine5";
-        let lines = PendingInputPreview::truncate_lines(text, 3);
-        assert_eq!(lines.len(), 3);
-        assert_eq!(lines[0], "Line1");
-        assert_eq!(lines[1], "Line2");
-        assert_eq!(lines[2], "Line3");
+        let truncated = PendingInputPreview::truncate_preview(text);
+        assert!(truncated.contains("Line1"));
+        assert!(truncated.contains("Line2"));
+        assert!(truncated.contains("Line3"));
+        assert!(truncated.contains("…"));
     }
 
     #[test]
-    fn test_truncate_lines_short() {
-        let text = "Line1\nLine2";
-        let lines = PendingInputPreview::truncate_lines(text, 5);
-        assert_eq!(lines.len(), 2);
+    fn test_set_data() {
+        let mut widget = PendingInputPreview::new();
+        widget.set_data(
+            vec!["queued".to_string()],
+            vec!["pending".to_string()],
+            true,
+        );
+        assert_eq!(widget.queued_messages.len(), 1);
+        assert_eq!(widget.pending_steers.len(), 1);
+        assert!(widget.interrupt_in_progress);
     }
 }
