@@ -1,6 +1,7 @@
 // Widget for displaying pending input messages
 // Two-tier queue preview: pending steers + queued messages
 
+use crate::accessibility::{Accessible, LiveRegion};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -53,6 +54,34 @@ impl PendingInputPreview {
 
     pub fn has_messages(&self) -> bool {
         !self.pending_steers.is_empty() || !self.queued_messages.is_empty()
+    }
+
+    pub fn announcement(&self, previous_count: (usize, usize)) -> Option<String> {
+        let current = (self.queued_messages.len(), self.pending_steers.len());
+
+        if current == previous_count {
+            return None;
+        }
+
+        let mut messages = Vec::new();
+
+        if current.0 > previous_count.0 {
+            messages.push("Message queued");
+        } else if current.0 < previous_count.0 && current.0 == 0 {
+            messages.push("Queue empty");
+        }
+
+        if current.1 > previous_count.1 {
+            messages.push("Steer added");
+        } else if current.1 < previous_count.1 && current.1 == 0 {
+            messages.push("Steers committed");
+        }
+
+        if messages.is_empty() {
+            None
+        } else {
+            Some(messages.join(". "))
+        }
     }
 
     pub fn set_data(
@@ -195,6 +224,50 @@ impl Widget for &PendingInputPreview {
 impl Widget for PendingInputPreview {
     fn render(self, area: Rect, buf: &mut Buffer) {
         (&self).render(area, buf)
+    }
+}
+
+impl Accessible for PendingInputPreview {
+    fn accessible_label(&self) -> String {
+        let mut parts = Vec::new();
+
+        if !self.pending_steers.is_empty() {
+            parts.push(format!(
+                "{} pending message{} waiting for next tool call",
+                self.pending_steers.len(),
+                if self.pending_steers.len() > 1 {
+                    "s"
+                } else {
+                    ""
+                }
+            ));
+        }
+
+        if !self.queued_messages.is_empty() {
+            parts.push(format!(
+                "{} message{} queued",
+                self.queued_messages.len(),
+                if self.queued_messages.len() > 1 {
+                    "s"
+                } else {
+                    ""
+                }
+            ));
+        }
+
+        if parts.is_empty() {
+            "No pending messages".to_string()
+        } else {
+            parts.join(". ")
+        }
+    }
+
+    fn should_announce(&self) -> bool {
+        self.has_messages()
+    }
+
+    fn live_region(&self) -> LiveRegion {
+        LiveRegion::Polite
     }
 }
 
