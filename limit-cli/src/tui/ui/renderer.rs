@@ -31,6 +31,7 @@ impl UiRenderer {
         cursor_blink_state: bool,
         tui_bridge: &TuiBridge,
         file_autocomplete: &Option<FileAutocompleteState>,
+        pending_input_preview: Option<&limit_tui::components::PendingInputPreview>,
     ) {
         // Calculate activity height
         let activity_count = tui_bridge.activity_feed().lock().unwrap().len();
@@ -82,6 +83,13 @@ impl UiRenderer {
             cursor_pos,
             cursor_blink_state,
         );
+
+        // Render pending input preview (above input area)
+        if let Some(preview) = pending_input_preview {
+            if preview.has_messages() {
+                Self::render_pending_input_preview(frame, &chunks[chunk_idx], preview);
+            }
+        }
 
         // Render autocomplete popup
         if let Some(ref ac) = file_autocomplete {
@@ -209,6 +217,58 @@ impl UiRenderer {
         );
 
         frame.render_widget(widget, popup_area);
+    }
+
+    /// Render pending input preview
+    fn render_pending_input_preview(
+        frame: &mut Frame,
+        input_area: &Rect,
+        preview: &limit_tui::components::PendingInputPreview,
+    ) {
+        if !preview.has_messages() {
+            return;
+        }
+
+        // Calculate height needed for preview
+        let mut preview_height = 0u16;
+        if !preview.pending_steers.is_empty() {
+            preview_height += 1; // header
+            for steer in &preview.pending_steers {
+                preview_height += steer.lines().take(3).count() as u16;
+                if steer.lines().count() > 3 {
+                    preview_height += 1; // ellipsis
+                }
+            }
+        }
+        if !preview.queued_messages.is_empty() {
+            preview_height += 1; // header
+            for msg in &preview.queued_messages {
+                preview_height += msg.lines().take(3).count() as u16;
+                if msg.lines().count() > 3 {
+                    preview_height += 1; // ellipsis
+                }
+            }
+            preview_height += 1; // hint
+        }
+
+        // Cap preview height
+        let preview_height = preview_height
+            .min(8)
+            .min(input_area.height.saturating_sub(1));
+
+        if preview_height == 0 {
+            return;
+        }
+
+        // Render preview above input area
+        let preview_area = Rect {
+            x: input_area.x,
+            y: input_area.y.saturating_sub(preview_height),
+            width: input_area.width,
+            height: preview_height,
+        };
+
+        frame.render_widget(preview.clone(), preview_area);
     }
 }
 

@@ -991,7 +991,7 @@ impl TuiApp {
 
         // Add user message to chat immediately for visual feedback
         // Check if we have pending images
-        let content = if self.pending_images.is_empty() {
+        let _content = if self.pending_images.is_empty() {
             limit_llm::MessageContent::text(text.clone())
         } else {
             // Build multimodal content with text and images
@@ -1275,6 +1275,17 @@ impl TuiApp {
         let tui_bridge = &self.tui_bridge;
         let file_autocomplete = self.autocomplete_manager.to_legacy_state();
 
+        // Build pending input preview from queue
+        let pending_input_preview =
+            if self.input_queue.has_queued_messages() || self.input_queue.has_pending_steers() {
+                let mut preview = limit_tui::components::PendingInputPreview::new();
+                preview.pending_steers = self.input_queue.steer_texts();
+                preview.queued_messages = self.input_queue.queued_texts();
+                Some(preview)
+            } else {
+                None
+            };
+
         self.terminal
             .draw(|f| {
                 UiRenderer::render(
@@ -1288,6 +1299,7 @@ impl TuiApp {
                     cursor_blink_state,
                     tui_bridge,
                     &file_autocomplete,
+                    pending_input_preview.as_ref(),
                 );
             })
             .map_err(|e| CliError::IoError(io::Error::other(e)))?;
@@ -1309,23 +1321,18 @@ impl TuiApp {
         if let Some(msg) = self.input_queue.pop_queued() {
             tracing::info!("Sending queued message: {}", msg.text);
 
-            // Set text in editor and trigger handle_enter
-            self.input_editor.set_text(&msg.text);
+            // Set the text directly in the editor
+            self.input_editor.clear();
+            for ch in msg.text.chars() {
+                self.input_editor.insert_char(ch);
+            }
 
             // Add to history
-            self.input_editor.add_to_history(&msg.text);
+            self.input_editor.history_mut().add(&msg.text);
 
-            // Clear editor after setting
-            self.input_editor.clear();
-
-            // Submit the message
-            // Note: We're calling the internal logic directly to avoid recursive queueing
-            // This is a simplified version of handle_enter
-            self.tui_bridge.add_user_message(msg.text.clone());
-
-            // TODO: Spawn LLM processing thread similar to handle_enter
-            // For now, just add the message to chat
-            tracing::info!("Queued message added to chat (full submission not yet implemented)");
+            // Trigger the message submission
+            // This will handle the LLM processing in a separate thread
+            drop(self.handle_enter());
         }
     }
 }

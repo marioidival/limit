@@ -967,6 +967,14 @@ impl InputEditor {
         self.display_cursor = 0;
     }
 
+    /// Set text content (replaces all existing text)
+    pub fn set_text(&mut self, text: &str) {
+        self.text = text.to_string();
+        self.cursor = self.text.len();
+        self.pasted_content = None;
+        self.display_cursor = self.cursor;
+    }
+
     /// Get trimmed text and clear
     pub fn take_trimmed(&mut self) -> String {
         let full_text = self.text();
