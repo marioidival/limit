@@ -803,7 +803,8 @@ impl AgentBridge {
                     "We've reached the iteration limit. Please provide a summary of:\n\
                     1. What you've completed so far\n\
                     2. What remains to be done\n\
-                    3. Recommended next steps for the user to continue")),
+                    3. Recommended next steps for the user to continue",
+                )),
                 tool_calls: None,
                 tool_call_id: None,
                 cache_control: None,
