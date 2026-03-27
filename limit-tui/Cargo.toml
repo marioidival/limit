@@ -17,6 +17,7 @@ tracing = "0.1"
 crossterm = "0.29"
 chrono = "0.4.44"
 thiserror = "2"
+blake3 = "1"
 syntect = { version = "5.2", default-features = false, features = [
     "default-fancy",
     "regex-fancy",
