@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.45] - 2026-03-27
+
+### 🚀 Features
+
+- Add test examples for API and image handling
+
+- Implement input queue system
+
+- Add thread state persistence to InputQueue
+
+- Add QueueConfig for configurable parameters
+
+- Add configurable keybinding hint to PendingInputPreview
+
+- Add screen reader accessibility for pending input
+
+- Add InputQueueManager with two-tier queue
+
+- Export InputQueue types from components module
+
+- Integrate pending input preview in renderer
+
+
+### 🐛 Bug Fixes
+
+- Parse cli args to enable --version and --help flags
+
+
+### 📚 Documentation
+
+- Add input queue system documentation
+
+
+### 🎨 Styling
+
+- Format examples and remove redundant imports
+
+- Fix long line in agent_bridge
+
+
+### 🧪 Testing
+
+- Add integration tests for InputQueue flow
+
+
+### ⚙️ Miscellaneous Tasks
+
+- Update Cargo.lock
+
+## [0.0.45] - 2026-03-26
+
+All notable changes to this project will be documented in this file.
+
 ## [0.0.44] - 2026-03-26
 
 ### 🚜 Refactor
