@@ -2,6 +2,24 @@
 
 use std::collections::VecDeque;
 
+const DEFAULT_MAX_QUEUED_MESSAGES: usize = 50;
+const DEFAULT_MAX_PENDING_STEERS: usize = 10;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueueConfig {
+    pub max_queued_messages: usize,
+    pub max_pending_steers: usize,
+}
+
+impl Default for QueueConfig {
+    fn default() -> Self {
+        Self {
+            max_queued_messages: DEFAULT_MAX_QUEUED_MESSAGES,
+            max_pending_steers: DEFAULT_MAX_PENDING_STEERS,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueuedMessage {
     pub text: String,
@@ -41,14 +59,11 @@ impl ThreadInputState {
 /// Manages input messages during async operations
 #[derive(Debug, Clone)]
 pub struct InputQueue {
-    /// Messages queued while task is running (not yet submitted)
     queued_messages: VecDeque<QueuedMessage>,
-    /// Steer messages (submitted to core but not yet committed to history)
     pending_steers: VecDeque<QueuedMessage>,
-    /// Flag: next interrupt should submit steers as new turn
     submit_pending_steers_after_interrupt: bool,
-    /// Suppress automatic queue sending
     suppress_autosend: bool,
+    config: QueueConfig,
 }
 
 impl Default for InputQueue {
@@ -58,23 +73,31 @@ impl Default for InputQueue {
 }
 
 impl InputQueue {
-    /// Create a new input queue
     pub fn new() -> Self {
+        Self::with_config(QueueConfig::default())
+    }
+
+    pub fn with_config(config: QueueConfig) -> Self {
         Self {
-            queued_messages: VecDeque::new(),
-            pending_steers: VecDeque::new(),
+            queued_messages: VecDeque::with_capacity(config.max_queued_messages),
+            pending_steers: VecDeque::with_capacity(config.max_pending_steers),
             submit_pending_steers_after_interrupt: false,
             suppress_autosend: false,
+            config,
         }
     }
 
-    /// Queue a message (called while task is running)
     pub fn queue_message(&mut self, text: String) {
+        if self.queued_messages.len() >= self.config.max_queued_messages {
+            self.queued_messages.pop_front();
+        }
         self.queued_messages.push_back(QueuedMessage::new(text));
     }
 
-    /// Add a steer message (submitted to core, not yet committed)
     pub fn add_steer(&mut self, text: String) {
+        if self.pending_steers.len() >= self.config.max_pending_steers {
+            self.pending_steers.pop_front();
+        }
         self.pending_steers
             .push_back(QueuedMessage::new_steer(text));
     }
@@ -329,5 +352,37 @@ mod tests {
     fn test_thread_state_empty() {
         let queue = InputQueue::new();
         assert!(queue.save_thread_state().is_none());
+    }
+
+    #[test]
+    fn test_backpressure_queued() {
+        let config = QueueConfig {
+            max_queued_messages: 3,
+            max_pending_steers: 10,
+        };
+        let mut queue = InputQueue::with_config(config);
+
+        for i in 0..5 {
+            queue.queue_message(format!("Message {}", i));
+        }
+
+        assert_eq!(queue.queued_count(), 3);
+        let first = queue.pop_queued().unwrap();
+        assert_eq!(first.text, "Message 2");
+    }
+
+    #[test]
+    fn test_backpressure_steers() {
+        let config = QueueConfig {
+            max_queued_messages: 50,
+            max_pending_steers: 2,
+        };
+        let mut queue = InputQueue::with_config(config);
+
+        for i in 0..4 {
+            queue.add_steer(format!("Steer {}", i));
+        }
+
+        assert_eq!(queue.steer_count(), 2);
     }
 }
