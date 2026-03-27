@@ -6,7 +6,7 @@ use image::RgbaImage;
 
 fn main() {
     println!("=== Clipboard Test ===\n");
-    
+
     let mut cb = match Clipboard::new() {
         Ok(cb) => cb,
         Err(e) => {
@@ -14,22 +14,25 @@ fn main() {
             std::process::exit(1);
         }
     };
-    
+
     println!("✓ Clipboard opened successfully\n");
-    
+
     // Test 1: Image data
     println!("1. Testing get_image()...");
     match cb.get_image() {
         Ok(img) => {
             println!("   ✓ Image data found!");
             println!("     - Dimensions: {}x{}", img.width, img.height);
-            println!("     - Bytes: {} (expected: {})", 
-                img.bytes.len(), 
-                (img.width as usize) * (img.height as usize) * 4
+            println!(
+                "     - Bytes: {} (expected: {})",
+                img.bytes.len(),
+                img.width * img.height * 4
             );
-            
+
             // Verify if it's a valid RGBA buffer
-            if let Some(_rgba) = RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned()) {
+            if let Some(_rgba) =
+                RgbaImage::from_raw(img.width as u32, img.height as u32, img.bytes.into_owned())
+            {
                 println!("   ✓ Valid RGBA image");
             } else {
                 println!("   ✗ Invalid RGBA buffer");
@@ -39,7 +42,7 @@ fn main() {
             println!("   ✗ No image data: {}", e);
         }
     }
-    
+
     // Test 2: File list
     println!("\n2. Testing file_list()...");
     match cb.get().file_list() {
@@ -57,7 +60,7 @@ fn main() {
             println!("   ✗ Error: {}", e);
         }
     }
-    
+
     // Test 3: Try to read as text
     println!("\n3. Testing get_text()...");
     match cb.get_text() {
@@ -75,7 +78,7 @@ fn main() {
             println!("   ✗ Error: {}", e);
         }
     }
-    
+
     println!("\n=== Test Complete ===");
     println!("\nCopie uma imagem para o clipboard e execute novamente!");
 }
