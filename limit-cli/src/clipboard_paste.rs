@@ -126,7 +126,7 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     match paste_image_as_png() {
         Ok((png, info)) => {
-            // Criar arquivo temporário único
+            // Create a unique temporary file
             let tmp = tempfile::Builder::new()
                 .prefix("clipboard-")
                 .suffix(".png")
@@ -136,7 +136,7 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
             std::fs::write(tmp.path(), &png)
                 .map_err(|e| PasteImageError::IoError(e.to_string()))?;
 
-            // Persistir arquivo (não deletar ao fechar handle)
+            // Persist file (don't delete when handle is closed)
             let (_file, path) = tmp
                 .keep()
                 .map_err(|e| PasteImageError::IoError(e.error.to_string()))?;
@@ -147,7 +147,7 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
             // Tentar fallback WSL (Linux apenas)
             #[cfg(target_os = "linux")]
             {
-                try_wsl_clipboard_fallback(&e).or(Err(e))
+                try_wsl_clipboard_fallback(&e).ok_or(e)
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -232,7 +232,7 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
 /// Convert Windows path to WSL path
 #[cfg(target_os = "linux")]
 fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
-    // Não converter UNC paths
+    // Don't convert UNC paths
     if input.starts_with("\\\\") {
         return None;
     }

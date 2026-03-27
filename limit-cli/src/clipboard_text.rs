@@ -149,7 +149,7 @@ pub(crate) fn is_probably_wsl() -> bool {
         }
     }
 
-    // Verificar variáveis de ambiente WSL
+    // Check WSL environment variables
     std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
 }
 
